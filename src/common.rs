@@ -114,13 +114,9 @@ where
         lock.ensure_tls_dropped(self.op.as_ref())
     }
 
-    fn deregister_thread(&self, lock: &mut MutexGuard<'_, State>, tid: &ThreadId) {
-        lock.deregister_thread(tid)
-    }
-
     fn tl_data_dropped(&self, tid: &ThreadId, data: Option<T>) {
         let mut lock = self.lock();
-        self.deregister_thread(&mut lock, tid);
+        lock.deregister_thread(tid);
         if let Some(data) = data {
             self.accumulate_tl(&mut lock, data, tid);
         }
@@ -178,8 +174,6 @@ where
     pub(crate) fn init_control(&self, control: &ControlS<T, CtrlState>, node: &CtrlState::Node) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
-        // let mut lock = control.lock();
-        // lock.register_node(node, &thread::current().id());
         control.register_node(node, &thread::current().id())
     }
 
