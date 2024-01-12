@@ -1,24 +1,30 @@
 //! Support for ensuring that destructors are run on thread-local variables after the threads terminate,
 //! as well as support for accumulating the thread-local values using a binary operation.
 
-use crate::common::{ControlBase, ControlInner, ControlPart, ControlS, HolderBase};
+use crate::common::{
+    ControlBase, ControlInner, ControlPart, ControlS, GuardedData, HolderBase, HolderS,
+};
 use std::{
-    cell::{Ref, RefCell, RefMut},
+    cell::{RefCell, RefMut},
     sync::{Arc, Mutex, MutexGuard},
     thread::{LocalKey, ThreadId},
 };
 
-pub type Control<T, U> = ControlS<T, U, U>;
+pub use crate::common::DerefMutOption;
 
-// #[derive(Debug)]
-pub struct Holder<T, U>
+/// Controls the accumulation of each thread-local value when the thread-local is dropped.
+type Control0<T, U> = ControlS<T, U, U>;
+
+type Holder0<T, U> = HolderS<T, Control0<T, U>, RefCell<Option<T>>>;
+
+#[derive(Debug)]
+pub struct Control<T, U>(Control0<T, U>);
+
+#[derive(Debug)]
+pub struct Holder<T, U>(Holder0<T, U>)
 where
     T: 'static,
-{
-    data: RefCell<Option<T>>,
-    control: RefCell<Option<Control<T, U>>>,
-    make_data: fn() -> T,
-}
+    U: 'static;
 
 pub trait HolderLocalKey<T, U> {
     /// Establishes link with control.
@@ -41,11 +47,30 @@ impl<U> ControlInner<U> for U {
     }
 }
 
-impl<T, U> ControlBase for Control<T, U>
+impl<S: 'static> GuardedData<S> for RefCell<S> {
+    type Guard<'a> = RefMut<'a, S>;
+
+    fn guard<'a>(&'a self) -> Self::Guard<'a> {
+        self.borrow_mut()
+    }
+}
+
+impl<T: 'static, U: 'static> Control0<T, U> {
+    fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
+        Control0 {
+            inner: Arc::new(Mutex::new(acc_base)),
+            op: Arc::new(op),
+        }
+    }
+}
+
+impl<T, U> ControlBase for Control0<T, U>
 where
     T: 'static,
     U: 'static,
 {
+    type Hldr = Holder0<T, U>;
+
     fn ensure_tls_dropped(&self, _lock: &mut Self::Lock<'_>) {
         // no-op
     }
@@ -55,16 +80,26 @@ where
     }
 }
 
+impl<T, U> Holder0<T, U> {
+    /// Instantiates an empty [`Holder`] with the given data initializer function `data_init`.
+    /// `data_init` is invoked when the data in [`Holder`] is accessed for the first time.
+    /// See `borrow_data` and `borrow_data_mut`.
+    const fn new(make_data: fn() -> T) -> Self {
+        HolderS {
+            data: RefCell::new(None),
+            control: RefCell::new(None),
+            make_data,
+        }
+    }
+}
+
 impl<T, U> Control<T, U>
 where
     T: 'static,
     U: 'static,
 {
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-        Control {
-            inner: Arc::new(Mutex::new(acc_base)),
-            op: Arc::new(op),
-        }
+        Self(Control0::new(acc_base, op))
     }
 
     /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
@@ -72,7 +107,7 @@ where
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn lock(&self) -> MutexGuard<'_, U> {
-        ControlPart::lock(self)
+        self.0.lock()
     }
 
     /// Provides access to the accumulated value in the [Control] struct.
@@ -81,7 +116,7 @@ where
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn with_acc<V>(&self, lock: &mut MutexGuard<'_, U>, f: impl FnOnce(&U) -> V) -> V {
-        ControlPart::with_acc(self, lock, f)
+        self.0.with_acc(lock, f)
     }
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
@@ -91,75 +126,44 @@ where
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn take_acc(&self, lock: &mut MutexGuard<'_, U>, replacement: U) -> U {
-        ControlPart::take_acc(self, lock, replacement)
-    }
-
-    pub fn ensure_tls_dropped(&self, lock: &mut MutexGuard<'_, U>) {
-        ControlBase::ensure_tls_dropped(self, lock)
+        self.0.take_acc(lock, replacement)
     }
 }
 
-impl<T, U: 'static> HolderBase for Holder<T, U> {
-    type Dat = T;
-    type Ctrl = Control<T, U>;
-    type Guard<'a> = RefMut<'a, Option<T>>;
-
-    fn control(&self) -> Ref<'_, Option<Self::Ctrl>> {
-        self.control.borrow()
-    }
-
-    fn make_data(&self) -> T {
-        (self.make_data)()
-    }
-
-    fn data_guard(&self) -> Self::Guard<'_> {
-        self.data.borrow_mut()
-    }
-
-    fn init_control(&self, control: &Self::Ctrl) {
-        let mut ctrl = self.control.borrow_mut();
-        *ctrl = Some(control.clone());
-    }
-}
-
-impl<T: Clone, U: 'static + Clone> Holder<T, U> {
+impl<T, U> Holder<T, U> {
     pub const fn new(make_data: fn() -> T) -> Self {
-        Self {
-            data: RefCell::new(None),
-            control: RefCell::new(None),
-            make_data,
-        }
+        Self(Holder0::new(make_data))
     }
 
     pub fn data_guard(&self) -> RefMut<'_, Option<T>> {
-        HolderBase::data_guard(self)
+        self.0.data.guard()
     }
 
     /// Establishes link with control.
     pub fn init_control(&self, control: &Control<T, U>) {
-        HolderBase::init_control(self, control)
+        self.0.init_control(&control.0)
     }
 
     pub fn init_data(&self) {
-        HolderBase::init_data(self)
+        self.0.init_data()
     }
 
     pub fn ensure_initialized(&self, control: &Control<T, U>) {
-        HolderBase::ensure_initialized(self, &control)
+        self.0.ensure_initialized(&control.0)
     }
 
     /// Invokes `f` on data. Panics if data is [`None`].
     pub fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> V {
-        HolderBase::with_data(self, f)
+        self.0.with_data(f)
     }
 
     /// Invokes `f` on data. Panics if data is [`None`].
     pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> V {
-        HolderBase::with_data_mut(self, f)
+        self.0.with_data_mut(f)
     }
 }
 
-impl<T: Clone, U: Clone> HolderLocalKey<T, U> for LocalKey<Holder<T, U>> {
+impl<T, U> HolderLocalKey<T, U> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Control<T, U>) {
         self.with(|h| h.init_control(&control))

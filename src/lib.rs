@@ -75,4 +75,4 @@ mod thread_local_drop;
 pub use crate::thread_local_drop::*;
 
 mod common;
-pub mod joined;
+pub mod joined_trivial;
