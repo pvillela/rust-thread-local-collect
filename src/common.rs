@@ -1,5 +1,5 @@
 use std::{
-    cell::{Ref, RefCell},
+    cell::{Ref, RefCell, RefMut},
     fmt::Debug,
     mem::replace,
     ops::DerefMut,
@@ -10,11 +10,12 @@ use std::{
 pub trait ControlState {
     type Node;
     type Acc;
+    type Dat;
 
     fn acc(&mut self) -> &mut Self::Acc;
     fn register_node(&mut self, node: &Self::Node, tid: &ThreadId);
-    fn deregister_thread(&self, tid: &ThreadId);
-    fn ensure_tls_dropped(&self);
+    fn deregister_thread(&mut self, tid: &ThreadId);
+    fn ensure_tls_dropped(&mut self, op: impl Fn(Self::Dat, &mut Self::Acc, &ThreadId));
 }
 
 /// Controls the destruction of thread-local values registered with it.
@@ -36,7 +37,7 @@ where
 /// Locking functionality underlying [`ControlC`].
 impl<T, State> ControlS<T, State>
 where
-    State: ControlState,
+    State: ControlState<Dat = T>,
 {
     fn op(&self, data: T, acc: &mut State::Acc, tid: &ThreadId) {
         (self.op)(data, acc, tid)
@@ -110,7 +111,7 @@ where
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn ensure_tls_dropped(&self, lock: &mut MutexGuard<'_, State>) {
-        lock.ensure_tls_dropped()
+        lock.ensure_tls_dropped(self.op.as_ref())
     }
 
     fn deregister_thread(&self, lock: &mut MutexGuard<'_, State>, tid: &ThreadId) {
@@ -134,12 +135,20 @@ pub trait GuardedData<S: 'static> {
     fn guard<'a>(&'a self) -> Self::Guard<'a>;
 }
 
+impl<S: 'static> GuardedData<S> for RefCell<S> {
+    type Guard<'a> = RefMut<'a, S>;
+
+    fn guard<'a>(&'a self) -> Self::Guard<'a> {
+        self.borrow_mut()
+    }
+}
+
 /// Holds thead-local data to enable registering it with [`Control`].
 pub struct HolderS<T, GData, CtrlState>
 where
     T: 'static,
     GData: GuardedData<Option<T>> + 'static,
-    CtrlState: ControlState,
+    CtrlState: ControlState<Dat = T>,
 {
     pub(crate) data: GData,
     pub(crate) control: RefCell<Option<ControlS<T, CtrlState>>>,
@@ -151,7 +160,7 @@ impl<T, GData, CtrlState> HolderS<T, GData, CtrlState>
 where
     T: 'static,
     GData: GuardedData<Option<T>> + 'static,
-    CtrlState: ControlState,
+    CtrlState: ControlState<Dat = T>,
 {
     fn control(&self) -> Ref<'_, Option<ControlS<T, CtrlState>>> {
         self.control.borrow()
@@ -264,7 +273,7 @@ impl<T, GData, CtrlState> Debug for HolderS<T, GData, CtrlState>
 where
     T: Debug,
     GData: GuardedData<Option<T>> + Debug,
-    CtrlState: ControlState,
+    CtrlState: ControlState<Dat = T>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("Holder{{data: {:?}}}", &self.data))
@@ -274,7 +283,7 @@ where
 impl<T, GData, CtrlState> Drop for HolderS<T, GData, CtrlState>
 where
     T: 'static,
-    CtrlState: ControlState,
+    CtrlState: ControlState<Dat = T>,
     GData: GuardedData<Option<T>> + 'static,
 {
     /// Ensures the held data, if any, is deregistered from the associated [`Control`] instance
