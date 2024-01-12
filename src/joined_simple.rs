@@ -52,6 +52,10 @@ impl<S: 'static> GuardedData<S> for RefCell<S> {
 pub type Holder<T, U> = HolderS<T, RefCell<Option<T>>, TrivialState<U>>;
 
 impl<T, U: 'static> Holder<T, U> {
+    /// Creates a new `Holder` instance with a function to initialize the data.
+    ///
+    /// The `make_data` function will be called lazily when data is first accessed to initialize
+    /// the inner data value.
     pub const fn new(make_data: fn() -> T) -> Self {
         Self {
             data: RefCell::new(None),
