@@ -15,7 +15,7 @@ pub trait ControlState {
 
     fn acc(&self) -> &Self::Acc;
     fn acc_mut(&mut self) -> &mut Self::Acc;
-    fn register_node(&mut self, node: &Self::Node, tid: &ThreadId);
+    fn register_node(&mut self, node: Self::Node, tid: &ThreadId);
     fn deregister_thread(&mut self, tid: &ThreadId);
     fn ensure_tls_dropped(
         &mut self,
@@ -59,7 +59,7 @@ where
         &mut self.acc
     }
 
-    fn register_node(&mut self, node: &Self::Node, tid: &ThreadId) {
+    fn register_node(&mut self, node: Self::Node, tid: &ThreadId) {
         self.tmap.insert(tid.clone(), node.clone());
     }
 
@@ -135,7 +135,7 @@ where
         replace(acc, replacement)
     }
 
-    fn register_node(&self, node: &State::Node, tid: &ThreadId) {
+    fn register_node(&self, node: State::Node, tid: &ThreadId) {
         let mut lock = self.lock();
         lock.register_node(node, tid)
     }
@@ -228,7 +228,7 @@ where
     }
 
     /// Establishes link with control.
-    pub(crate) fn init_control(&self, control: &ControlS<CState>, node: &CState::Node) {
+    pub(crate) fn init_control(&self, control: &ControlS<CState>, node: CState::Node) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
         control.register_node(node, &thread::current().id())
@@ -242,7 +242,7 @@ where
         }
     }
 
-    pub(crate) fn ensure_initialized(&self, control: &ControlS<CState>, node: &CState::Node) {
+    pub(crate) fn ensure_initialized(&self, control: &ControlS<CState>, node: CState::Node) {
         if self.control().as_ref().is_none() {
             self.init_control(control, node);
         }

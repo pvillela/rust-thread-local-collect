@@ -52,7 +52,7 @@ impl<T, U: 'static> Holder<T, U> {
 impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.init_control(&control, &()))
+        self.with(|h| h.init_control(&control, ()))
     }
 
     fn init_data(&'static self) {
@@ -60,7 +60,7 @@ impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
     }
 
     fn ensure_initialized(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.ensure_initialized(&control, &()))
+        self.with(|h| h.ensure_initialized(&control, ()))
     }
 
     /// Invokes `f` on data. Panics if data is [`None`].

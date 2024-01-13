@@ -65,7 +65,7 @@ impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
     fn init_control(&'static self, control: &Control<T, U>) {
         self.with(|h| {
             let node = h.data.clone();
-            h.init_control(&control, &node);
+            h.init_control(&control, node);
         })
     }
 
@@ -76,7 +76,7 @@ impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
     fn ensure_initialized(&'static self, control: &Control<T, U>) {
         self.with(|h| {
             let node = h.data.clone();
-            h.ensure_initialized(&control, &node);
+            h.ensure_initialized(&control, node);
         })
     }
 
