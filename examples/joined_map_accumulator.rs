@@ -8,7 +8,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_drop::{Control, Holder};
+use thread_local_drop::joined::{Control, Holder, HolderLocalKey};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -22,7 +22,8 @@ thread_local! {
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-    control.with_tl_mut(&MY_FOO_MAP, |data| {
+    MY_FOO_MAP.ensure_initialized(control);
+    MY_FOO_MAP.with_data_mut(|data| {
         data.insert(k, v);
     });
 }

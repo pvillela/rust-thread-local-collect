@@ -8,7 +8,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_drop::{Control, Holder};
+use thread_local_drop::joined::{Control, Holder, HolderLocalKey};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -22,7 +22,8 @@ thread_local! {
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-    control.with_tl_mut(&MY_FOO_MAP, |data| {
+    MY_FOO_MAP.ensure_initialized(control);
+    MY_FOO_MAP.with_data_mut(|data| {
         data.insert(k, v);
     });
 }
@@ -63,7 +64,7 @@ fn main() {
     print_tl("Main thread after inserts");
 
     thread::scope(|s| {
-        let h = s.spawn(|| {
+        let _h = s.spawn(|| {
             insert_tl_entry(1, Foo("aa".to_owned()), &control);
             print_tl("Spawned thread before sleep");
             thread::sleep(Duration::from_millis(200));
@@ -80,7 +81,7 @@ fn main() {
         println!("Main thread after sleep: control={:?}", control);
 
         // Don't do this in production code. For demonstration purposes only.
-        // Making this call before joining with `h` is dangerous because there is a data race.
+        // Making this call before joining with `_h` is dangerous because there is a data race.
         control.ensure_tls_dropped(&mut control.lock());
 
         println!(
@@ -88,8 +89,8 @@ fn main() {
             control
         );
 
-        // Explicit join at end of scope.
-        h.join().unwrap();
+        // Implicit join at end of scope.
+        // _h.join().unwrap();
     });
 
     println!("After spawned thread join: control={:?}", control);
@@ -97,7 +98,11 @@ fn main() {
     {
         let mut lock = control.lock();
 
-        // Due to the explicit join above, there is no data race here.
+        // Due to the implicit join above, we have a data race here. Therefore, the
+        // address in `control`'s `tmap` associated with the spawned thread may point to an invalid memory chunk,
+        // resulting in a sgementation fault when the address is dereferenced by `ensure_tls_dropped`.
+        // In case the memory chunk pointed to by the address is valid, there may be additional issues further
+        // below where the accumulator is printed.
         control.ensure_tls_dropped(&mut lock);
 
         println!(
@@ -106,7 +111,7 @@ fn main() {
         );
 
         // Due to the above-mentioned data race, if the address in question points to a valid memory chunk and
-        // a segmentation fault doesn't occur above, then there can be 2 possibilities:
+        // a segmentation fault doesn't occur above, then there can be 3 possibilities:
         // 1. The destructor of the Holder for the spawned thread is not holding control's Mutex lock and it has not
         //    completed execution, so the accumulated value does not reflect the second insert in the spawned thread.
         // 2. The destructor of the Holder for the spawned thread has already completed execution and the accumulated

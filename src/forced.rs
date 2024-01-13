@@ -1,7 +1,8 @@
 //! Support for ensuring that destructors are run on thread-local variables after the threads terminate,
 //! as well as support for accumulating the thread-local values using a binary operation.
 
-use crate::common::{ControlS, ControlState, HolderLocalKey, HolderS};
+pub use crate::common::HolderLocalKey;
+use crate::common::{ControlS, ControlState, HolderS};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -24,7 +25,11 @@ where
     type Node = Arc<Mutex<Option<T>>>;
     type Dat = T;
 
-    fn acc(&mut self) -> &mut U {
+    fn acc(&self) -> &U {
+        &self.acc
+    }
+
+    fn acc_mut(&mut self) -> &mut U {
         &mut self.acc
     }
 
@@ -179,7 +184,7 @@ mod tests {
                         move || {
                             let si = i.to_string();
 
-                            let mut lock = spawned_tids.try_write().unwrap();
+                            let mut lock = spawned_tids.write().unwrap();
                             lock[i] = thread::current().id();
                             drop(lock);
 
@@ -248,7 +253,7 @@ mod tests {
 
         thread::scope(|s| {
             let h = s.spawn(|| {
-                let mut lock = spawned_tid.try_write().unwrap();
+                let mut lock = spawned_tid.write().unwrap();
                 *lock = thread::current().id();
                 drop(lock);
 
@@ -317,7 +322,7 @@ mod tests {
 
         thread::scope(|s| {
             let h = s.spawn(|| {
-                let mut lock = spawned_tid.try_write().unwrap();
+                let mut lock = spawned_tid.write().unwrap();
                 *lock = thread::current().id();
                 drop(lock);
 

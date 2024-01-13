@@ -2,7 +2,7 @@ use std::{
     cell::{Ref, RefCell, RefMut},
     fmt::Debug,
     mem::replace,
-    ops::DerefMut,
+    ops::{Deref, DerefMut},
     sync::{Arc, Mutex, MutexGuard},
     thread::{self, ThreadId},
 };
@@ -12,7 +12,8 @@ pub trait ControlState {
     type Acc;
     type Dat;
 
-    fn acc(&mut self) -> &mut Self::Acc;
+    fn acc(&self) -> &Self::Acc;
+    fn acc_mut(&mut self) -> &mut Self::Acc;
     fn register_node(&mut self, node: &Self::Node, tid: &ThreadId);
     fn deregister_thread(&mut self, tid: &ThreadId);
     fn ensure_tls_dropped(&mut self, op: impl Fn(Self::Dat, &mut Self::Acc, &ThreadId));
@@ -52,7 +53,7 @@ where
     }
 
     fn accumulate_tl(&self, lock: &mut MutexGuard<'_, State>, data: T, tid: &ThreadId) {
-        let acc = lock.deref_mut().acc();
+        let acc = lock.deref_mut().acc_mut();
         self.op(data, acc, tid);
     }
 
@@ -61,12 +62,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn with_acc<V>(
-        &self,
-        lock: &mut MutexGuard<'_, State>,
-        f: impl FnOnce(&State::Acc) -> V,
-    ) -> V {
-        let acc = lock.deref_mut().acc();
+    pub fn with_acc<V>(&self, lock: &MutexGuard<'_, State>, f: impl FnOnce(&State::Acc) -> V) -> V {
+        let acc = lock.deref().acc();
         f(acc)
     }
 
@@ -81,7 +78,7 @@ where
         lock: &mut MutexGuard<'_, State>,
         replacement: State::Acc,
     ) -> State::Acc {
-        let acc = lock.deref_mut().acc();
+        let acc = lock.deref_mut().acc_mut();
         replace(acc, replacement)
     }
 

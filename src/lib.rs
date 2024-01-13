@@ -18,7 +18,7 @@
 //!
 //! ```rust
 //! use std::thread::{self, ThreadId};
-//! use thread_local_drop::{Control, Holder};
+//! use thread_local_drop::joined::{Control, Holder};
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -70,9 +70,6 @@
 //! ## Other examples
 //!
 //! See another example at [`examples/map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-drop/blob/main/examples/map_accumulator.rs).
-
-mod thread_local_drop;
-pub use crate::thread_local_drop::*;
 
 mod common;
 pub mod forced;

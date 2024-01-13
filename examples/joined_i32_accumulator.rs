@@ -1,7 +1,7 @@
 //! Simple example usage of [`thread_local_drop`].
 
 use std::thread::{self, ThreadId};
-use thread_local_drop::{Control, Holder};
+use thread_local_drop::joined::{Control, Holder, HolderLocalKey};
 
 // Define your data type, e.g.:
 type Data = i32;
@@ -22,7 +22,8 @@ fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
 
 // Create a function to update the thread-local value:
 fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-    control.with_tl_mut(&MY_TL, |data| {
+    MY_TL.ensure_initialized(control);
+    MY_TL.with_data_mut(|data| {
         *data = value;
     });
 }
