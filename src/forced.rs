@@ -5,25 +5,23 @@ use crate::common::{ControlS, ControlState, HolderLocalKey, HolderS};
 use std::{
     cell::RefCell,
     collections::HashMap,
-    marker::PhantomData,
     sync::{Arc, Mutex},
     thread::{LocalKey, ThreadId},
 };
 
 #[derive(Debug)]
-pub struct JoinedState<T, U> {
+pub struct ForcedState<T, U> {
     acc: U,
-    tmap: HashMap<ThreadId, usize>,
-    _phantom: PhantomData<T>,
+    tmap: HashMap<ThreadId, Arc<Mutex<Option<T>>>>,
 }
 
-impl<T, U> ControlState for JoinedState<T, U>
+impl<T, U> ControlState for ForcedState<T, U>
 where
     T: 'static,
     U: 'static,
 {
     type Acc = U;
-    type Node = usize;
+    type Node = Arc<Mutex<Option<T>>>;
     type Dat = T;
 
     fn acc(&mut self) -> &mut U {
@@ -39,37 +37,20 @@ where
     }
 
     fn ensure_tls_dropped(&mut self, op: impl Fn(Self::Dat, &mut Self::Acc, &ThreadId)) {
-        for (tid, addr) in self.tmap.iter() {
+        for (tid, node) in self.tmap.iter() {
             log::trace!("executing `ensure_tls_dropped` for key={:?}", tid);
-            // Safety: provided that:
-            // - All other threads have terminaged and been joined, which means that there is a proper
-            //   "happens-before" relationship and the only possible remaining activity on those threads
-            //   would be Holder drop method execution, but that method uses the above Mutex to prevent
-            //   race conditions.
-            let tl: &LocalKey<Holder<Self::Dat, U>> = unsafe { tl_from_addr(*addr) };
-            tl.with(|h| {
-                let mut data_ref = h.data.borrow_mut();
-                let data = data_ref.take();
-                log::trace!("executed `take` -- `ensure_tls_dropped` for key={:?}", tid);
-                if let Some(data) = data {
-                    log::trace!("executing `op` -- `ensure_tls_dropped` for key={:?}", tid);
-                    op(data, &mut self.acc, tid);
-                }
-            });
+            let mut data_ref = node.lock().unwrap();
+            let data = data_ref.take();
+            log::trace!("executed `take` -- `ensure_tls_dropped` for key={:?}", tid);
+            if let Some(data) = data {
+                log::trace!("executing `op` -- `ensure_tls_dropped` for key={:?}", tid);
+                op(data, &mut self.acc, tid);
+            }
         }
     }
 }
 
-fn addr_of_tl<H>(tl: &LocalKey<H>) -> usize {
-    let tl_ptr: *const LocalKey<H> = tl;
-    tl_ptr as usize
-}
-
-unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
-    &*(addr as *const LocalKey<H>)
-}
-
-pub type Control<T, U> = ControlS<T, JoinedState<T, U>>;
+pub type Control<T, U> = ControlS<T, ForcedState<T, U>>;
 
 impl<T, U> Control<T, U>
 where
@@ -78,17 +59,16 @@ where
 {
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Control {
-            state: Arc::new(Mutex::new(JoinedState {
+            state: Arc::new(Mutex::new(ForcedState {
                 acc: acc_base,
                 tmap: HashMap::new(),
-                _phantom: PhantomData,
             })),
             op: Arc::new(op),
         }
     }
 }
 
-pub type Holder<T, U> = HolderS<T, RefCell<Option<T>>, JoinedState<T, U>>;
+pub type Holder<T, U> = HolderS<T, Arc<Mutex<Option<T>>>, ForcedState<T, U>>;
 
 impl<T, U: 'static> Holder<T, U> {
     /// Creates a new `Holder` instance with a function to initialize the data.
@@ -97,7 +77,7 @@ impl<T, U: 'static> Holder<T, U> {
     /// the inner data value.
     pub fn new(make_data: fn() -> T) -> Self {
         Self {
-            data: RefCell::new(None),
+            data: Arc::new(Mutex::new(None)),
             control: RefCell::new(None),
             make_data,
         }
@@ -107,7 +87,10 @@ impl<T, U: 'static> Holder<T, U> {
 impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.init_control(&control, &addr_of_tl(self)))
+        self.with(|h| {
+            let node = h.data.clone();
+            h.init_control(&control, &node);
+        })
     }
 
     fn init_data(&'static self) {
@@ -115,7 +98,10 @@ impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
     }
 
     fn ensure_initialized(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.ensure_initialized(&control, &addr_of_tl(self)))
+        self.with(|h| {
+            let node = h.data.clone();
+            h.ensure_initialized(&control, &node);
+        })
     }
 
     /// Invokes `f` on data. Panics if data is [`None`].
@@ -285,6 +271,75 @@ mod tests {
             println!("spawned_tid={:?}", spawned_tid);
 
             // let keys = [main_tid.clone(), spawned_tid.clone()];
+            // assert_control_map(&control, &keys, "Before joining spawned thread");
+
+            h.join().unwrap();
+
+            println!("after h.join(): {:?}", control);
+
+            control.ensure_tls_dropped(&mut control.lock());
+            // let keys = [];
+            // assert_control_map(&control, &keys, "After call to `ensure_tls_dropped`");
+        });
+
+        {
+            let spawned_tid = spawned_tid.try_read().unwrap();
+            let map1 = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
+            let map2 = HashMap::from([(1, Foo("aa".to_owned())), (2, Foo("bb".to_owned()))]);
+            let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
+
+            {
+                let lock = control.lock();
+                let acc = &lock.acc;
+                assert_eq!(acc, &map, "Accumulator check");
+            }
+        }
+    }
+
+    #[test]
+    fn test_3() {
+        let control = Control::new(HashMap::new(), op);
+
+        let main_tid = thread::current().id();
+        println!("main_tid={:?}", main_tid);
+        let spawned_tid = RwLock::new(thread::current().id());
+
+        {
+            insert_tl_entry(1, Foo("a".to_owned()), &control);
+            insert_tl_entry(2, Foo("b".to_owned()), &control);
+            println!("after main thread inserts: {:?}", control);
+
+            let _other = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
+            // assert_tl(&other, "After main thread inserts");
+        }
+
+        thread::sleep(Duration::from_millis(100));
+
+        thread::scope(|s| {
+            let h = s.spawn(|| {
+                let mut lock = spawned_tid.try_write().unwrap();
+                *lock = thread::current().id();
+                drop(lock);
+
+                insert_tl_entry(1, Foo("aa".to_owned()), &control);
+
+                let _other = HashMap::from([(1, Foo("aa".to_owned()))]);
+                // assert_tl(&other, "Before spawned thread sleep");
+
+                thread::sleep(Duration::from_millis(200));
+
+                insert_tl_entry(2, Foo("bb".to_owned()), &control);
+
+                let _other = HashMap::from([(1, Foo("aa".to_owned())), (2, Foo("bb".to_owned()))]);
+                // assert_tl(&other, "After spawned thread sleep");
+            });
+
+            thread::sleep(Duration::from_millis(50));
+
+            let spawned_tid = spawned_tid.try_read().unwrap();
+            println!("spawned_tid={:?}", spawned_tid);
+
+            let _keys = [main_tid.clone(), spawned_tid.clone()];
             // assert_control_map(&control, &keys, "Before joining spawned thread");
 
             h.join().unwrap();

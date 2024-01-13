@@ -50,7 +50,7 @@ impl<T, U: 'static> Holder<T, U> {
     ///
     /// The `make_data` function will be called lazily when data is first accessed to initialize
     /// the inner data value.
-    pub const fn new(make_data: fn() -> T) -> Self {
+    pub fn new(make_data: fn() -> T) -> Self {
         Self {
             data: RefCell::new(None),
             control: RefCell::new(None),

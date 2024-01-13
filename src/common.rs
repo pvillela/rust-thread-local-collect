@@ -139,6 +139,14 @@ impl<S: 'static> GuardedData<S> for RefCell<S> {
     }
 }
 
+impl<S: 'static> GuardedData<S> for Arc<Mutex<S>> {
+    type Guard<'a> = MutexGuard<'a, S>;
+
+    fn guard<'a>(&'a self) -> Self::Guard<'a> {
+        self.lock().unwrap()
+    }
+}
+
 /// Holds thead-local data to enable registering it with [`Control`].
 pub struct HolderS<T, GData, CtrlState>
 where
