@@ -19,7 +19,7 @@ pub trait ControlState {
     fn deregister_thread(&mut self, tid: &ThreadId);
     fn ensure_tls_dropped(
         &mut self,
-        op: Arc<dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync>,
+        op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync),
     );
 }
 
@@ -27,16 +27,13 @@ pub trait ControlState {
 pub struct ControlStateS<T, U, Node> {
     pub(crate) acc: U,
     pub(crate) tmap: HashMap<ThreadId, Node>,
-    ensure_tls_dropped: fn(state: &mut Self, op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>),
+    ensure_tls_dropped: fn(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
 }
 
 impl<T, U, Node> ControlStateS<T, U, Node> {
     pub(crate) fn new(
         acc: U,
-        ensure_tls_dropped: fn(
-            this: &mut Self,
-            op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>,
-        ),
+        ensure_tls_dropped: fn(this: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
     ) -> Self {
         Self {
             acc,
@@ -70,7 +67,7 @@ where
         self.tmap.remove(tid);
     }
 
-    fn ensure_tls_dropped(&mut self, op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>) {
+    fn ensure_tls_dropped(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
         (self.ensure_tls_dropped)(self, op)
     }
 }
@@ -164,7 +161,7 @@ where
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn ensure_tls_dropped(&self, lock: &mut MutexGuard<'_, State>) {
-        lock.ensure_tls_dropped(self.op.clone())
+        lock.ensure_tls_dropped(self.op.deref())
     }
 
     fn tl_data_dropped(&self, tid: &ThreadId, data: Option<State::Dat>) {

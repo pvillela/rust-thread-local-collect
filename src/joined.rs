@@ -16,7 +16,7 @@ where
     T: 'static,
     U: 'static,
 {
-    fn ensure_tls_dropped(state: &mut Self, op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>) {
+    fn ensure_tls_dropped(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
         for (tid, addr) in state.tmap.iter() {
             log::trace!("executing `ensure_tls_dropped` for key={:?}", tid);
             // Safety: provided that:

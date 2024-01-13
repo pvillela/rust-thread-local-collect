@@ -12,8 +12,7 @@ use std::{
 pub type TrivialState<T, U> = ControlStateS<T, U, ()>;
 
 impl<T, U> TrivialState<T, U> {
-    fn ensure_tls_dropped(_state: &mut Self, _op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>) {
-    }
+    fn ensure_tls_dropped(_state: &mut Self, _op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {}
 }
 
 pub type Control<T, U> = ControlS<TrivialState<T, U>>;

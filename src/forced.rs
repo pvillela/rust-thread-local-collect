@@ -12,7 +12,7 @@ use std::{
 pub type ForcedState<T, U> = ControlStateS<T, U, Arc<Mutex<Option<T>>>>;
 
 impl<T, U> ForcedState<T, U> {
-    fn ensure_tls_dropped(state: &mut Self, op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>) {
+    fn ensure_tls_dropped(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
         for (tid, node) in state.tmap.iter() {
             log::trace!("executing `ensure_tls_dropped` for key={:?}", tid);
             let mut data_ref = node.lock().unwrap();
