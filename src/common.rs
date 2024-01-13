@@ -1,5 +1,6 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
+    collections::HashMap,
     fmt::Debug,
     mem::replace,
     ops::{Deref, DerefMut},
@@ -16,7 +17,62 @@ pub trait ControlState {
     fn acc_mut(&mut self) -> &mut Self::Acc;
     fn register_node(&mut self, node: &Self::Node, tid: &ThreadId);
     fn deregister_thread(&mut self, tid: &ThreadId);
-    fn ensure_tls_dropped(&mut self, op: impl Fn(Self::Dat, &mut Self::Acc, &ThreadId));
+    fn ensure_tls_dropped(
+        &mut self,
+        op: Arc<dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync>,
+    );
+}
+
+#[derive(Debug)]
+pub struct ControlStateS<T, U, Node> {
+    pub(crate) acc: U,
+    pub(crate) tmap: HashMap<ThreadId, Node>,
+    ensure_tls_dropped: fn(state: &mut Self, op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>),
+}
+
+impl<T, U, Node> ControlStateS<T, U, Node> {
+    pub(crate) fn new(
+        acc: U,
+        ensure_tls_dropped: fn(
+            this: &mut Self,
+            op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>,
+        ),
+    ) -> Self {
+        Self {
+            acc,
+            tmap: HashMap::new(),
+            ensure_tls_dropped,
+        }
+    }
+}
+
+impl<T, U, Node> ControlState for ControlStateS<T, U, Node>
+where
+    Node: Clone,
+{
+    type Acc = U;
+    type Dat = T;
+    type Node = Node;
+
+    fn acc(&self) -> &U {
+        &self.acc
+    }
+
+    fn acc_mut(&mut self) -> &mut U {
+        &mut self.acc
+    }
+
+    fn register_node(&mut self, node: &Self::Node, tid: &ThreadId) {
+        self.tmap.insert(tid.clone(), node.clone());
+    }
+
+    fn deregister_thread(&mut self, tid: &ThreadId) {
+        self.tmap.remove(tid);
+    }
+
+    fn ensure_tls_dropped(&mut self, op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>) {
+        (self.ensure_tls_dropped)(self, op)
+    }
 }
 
 /// Controls the destruction of thread-local values registered with it.
@@ -108,7 +164,7 @@ where
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn ensure_tls_dropped(&self, lock: &mut MutexGuard<'_, State>) {
-        lock.ensure_tls_dropped(self.op.as_ref())
+        lock.ensure_tls_dropped(self.op.clone())
     }
 
     fn tl_data_dropped(&self, tid: &ThreadId, data: Option<T>) {
@@ -289,27 +345,5 @@ where
     /// and the control instance's accumulation operation is invoked with the held data.
     fn drop(&mut self) {
         self.drop_data()
-    }
-}
-
-//=================
-// Additional trait and blanked impl
-
-pub trait DerefMutOption<T>: DerefMut<Target = Option<T>> {
-    fn unwrap(&self) -> &T;
-
-    fn unwrap_mut(&mut self) -> &mut T;
-}
-
-impl<T, X> DerefMutOption<T> for X
-where
-    X: DerefMut<Target = Option<T>>,
-{
-    fn unwrap(&self) -> &T {
-        self.as_ref().unwrap()
-    }
-
-    fn unwrap_mut(&mut self) -> &mut T {
-        self.as_mut().unwrap()
     }
 }

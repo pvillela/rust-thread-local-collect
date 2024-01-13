@@ -2,35 +2,18 @@
 //! as well as support for accumulating the thread-local values using a binary operation.
 
 pub use crate::common::HolderLocalKey;
-use crate::common::{ControlS, ControlState, HolderS};
+use crate::common::{ControlS, ControlStateS, HolderS};
 use std::{
     cell::RefCell,
-    marker::PhantomData,
     sync::{Arc, Mutex},
     thread::{LocalKey, ThreadId},
 };
 
-#[derive(Debug)]
-pub struct TrivialState<T, U>(U, PhantomData<T>);
+pub type TrivialState<T, U> = ControlStateS<T, U, ()>;
 
-impl<T, U> ControlState for TrivialState<T, U> {
-    type Acc = U;
-    type Node = ();
-    type Dat = T;
-
-    fn acc(&self) -> &U {
-        &self.0
+impl<T, U> TrivialState<T, U> {
+    fn ensure_tls_dropped(_state: &mut Self, _op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>) {
     }
-
-    fn acc_mut(&mut self) -> &mut U {
-        &mut self.0
-    }
-
-    fn register_node(&mut self, _node: &Self::Node, _tid: &ThreadId) {}
-
-    fn deregister_thread(&mut self, _tid: &ThreadId) {}
-
-    fn ensure_tls_dropped(&mut self, _op: impl Fn(T, &mut Self::Acc, &ThreadId)) {}
 }
 
 pub type Control<T, U> = ControlS<T, TrivialState<T, U>>;
@@ -42,7 +25,10 @@ where
 {
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Control {
-            state: Arc::new(Mutex::new(TrivialState(acc_base, PhantomData))),
+            state: Arc::new(Mutex::new(TrivialState::new(
+                acc_base,
+                TrivialState::ensure_tls_dropped,
+            ))),
             op: Arc::new(op),
         }
     }
@@ -91,6 +77,8 @@ impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::common::ControlState;
+
     use super::{Control, Holder, HolderLocalKey};
 
     use std::{
@@ -195,11 +183,8 @@ mod tests {
 
             {
                 let lock = control.lock();
-                let acc = &lock;
-                assert!(
-                    acc.0.eq(&map),
-                    "Accumulator check: acc={acc:?}, map={map:?}"
-                );
+                let acc = lock.acc();
+                assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
             }
         }
     }

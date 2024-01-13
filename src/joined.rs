@@ -2,63 +2,36 @@
 //! as well as support for accumulating the thread-local values using a binary operation.
 
 pub use crate::common::HolderLocalKey;
-use crate::common::{ControlS, ControlState, HolderS};
+use crate::common::{ControlS, ControlStateS, HolderS};
 use std::{
     cell::RefCell,
-    collections::HashMap,
-    marker::PhantomData,
     sync::{Arc, Mutex},
     thread::{LocalKey, ThreadId},
 };
 
-#[derive(Debug)]
-pub struct JoinedState<T, U> {
-    acc: U,
-    tmap: HashMap<ThreadId, usize>,
-    _phantom: PhantomData<T>,
-}
+pub type JoinedState<T, U> = ControlStateS<T, U, usize>;
 
-impl<T, U> ControlState for JoinedState<T, U>
+impl<T, U> JoinedState<T, U>
 where
     T: 'static,
     U: 'static,
 {
-    type Acc = U;
-    type Node = usize;
-    type Dat = T;
-
-    fn acc(&self) -> &U {
-        &self.acc
-    }
-
-    fn acc_mut(&mut self) -> &mut U {
-        &mut self.acc
-    }
-
-    fn register_node(&mut self, node: &Self::Node, tid: &ThreadId) {
-        self.tmap.insert(tid.clone(), node.clone());
-    }
-
-    fn deregister_thread(&mut self, tid: &ThreadId) {
-        self.tmap.remove(tid);
-    }
-
-    fn ensure_tls_dropped(&mut self, op: impl Fn(Self::Dat, &mut Self::Acc, &ThreadId)) {
-        for (tid, addr) in self.tmap.iter() {
+    fn ensure_tls_dropped(state: &mut Self, op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>) {
+        for (tid, addr) in state.tmap.iter() {
             log::trace!("executing `ensure_tls_dropped` for key={:?}", tid);
             // Safety: provided that:
             // - All other threads have terminaged and been joined, which means that there is a proper
             //   "happens-before" relationship and the only possible remaining activity on those threads
             //   would be Holder drop method execution, but that method uses the above Mutex to prevent
             //   race conditions.
-            let tl: &LocalKey<Holder<Self::Dat, U>> = unsafe { tl_from_addr(*addr) };
+            let tl: &LocalKey<Holder<T, U>> = unsafe { tl_from_addr(*addr) };
             tl.with(|h| {
                 let mut data_ref = h.data.borrow_mut();
                 let data = data_ref.take();
                 log::trace!("executed `take` -- `ensure_tls_dropped` for key={:?}", tid);
                 if let Some(data) = data {
                     log::trace!("executing `op` -- `ensure_tls_dropped` for key={:?}", tid);
-                    op(data, &mut self.acc, tid);
+                    op(data, &mut state.acc, tid);
                 }
             });
         }
@@ -83,11 +56,10 @@ where
 {
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Control {
-            state: Arc::new(Mutex::new(JoinedState {
-                acc: acc_base,
-                tmap: HashMap::new(),
-                _phantom: PhantomData,
-            })),
+            state: Arc::new(Mutex::new(JoinedState::new(
+                acc_base,
+                JoinedState::ensure_tls_dropped,
+            ))),
             op: Arc::new(op),
         }
     }

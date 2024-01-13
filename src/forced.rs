@@ -2,54 +2,25 @@
 //! as well as support for accumulating the thread-local values using a binary operation.
 
 pub use crate::common::HolderLocalKey;
-use crate::common::{ControlS, ControlState, HolderS};
+use crate::common::{ControlS, ControlStateS, HolderS};
 use std::{
     cell::RefCell,
-    collections::HashMap,
     sync::{Arc, Mutex},
     thread::{LocalKey, ThreadId},
 };
 
-#[derive(Debug)]
-pub struct ForcedState<T, U> {
-    acc: U,
-    tmap: HashMap<ThreadId, Arc<Mutex<Option<T>>>>,
-}
+pub type ForcedState<T, U> = ControlStateS<T, U, Arc<Mutex<Option<T>>>>;
 
-impl<T, U> ControlState for ForcedState<T, U>
-where
-    T: 'static,
-    U: 'static,
-{
-    type Acc = U;
-    type Node = Arc<Mutex<Option<T>>>;
-    type Dat = T;
-
-    fn acc(&self) -> &U {
-        &self.acc
-    }
-
-    fn acc_mut(&mut self) -> &mut U {
-        &mut self.acc
-    }
-
-    fn register_node(&mut self, node: &Self::Node, tid: &ThreadId) {
-        self.tmap.insert(tid.clone(), node.clone());
-    }
-
-    fn deregister_thread(&mut self, tid: &ThreadId) {
-        self.tmap.remove(tid);
-    }
-
-    fn ensure_tls_dropped(&mut self, op: impl Fn(Self::Dat, &mut Self::Acc, &ThreadId)) {
-        for (tid, node) in self.tmap.iter() {
+impl<T, U> ForcedState<T, U> {
+    fn ensure_tls_dropped(state: &mut Self, op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>) {
+        for (tid, node) in state.tmap.iter() {
             log::trace!("executing `ensure_tls_dropped` for key={:?}", tid);
             let mut data_ref = node.lock().unwrap();
             let data = data_ref.take();
             log::trace!("executed `take` -- `ensure_tls_dropped` for key={:?}", tid);
             if let Some(data) = data {
                 log::trace!("executing `op` -- `ensure_tls_dropped` for key={:?}", tid);
-                op(data, &mut self.acc, tid);
+                op(data, &mut state.acc, tid);
             }
         }
     }
@@ -64,10 +35,10 @@ where
 {
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Control {
-            state: Arc::new(Mutex::new(ForcedState {
-                acc: acc_base,
-                tmap: HashMap::new(),
-            })),
+            state: Arc::new(Mutex::new(ForcedState::new(
+                acc_base,
+                ForcedState::ensure_tls_dropped,
+            ))),
             op: Arc::new(op),
         }
     }
