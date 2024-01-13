@@ -74,4 +74,4 @@
 mod common;
 pub mod forced;
 pub mod joined;
-pub mod joined_simple;
+pub mod simple_joined;
