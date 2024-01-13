@@ -47,7 +47,7 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
     &*(addr as *const LocalKey<H>)
 }
 
-pub type Control<T, U> = ControlS<T, JoinedState<T, U>>;
+pub type Control<T, U> = ControlS<JoinedState<T, U>>;
 
 impl<T, U> Control<T, U>
 where
@@ -65,7 +65,7 @@ where
     }
 }
 
-pub type Holder<T, U> = HolderS<T, RefCell<Option<T>>, JoinedState<T, U>>;
+pub type Holder<T, U> = HolderS<RefCell<Option<T>>, JoinedState<T, U>>;
 
 impl<T, U: 'static> Holder<T, U> {
     /// Creates a new `Holder` instance with a function to initialize the data.

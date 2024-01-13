@@ -16,7 +16,7 @@ impl<T, U> TrivialState<T, U> {
     }
 }
 
-pub type Control<T, U> = ControlS<T, TrivialState<T, U>>;
+pub type Control<T, U> = ControlS<TrivialState<T, U>>;
 
 impl<T, U> Control<T, U>
 where
@@ -34,7 +34,7 @@ where
     }
 }
 
-pub type Holder<T, U> = HolderS<T, RefCell<Option<T>>, TrivialState<T, U>>;
+pub type Holder<T, U> = HolderS<RefCell<Option<T>>, TrivialState<T, U>>;
 
 impl<T, U: 'static> Holder<T, U> {
     /// Creates a new `Holder` instance with a function to initialize the data.

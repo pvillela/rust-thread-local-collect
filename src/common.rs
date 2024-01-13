@@ -80,7 +80,7 @@ where
 /// `U` is the type of the accumulated value resulting from an initial base value and
 /// the application of an operation to each thread-local value and the current accumulated
 /// value upon dropping of each thread-local value. (See [`new`](Control::new) method.)
-pub struct ControlS<T, State>
+pub struct ControlS<State>
 where
     State: ControlState,
 {
@@ -88,15 +88,15 @@ where
     pub(crate) state: Arc<Mutex<State>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
-    pub(crate) op: Arc<dyn Fn(T, &mut State::Acc, &ThreadId) + Send + Sync>,
+    pub(crate) op: Arc<dyn Fn(State::Dat, &mut State::Acc, &ThreadId) + Send + Sync>,
 }
 
 /// Locking functionality underlying [`ControlC`].
-impl<T, State> ControlS<T, State>
+impl<State> ControlS<State>
 where
-    State: ControlState<Dat = T>,
+    State: ControlState,
 {
-    fn op(&self, data: T, acc: &mut State::Acc, tid: &ThreadId) {
+    fn op(&self, data: State::Dat, acc: &mut State::Acc, tid: &ThreadId) {
         (self.op)(data, acc, tid)
     }
 
@@ -108,7 +108,7 @@ where
         self.state.lock().unwrap()
     }
 
-    fn accumulate_tl(&self, lock: &mut MutexGuard<'_, State>, data: T, tid: &ThreadId) {
+    fn accumulate_tl(&self, lock: &mut MutexGuard<'_, State>, data: State::Dat, tid: &ThreadId) {
         let acc = lock.deref_mut().acc_mut();
         self.op(data, acc, tid);
     }
@@ -167,7 +167,7 @@ where
         lock.ensure_tls_dropped(self.op.clone())
     }
 
-    fn tl_data_dropped(&self, tid: &ThreadId, data: Option<T>) {
+    fn tl_data_dropped(&self, tid: &ThreadId, data: Option<State::Dat>) {
         let mut lock = self.lock();
         lock.deregister_thread(tid);
         if let Some(data) = data {
@@ -201,29 +201,28 @@ impl<S: 'static> GuardedData<S> for Arc<Mutex<S>> {
 }
 
 /// Holds thead-local data to enable registering it with [`Control`].
-pub struct HolderS<T, GData, CtrlState>
+pub struct HolderS<GData, CState>
 where
-    T: 'static,
-    GData: GuardedData<Option<T>> + 'static,
-    CtrlState: ControlState<Dat = T>,
+    GData: GuardedData<Option<CState::Dat>> + 'static,
+    CState: ControlState,
+    CState::Dat: 'static,
 {
     pub(crate) data: GData,
-    pub(crate) control: RefCell<Option<ControlS<T, CtrlState>>>,
-    pub(crate) make_data: fn() -> T,
+    pub(crate) control: RefCell<Option<ControlS<CState>>>,
+    pub(crate) make_data: fn() -> CState::Dat,
 }
 
 /// Common trait supporting different `Holder` implementations.
-impl<T, GData, CtrlState> HolderS<T, GData, CtrlState>
+impl<GData, CState> HolderS<GData, CState>
 where
-    T: 'static,
-    GData: GuardedData<Option<T>> + 'static,
-    CtrlState: ControlState<Dat = T>,
+    GData: GuardedData<Option<CState::Dat>> + 'static,
+    CState: ControlState,
 {
-    fn control(&self) -> Ref<'_, Option<ControlS<T, CtrlState>>> {
+    fn control(&self) -> Ref<'_, Option<ControlS<CState>>> {
         self.control.borrow()
     }
 
-    fn make_data(&self) -> T {
+    fn make_data(&self) -> CState::Dat {
         (self.make_data)()
     }
 
@@ -232,7 +231,7 @@ where
     }
 
     /// Establishes link with control.
-    pub(crate) fn init_control(&self, control: &ControlS<T, CtrlState>, node: &CtrlState::Node) {
+    pub(crate) fn init_control(&self, control: &ControlS<CState>, node: &CState::Node) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
         control.register_node(node, &thread::current().id())
@@ -246,11 +245,7 @@ where
         }
     }
 
-    pub(crate) fn ensure_initialized(
-        &self,
-        control: &ControlS<T, CtrlState>,
-        node: &CtrlState::Node,
-    ) {
+    pub(crate) fn ensure_initialized(&self, control: &ControlS<CState>, node: &CState::Node) {
         if self.control().as_ref().is_none() {
             self.init_control(control, node);
         }
@@ -263,7 +258,7 @@ where
     fn drop_data(&self) {
         let mut data_guard = self.data_guard();
         let data = data_guard.take();
-        let control: Ref<'_, Option<ControlS<T, CtrlState>>> = self.control();
+        let control: Ref<'_, Option<ControlS<CState>>> = self.control();
         if control.is_none() {
             return;
         }
@@ -272,18 +267,18 @@ where
     }
 
     /// Invokes `f` on data. Panics if data is [`None`].
-    pub(crate) fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> V {
+    pub(crate) fn with_data<V>(&self, f: impl FnOnce(&CState::Dat) -> V) -> V {
         let guard = self.data_guard();
         // f(guard.unwrap()) // instead of 2 lines below
-        let data: Option<&T> = guard.as_ref();
+        let data: Option<&CState::Dat> = guard.as_ref();
         f(data.unwrap())
     }
 
     /// Invokes `f` on data. Panics if data is [`None`].
-    pub(crate) fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> V {
+    pub(crate) fn with_data_mut<V>(&self, f: impl FnOnce(&mut CState::Dat) -> V) -> V {
         let mut guard = self.data_guard();
         // f(guard.unwrap_mut()) // instead of 2 lines below
-        let data: Option<&mut T> = guard.as_mut();
+        let data: Option<&mut CState::Dat> = guard.as_mut();
         f(data.unwrap())
     }
 }
@@ -303,7 +298,7 @@ pub trait HolderLocalKey<T, Ctrl> {
     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V;
 }
 
-impl<T, State> Clone for ControlS<T, State>
+impl<State> Clone for ControlS<State>
 where
     State: ControlState,
 {
@@ -315,7 +310,7 @@ where
     }
 }
 
-impl<T: Debug, State: Debug> Debug for ControlS<T, State>
+impl<State: Debug> Debug for ControlS<State>
 where
     State: ControlState,
 {
@@ -324,7 +319,7 @@ where
     }
 }
 
-impl<T, GData, CtrlState> Debug for HolderS<T, GData, CtrlState>
+impl<T, GData, CtrlState> Debug for HolderS<GData, CtrlState>
 where
     T: Debug,
     GData: GuardedData<Option<T>> + Debug,
@@ -335,11 +330,10 @@ where
     }
 }
 
-impl<T, GData, CtrlState> Drop for HolderS<T, GData, CtrlState>
+impl<GData, CState> Drop for HolderS<GData, CState>
 where
-    T: 'static,
-    CtrlState: ControlState<Dat = T>,
-    GData: GuardedData<Option<T>> + 'static,
+    CState: ControlState,
+    GData: GuardedData<Option<CState::Dat>> + 'static,
 {
     /// Ensures the held data, if any, is deregistered from the associated [`Control`] instance
     /// and the control instance's accumulation operation is invoked with the held data.

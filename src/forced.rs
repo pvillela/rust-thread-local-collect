@@ -26,7 +26,7 @@ impl<T, U> ForcedState<T, U> {
     }
 }
 
-pub type Control<T, U> = ControlS<T, ForcedState<T, U>>;
+pub type Control<T, U> = ControlS<ForcedState<T, U>>;
 
 impl<T, U> Control<T, U>
 where
@@ -44,7 +44,7 @@ where
     }
 }
 
-pub type Holder<T, U> = HolderS<T, Arc<Mutex<Option<T>>>, ForcedState<T, U>>;
+pub type Holder<T, U> = HolderS<Arc<Mutex<Option<T>>>, ForcedState<T, U>>;
 
 impl<T, U: 'static> Holder<T, U> {
     /// Creates a new `Holder` instance with a function to initialize the data.
