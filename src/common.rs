@@ -43,10 +43,7 @@ impl<T, U, Node> ControlStateS<T, U, Node> {
     }
 }
 
-impl<T, U, Node> ControlState for ControlStateS<T, U, Node>
-where
-    Node: Clone,
-{
+impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
     type Acc = U;
     type Dat = T;
     type Node = Node;
@@ -60,7 +57,7 @@ where
     }
 
     fn register_node(&mut self, node: Self::Node, tid: &ThreadId) {
-        self.tmap.insert(tid.clone(), node.clone());
+        self.tmap.insert(tid.clone(), node);
     }
 
     fn deregister_thread(&mut self, tid: &ThreadId) {
