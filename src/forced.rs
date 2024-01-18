@@ -197,7 +197,7 @@ mod tests {
 
             {
                 let lock = control.lock();
-                let acc = &lock.acc;
+                let acc = lock.acc();
                 assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
             }
         }
@@ -266,7 +266,7 @@ mod tests {
 
             {
                 let lock = control.lock();
-                let acc = &lock.acc;
+                let acc = lock.acc();
                 assert_eq!(acc, &map, "Accumulator check");
             }
         }
@@ -335,7 +335,7 @@ mod tests {
 
             {
                 let lock = control.lock();
-                let acc = &lock.acc;
+                let acc = lock.acc();
                 assert_eq!(acc, &map, "Accumulator check");
             }
         }

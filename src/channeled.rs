@@ -63,10 +63,10 @@ impl<T, U> ChanneledState<T, U> {
 /// value upon dropping of each thread-local value. (See [`new`](Control::new) method.)
 pub struct Control<T, U> {
     /// Keeps track of registered threads and accumulated value.
-    pub(crate) state: Arc<Mutex<ChanneledState<T, U>>>,
+    state: Arc<Mutex<ChanneledState<T, U>>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
-    pub(crate) op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>,
+    op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>,
 }
 
 impl<T, U> Clone for Control<T, U> {

@@ -76,8 +76,6 @@ impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::ControlState;
-
     use super::{Control, Holder, HolderLocalKey};
 
     use std::{

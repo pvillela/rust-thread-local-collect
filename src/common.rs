@@ -30,19 +30,6 @@ pub struct ControlStateS<T, U, Node> {
     ensure_tls_dropped: fn(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
 }
 
-impl<T, U, Node> ControlStateS<T, U, Node> {
-    pub(crate) fn new(
-        acc: U,
-        ensure_tls_dropped: fn(this: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
-    ) -> Self {
-        Self {
-            acc,
-            tmap: HashMap::new(),
-            ensure_tls_dropped,
-        }
-    }
-}
-
 impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
     type Acc = U;
     type Dat = T;
@@ -66,6 +53,23 @@ impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
 
     fn ensure_tls_dropped(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
         (self.ensure_tls_dropped)(self, op)
+    }
+}
+
+impl<T, U, Node> ControlStateS<T, U, Node> {
+    pub(crate) fn new(
+        acc: U,
+        ensure_tls_dropped: fn(this: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
+    ) -> Self {
+        Self {
+            acc,
+            tmap: HashMap::new(),
+            ensure_tls_dropped,
+        }
+    }
+
+    pub fn acc(&self) -> &U {
+        ControlState::acc(self)
     }
 }
 

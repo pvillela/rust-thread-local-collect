@@ -281,7 +281,7 @@ mod tests {
 
             {
                 let lock = control.lock();
-                let acc = &lock.acc;
+                let acc = lock.acc();
                 assert_eq!(acc, &map, "Accumulator check");
             }
         }
