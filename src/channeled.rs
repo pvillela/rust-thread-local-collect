@@ -2,8 +2,7 @@
 //! as well as support for accumulating the thread-local values using a binary operation.
 
 use std::{
-    cell::{Ref, RefCell, RefMut},
-    collections::HashMap,
+    cell::RefCell,
     mem::replace,
     sync::{
         mpsc::{channel, Receiver, Sender},
@@ -11,16 +10,30 @@ use std::{
     },
     thread::{self, LocalKey, ThreadId},
 };
+
+enum ChannelItem<T> {
+    EndCollect,
+    Payload(ThreadId, T),
+}
+
+enum CollectStatus {
+    Terminated,
+    CycleCompleted,
+}
+
 pub struct ChanneledState<T, U> {
-    pub(crate) acc: U,
-    pub(crate) tmap: HashMap<ThreadId, Receiver<T>>,
+    acc: U,
+    sender: Sender<ChannelItem<T>>,
+    receiver: Receiver<ChannelItem<T>>,
 }
 
 impl<T, U> ChanneledState<T, U> {
-    pub(crate) fn new(acc: U) -> Self {
+    fn new(acc: U) -> Self {
+        let (sender, receiver) = channel();
         Self {
             acc,
-            tmap: HashMap::new(),
+            sender,
+            receiver,
         }
     }
 
@@ -32,32 +45,14 @@ impl<T, U> ChanneledState<T, U> {
         &mut self.acc
     }
 
-    fn register_node(&mut self, node: Receiver<T>, tid: &ThreadId) {
-        self.tmap.insert(tid.clone(), node);
-    }
-
-    fn deregister_thread(
-        &mut self,
-        tid: &ThreadId,
-        op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync),
-    ) {
-        if let Some(receiver) = self.tmap.remove(tid) {
-            // Drain data in receiver
-            for data in receiver {
-                op(data, &mut self.acc, tid)
+    fn collect_all(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) -> CollectStatus {
+        while let Ok(payload) = self.receiver.try_recv() {
+            match payload {
+                ChannelItem::Payload(tid, data) => op(data, &mut self.acc, &tid),
+                ChannelItem::EndCollect => return CollectStatus::Terminated,
             }
         }
-    }
-
-    fn collect_all(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
-        // println!("entered `ChanneledState::collect_all`");
-        for (tid, receiver) in self.tmap.iter() {
-            // Drain data in receiver
-            while let Ok(data) = receiver.try_recv() {
-                op(data, &mut self.acc, &tid)
-            }
-        }
-        // println!("exited `ChanneledState::collect_all`");
+        CollectStatus::CycleCompleted
     }
 }
 
@@ -85,8 +80,8 @@ impl<T, U> Clone for Control<T, U> {
 
 impl<T, U> Control<T, U>
 where
-    T: 'static,
-    U: 'static,
+    T: 'static + Send,
+    U: 'static + Send,
 {
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Control {
@@ -128,106 +123,100 @@ where
         replace(acc, replacement)
     }
 
-    fn register_node(&self, node: Receiver<T>, tid: &ThreadId) {
-        let mut lock = self.lock();
-        lock.register_node(node, tid)
+    pub fn start_collect(&self) {
+        let control = self.clone();
+        thread::spawn(move || {
+            loop {
+                let mut lock = control.lock();
+                let res = lock.collect_all(control.op.as_ref());
+                if let CollectStatus::Terminated = res {
+                    return;
+                }
+                thread::yield_now(); // this is unnecessary if Mutex is fair
+            }
+        });
+    }
+
+    pub fn end_collect(&self) {
+        self.lock().sender.send(ChannelItem::EndCollect).unwrap();
     }
 
     pub fn collect_all(&self, lock: &mut MutexGuard<'_, ChanneledState<T, U>>) {
-        // println!("entered `Control::collect_all`");
         lock.collect_all(self.op.as_ref());
-        // println!("exited `Control::collect_all`");
     }
+}
 
-    fn tl_sender_dropped(&self, tid: &ThreadId) {
-        let mut lock = self.lock();
-        lock.deregister_thread(tid, self.op.as_ref());
-    }
+struct HolderInner<T> {
+    tid: ThreadId,
+    sender: Sender<ChannelItem<T>>,
 }
 
 /// Holds thead-local data to enable registering it with [`Control`].
-pub struct Holder<T, U>
+pub struct Holder<T>(RefCell<Option<HolderInner<T>>>)
 where
-    T: 'static,
-    U: 'static,
-{
-    pub(crate) data: RefCell<Option<Sender<T>>>,
-    pub(crate) control: RefCell<Option<Control<T, U>>>,
-}
+    T: 'static;
 
-impl<T, U: 'static> Holder<T, U> {
+impl<T> Holder<T> {
     /// Creates a new `Holder` instance with a function to initialize the data.
     ///
     /// The `make_data` function will be called lazily when data is first accessed to initialize
     /// the inner data value.
     pub fn new() -> Self {
-        Self {
-            data: RefCell::new(None),
-            control: RefCell::new(None),
-        }
+        Self(RefCell::new(None))
     }
 
-    fn control(&self) -> Ref<'_, Option<Control<T, U>>> {
-        self.control.borrow()
-    }
+    // fn control(&self) -> Ref<'_, Option<Control<T, U>>> {
+    //      Ref::map(self.0.borrow(), |r|&r.map(|i|i.control))
 
-    fn sender_guard(&self) -> RefMut<'_, Option<Sender<T>>> {
-        self.data.borrow_mut()
-    }
+    // }
 
-    /// Establishes link with control.
-    fn init_control(&self, control: &Control<T, U>, node: Receiver<T>) {
-        let mut ctrl_ref = self.control.borrow_mut();
-        *ctrl_ref = Some(control.clone());
-        control.register_node(node, &thread::current().id())
-    }
+    // fn sender_guard(&self) -> RefMut<'_, Option<Sender<T>>> {
+    //     self.data.borrow_mut()
+    // }
 
-    fn init_channel(&self) -> Receiver<T> {
-        let mut guard = self.sender_guard();
-        let (sender, receiver) = channel();
-        *guard = Some(sender);
-        receiver
-    }
+    // /// Establishes link with control.
+    // fn init_control(&self, control: &Control<T, U>) {
+    //     let mut ctrl_ref = self.control.borrow_mut();
+    //     *ctrl_ref = Some(control.clone());
+    // }
 
-    pub fn ensure_initialized(&self, control: &Control<T, U>) {
-        if self.control().as_ref().is_none() {
-            let node = self.init_channel();
-            self.init_control(control, node);
-        }
-    }
+    // fn init_channel(&self) -> Receiver<T> {
+    //     let mut guard = self.sender_guard();
+    //     let (sender, receiver) = channel();
+    //     *guard = Some(sender);
+    //     receiver
+    // }
 
-    fn drop_sender(&self) {
-        let mut sender_guard = self.sender_guard();
-        let sender = sender_guard.take();
-        drop(sender);
-        let control: Ref<'_, Option<Control<T, U>>> = self.control();
-        match control.as_ref() {
-            None => (),
-            Some(control) => control.tl_sender_dropped(&thread::current().id()),
+    pub fn ensure_initialized<U>(&self, control: &Control<T, U>) {
+        let mut inner = self.0.borrow_mut();
+        if inner.is_none() {
+            let lock = control.state.lock().unwrap();
+            let sender = lock.sender.clone();
+            *inner = Some(HolderInner {
+                tid: thread::current().id(),
+                sender,
+            })
         }
     }
 
     pub fn send_data(&self, data: T) {
-        self.data.borrow().as_ref().unwrap().send(data).unwrap();
+        let inner_opt = self.0.borrow();
+        let inner = inner_opt.as_ref().unwrap();
+        inner
+            .sender
+            .send(ChannelItem::Payload(inner.tid, data))
+            .unwrap();
     }
 }
 
-impl<T, U> Drop for Holder<T, U> {
-    /// Ensures the held data, if any, is deregistered from the associated [`Control`] instance
-    /// and the control instance's accumulation operation is invoked with the held data.
-    fn drop(&mut self) {
-        self.drop_sender()
-    }
-}
-
-pub trait HolderLocalKey<T, Ctrl> {
-    fn ensure_initialized(&'static self, control: &Ctrl);
+pub trait HolderLocalKey<T> {
+    fn ensure_initialized<U>(&'static self, control: &Control<T, U>);
 
     fn send_data(&'static self, data: T);
 }
 
-impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
-    fn ensure_initialized(&'static self, control: &Control<T, U>) {
+impl<T> HolderLocalKey<T> for LocalKey<Holder<T>> {
+    fn ensure_initialized<U>(&'static self, control: &Control<T, U>) {
         self.with(|h| {
             h.ensure_initialized(&control);
         })
@@ -258,7 +247,7 @@ mod tests {
     type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
 
     thread_local! {
-        static MY_FOO_MAP: Holder<Data, AccumulatorMap> = Holder::new();
+        static MY_FOO_MAP: Holder<Data> = Holder::new();
     }
 
     fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
@@ -312,6 +301,8 @@ mod tests {
             println!("spawned_tid={:?}", spawned_tids);
 
             hs.into_iter().for_each(|h| h.join().unwrap());
+
+            control.collect_all(&mut control.lock());
 
             println!("after hs join: {:?}", control.lock().acc);
         });
@@ -369,9 +360,66 @@ mod tests {
 
             h.join().unwrap();
 
-            println!("after h.join(): {:?}", control.lock().acc);
-
             control.collect_all(&mut control.lock());
+
+            println!("after h.join(): {:?}", control.lock().acc);
+        });
+
+        {
+            let spawned_tid = spawned_tid.try_read().unwrap();
+            let map1 = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
+            let map2 = HashMap::from([(1, Foo("aa".to_owned())), (2, Foo("bb".to_owned()))]);
+            let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
+
+            {
+                let lock = control.lock();
+                let acc = &lock.acc;
+                assert_eq!(acc, &map, "Accumulator check");
+            }
+        }
+    }
+
+    #[test]
+    fn test_3() {
+        let control = Control::new(HashMap::new(), op);
+
+        let main_tid = thread::current().id();
+        println!("main_tid={:?}", main_tid);
+        let spawned_tid = RwLock::new(thread::current().id());
+
+        {
+            send_tl_data(1, Foo("a".to_owned()), &control);
+            send_tl_data(2, Foo("b".to_owned()), &control);
+            println!("after main thread inserts: {:?}", control.lock().acc);
+        }
+
+        thread::sleep(Duration::from_millis(100));
+
+        control.start_collect();
+
+        thread::scope(|s| {
+            let h = s.spawn(|| {
+                let mut lock = spawned_tid.write().unwrap();
+                *lock = thread::current().id();
+                drop(lock);
+
+                send_tl_data(1, Foo("aa".to_owned()), &control);
+
+                thread::sleep(Duration::from_millis(200));
+
+                send_tl_data(2, Foo("bb".to_owned()), &control);
+            });
+
+            thread::sleep(Duration::from_millis(50));
+
+            let spawned_tid = spawned_tid.try_read().unwrap();
+            println!("spawned_tid={:?}", spawned_tid);
+
+            h.join().unwrap();
+
+            control.end_collect();
+
+            println!("after h.join(): {:?}", control.lock().acc);
         });
 
         {
