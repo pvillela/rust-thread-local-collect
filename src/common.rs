@@ -102,12 +102,12 @@ where
     ///
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn lock<'a>(&'a self) -> MutexGuard<'a, State> {
+    pub fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap()
     }
 
     fn accumulate_tl(&self, lock: &mut MutexGuard<'_, State>, data: State::Dat, tid: &ThreadId) {
-        let acc = lock.deref_mut().acc_mut();
+        let acc = lock.acc_mut();
         self.op(data, acc, tid);
     }
 
@@ -117,7 +117,7 @@ where
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn with_acc<V>(&self, lock: &MutexGuard<'_, State>, f: impl FnOnce(&State::Acc) -> V) -> V {
-        let acc = lock.deref().acc();
+        let acc = lock.acc();
         f(acc)
     }
 
@@ -132,7 +132,7 @@ where
         lock: &mut MutexGuard<'_, State>,
         replacement: State::Acc,
     ) -> State::Acc {
-        let acc = lock.deref_mut().acc_mut();
+        let acc = lock.acc_mut();
         replace(acc, replacement)
     }
 
@@ -237,9 +237,8 @@ where
 
     pub(crate) fn init_data(&self) {
         let mut guard = self.data_guard();
-        let data = guard.deref_mut();
-        if data.is_none() {
-            *data = Some(self.make_data());
+        if guard.is_none() {
+            *guard = Some(self.make_data());
         }
     }
 

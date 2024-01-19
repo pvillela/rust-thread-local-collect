@@ -84,6 +84,14 @@ impl<T, U: 'static> Holder0<T, U> {
 //=================
 // Public wrappers
 
+pub struct ControlLock<'a, T, U>(MutexGuard<'a, JoinedState<T, U>>);
+
+impl<'a, T, U> ControlLock<'a, T, U> {
+    pub fn acc(&self) -> &U {
+        self.0.acc()
+    }
+}
+
 #[derive(Debug)]
 pub struct Control<T, U>(Control0<T, U>);
 
@@ -100,8 +108,8 @@ where
     ///
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn lock<'a>(&'a self) -> MutexGuard<'a, JoinedState<T, U>> {
-        self.0.lock()
+    pub fn lock(&self) -> ControlLock<'_, T, U> {
+        ControlLock(self.0.lock())
     }
 
     /// Provides access to the accumulated value in the [Control] struct.
@@ -109,12 +117,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn with_acc<V>(
-        &self,
-        lock: &MutexGuard<'_, JoinedState<T, U>>,
-        f: impl FnOnce(&U) -> V,
-    ) -> V {
-        self.0.with_acc(lock, f)
+    pub fn with_acc<V>(&self, lock: &ControlLock<'_, T, U>, f: impl FnOnce(&U) -> V) -> V {
+        self.0.with_acc(&lock.0, f)
     }
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
@@ -123,8 +127,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn take_acc(&self, lock: &mut MutexGuard<'_, JoinedState<T, U>>, replacement: U) -> U {
-        self.0.take_acc(lock, replacement)
+    pub fn take_acc(&self, lock: &mut ControlLock<'_, T, U>, replacement: U) -> U {
+        self.0.take_acc(&mut lock.0, replacement)
     }
 
     /// Forces all registered thread-local values that have not already been dropped to be effectively dropped
@@ -147,8 +151,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn ensure_tls_dropped(&self, lock: &mut MutexGuard<'_, JoinedState<T, U>>) {
-        self.0.ensure_tls_dropped(lock)
+    pub fn ensure_tls_dropped(&self, lock: &mut ControlLock<'_, T, U>) {
+        self.0.ensure_tls_dropped(&mut lock.0)
     }
 }
 
@@ -324,7 +328,7 @@ mod tests {
 
             {
                 let lock = control.lock();
-                let acc = &lock.acc;
+                let acc = lock.acc();
                 assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
             }
         }
