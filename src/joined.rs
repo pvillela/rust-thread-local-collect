@@ -5,11 +5,11 @@ pub use crate::common::HolderLocalKey;
 use crate::common::{ControlS, ControlStateS, HolderS};
 use std::{
     cell::RefCell,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     thread::{LocalKey, ThreadId},
 };
 
-pub type JoinedState<T, U> = ControlStateS<T, U, usize>;
+type JoinedState<T, U> = ControlStateS<T, U, usize>;
 
 impl<T, U> JoinedState<T, U>
 where
@@ -24,7 +24,7 @@ where
             //   "happens-before" relationship and the only possible remaining activity on those threads
             //   would be Holder drop method execution, but that method uses the above Mutex to prevent
             //   race conditions.
-            let tl: &LocalKey<Holder<T, U>> = unsafe { tl_from_addr(*addr) };
+            let tl: &LocalKey<Holder0<T, U>> = unsafe { tl_from_addr(*addr) };
             tl.with(|h| {
                 let mut data_ref = h.data.borrow_mut();
                 let data = data_ref.take();
@@ -47,15 +47,15 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
     &*(addr as *const LocalKey<H>)
 }
 
-pub type Control<T, U> = ControlS<JoinedState<T, U>>;
+type Control0<T, U> = ControlS<JoinedState<T, U>>;
 
-impl<T, U> Control<T, U>
+impl<T, U> Control0<T, U>
 where
     T: 'static,
     U: 'static,
 {
-    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-        Control {
+    fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
+        Control0 {
             state: Arc::new(Mutex::new(JoinedState::new(
                 acc_base,
                 JoinedState::ensure_tls_dropped,
@@ -65,19 +65,131 @@ where
     }
 }
 
-pub type Holder<T, U> = HolderS<RefCell<Option<T>>, JoinedState<T, U>>;
+type Holder0<T, U> = HolderS<RefCell<Option<T>>, JoinedState<T, U>>;
 
-impl<T, U: 'static> Holder<T, U> {
+impl<T, U: 'static> Holder0<T, U> {
     /// Creates a new `Holder` instance with a function to initialize the data.
     ///
     /// The `make_data` function will be called lazily when data is first accessed to initialize
     /// the inner data value.
-    pub fn new(make_data: fn() -> T) -> Self {
+    fn new(make_data: fn() -> T) -> Self {
         Self {
             data: RefCell::new(None),
             control: RefCell::new(None),
             make_data,
         }
+    }
+}
+
+//=================
+// Public wrappers
+
+#[derive(Debug)]
+pub struct Control<T, U>(Control0<T, U>);
+
+impl<T, U> Control<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
+    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
+        Self(Control0::new(acc_base, op))
+    }
+
+    /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
+    ///
+    /// An cquired lock can be used with multiple method calls and droped after the last call.
+    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
+    pub fn lock<'a>(&'a self) -> MutexGuard<'a, JoinedState<T, U>> {
+        self.0.lock()
+    }
+
+    /// Provides access to the accumulated value in the [Control] struct.
+    ///
+    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
+    /// An cquired lock can be used with multiple method calls and droped after the last call.
+    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
+    pub fn with_acc<V>(
+        &self,
+        lock: &MutexGuard<'_, JoinedState<T, U>>,
+        f: impl FnOnce(&U) -> V,
+    ) -> V {
+        self.0.with_acc(lock, f)
+    }
+
+    /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
+    /// the existing accumulated value.
+    ///
+    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
+    /// An cquired lock can be used with multiple method calls and droped after the last call.
+    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
+    pub fn take_acc(&self, lock: &mut MutexGuard<'_, JoinedState<T, U>>, replacement: U) -> U {
+        self.0.take_acc(lock, replacement)
+    }
+
+    /// Forces all registered thread-local values that have not already been dropped to be effectively dropped
+    /// by replacing the [`Holder`] data with [`None`], and accumulates the values contained in those thread-locals.
+    ///
+    /// Should only be called from a thread (typically the main thread) under the following conditions:
+    /// - All other threads that use this [`Control`] instance must have been directly or indirectly spawned
+    ///   from this thread; ***and***
+    /// - Any prior updates to holder values must have had a *happened before* relationship to this call;
+    ///   ***and***
+    /// - Any further updates to holder values must have a *happened after* relationship to this call.
+    ///   
+    /// In particular, the last two conditions are satisfied if the call to this method takes place after
+    /// this thread joins (directly or indirectly) with all threads that have registered with this [`Control`]
+    /// instance.
+    ///
+    /// These conditions ensure the absence of data races with a proper "happens-before" condition between any
+    /// thread-local data updates and this call.
+    ///
+    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
+    /// An cquired lock can be used with multiple method calls and droped after the last call.
+    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
+    pub fn ensure_tls_dropped(&self, lock: &mut MutexGuard<'_, JoinedState<T, U>>) {
+        self.0.ensure_tls_dropped(lock)
+    }
+}
+
+#[derive(Debug)]
+pub struct Holder<T, U>(Holder0<T, U>)
+where
+    T: 'static;
+
+impl<T, U> Holder<T, U>
+where
+    U: 'static,
+{
+    /// Creates a new `Holder` instance with a function to initialize the data.
+    ///
+    /// The `make_data` function will be called lazily when data is first accessed to initialize
+    /// the inner data value.
+    pub fn new(make_data: fn() -> T) -> Self {
+        Self(Holder0::new(make_data))
+    }
+
+    /// Establishes link with control.
+    fn init_control(&self, control: &Control<T, U>, node: usize) {
+        self.0.init_control(&control.0, node)
+    }
+
+    fn init_data(&self) {
+        self.0.init_data()
+    }
+
+    fn ensure_initialized(&self, control: &Control<T, U>, node: usize) {
+        self.0.ensure_initialized(&control.0, node)
+    }
+
+    /// Invokes `f` on data. Panics if data is [`None`].
+    fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> V {
+        self.0.with_data(f)
+    }
+
+    /// Invokes `f` on data. Panics if data is [`None`].
+    fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> V {
+        self.0.with_data_mut(f)
     }
 }
 
