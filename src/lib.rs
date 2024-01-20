@@ -76,3 +76,4 @@ mod common;
 pub mod forced;
 pub mod joined;
 pub mod simple_joined;
+pub use common::HolderLocalKey;

@@ -1,13 +1,22 @@
-//! Support for ensuring that destructors are run on thread-local variables after the threads terminate,
-//! as well as support for accumulating the thread-local values using a binary operation.
+//! This module supports the collection and aggregation of the values of a designated thread-local variable
+//! across threads. The following features and constraints apply:
+//!
+//! - The designated thread-local variable may be defined and used in the thread responsible for
+//! collection/aggregation.
+//! - The collocation/aggregation operation should only be executed after all participating threads,
+//! other than the thread responsible for collection/aggregation, have
+//! terminated and joined directly or indirectly into the thread respnosible for collection. Implicit joins by
+//! scoped threads are correctly handled.
 
-pub use crate::common::HolderLocalKey;
-use crate::common::{ControlS, ControlStateS, HolderS};
+use crate::common::{ControlS, ControlStateS, HolderLocalKey, HolderS};
 use std::{
     cell::RefCell,
     sync::{Arc, Mutex, MutexGuard},
     thread::{LocalKey, ThreadId},
 };
+
+//=================
+// Core implementation based on common module
 
 type JoinedState<T, U> = ControlStateS<T, U, usize>;
 
@@ -16,14 +25,23 @@ where
     T: 'static,
     U: 'static,
 {
-    fn ensure_tls_dropped(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
+    /// This function is UNSAFE. Its unsafe nature is masked so that it can be used as part of the framework
+    /// defined in the [crate::common] module. [`Control::collect_all`] is flagged as unsafe because this
+    /// function is unsafe.
+    ///
+    /// This function can be called safely provided that:
+    /// - All other threads have terminaged and been joined, which means that there is a proper
+    ///   "happens-before" relationship and the only possible remaining activity on those threads
+    ///   would be Holder drop method execution on implicitly joined scoped threads,
+    ///   but that method uses the above Mutex to prevent race conditions.
+    fn collect_all(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
         for (tid, addr) in state.tmap.iter() {
             log::trace!("executing `ensure_tls_dropped` for key={:?}", tid);
             // Safety: provided that:
             // - All other threads have terminaged and been joined, which means that there is a proper
             //   "happens-before" relationship and the only possible remaining activity on those threads
-            //   would be Holder drop method execution, but that method uses the above Mutex to prevent
-            //   race conditions.
+            //   would be Holder drop method execution on implicitly joined scoped threads,
+            //   but that method uses the above Mutex to prevent race conditions.
             let tl: &LocalKey<Holder0<T, U>> = unsafe { tl_from_addr(*addr) };
             tl.with(|h| {
                 let mut data_ref = h.data.borrow_mut();
@@ -58,7 +76,7 @@ where
         Control0 {
             state: Arc::new(Mutex::new(JoinedState::new(
                 acc_base,
-                JoinedState::ensure_tls_dropped,
+                JoinedState::collect_all,
             ))),
             op: Arc::new(op),
         }
@@ -68,10 +86,6 @@ where
 type Holder0<T, U> = HolderS<RefCell<Option<T>>, JoinedState<T, U>>;
 
 impl<T, U: 'static> Holder0<T, U> {
-    /// Creates a new `Holder` instance with a function to initialize the data.
-    ///
-    /// The `make_data` function will be called lazily when data is first accessed to initialize
-    /// the inner data value.
     fn new(make_data: fn() -> T) -> Self {
         Self {
             data: RefCell::new(None),
@@ -84,14 +98,23 @@ impl<T, U: 'static> Holder0<T, U> {
 //=================
 // Public wrappers
 
+/// Lock object required for certain operations on [`Control`].
+///
+/// Obtained by calling [`Control::lock`].
+///
+/// This object also provides convenient read-only access to [Control]'s accumulated value.
 pub struct ControlLock<'a, T, U>(MutexGuard<'a, JoinedState<T, U>>);
 
 impl<'a, T, U> ControlLock<'a, T, U> {
+    /// Returns the [`Control`] object's accumulated value.
     pub fn acc(&self) -> &U {
         self.0.acc()
     }
 }
 
+/// Keeps track of threads using the designated thread-local variable. Contains an accumulation operation `op`
+/// and an accumulated value `acc`. The accumulated value is updated by applying `op` to each thread-local
+/// data value and `acc` when the thread-local value is dropped or the [`Control::collect_all`] method is called.
 #[derive(Debug)]
 pub struct Control<T, U>(Control0<T, U>);
 
@@ -100,23 +123,22 @@ where
     T: 'static,
     U: 'static,
 {
+    /// Instantiates a [`Control`] object with `acc`_base as the initial value of its accumulator and
+    /// `op` as its aggregation operation.
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Self(Control0::new(acc_base, op))
     }
 
     /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
-    ///
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn lock(&self) -> ControlLock<'_, T, U> {
         ControlLock(self.0.lock())
     }
 
-    /// Provides access to the accumulated value in the [Control] struct.
+    /// Provides read-only access to the accumulated value in the [Control] struct.
     ///
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
+    ///
+    /// See also [`take_acc`](Self::take_acc) and [`ControlLock::acc`].
     pub fn with_acc<V>(&self, lock: &ControlLock<'_, T, U>, f: impl FnOnce(&U) -> V) -> V {
         self.0.with_acc(&lock.0, f)
     }
@@ -125,8 +147,8 @@ where
     /// the existing accumulated value.
     ///
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
+    ///
+    /// See also [`with_acc`](Self::with_acc) and [`ControlLock::acc`].
     pub fn take_acc(&self, lock: &mut ControlLock<'_, T, U>, replacement: U) -> U {
         self.0.take_acc(&mut lock.0, replacement)
     }
@@ -134,7 +156,7 @@ where
     /// Forces all registered thread-local values that have not already been dropped to be effectively dropped
     /// by replacing the [`Holder`] data with [`None`], and accumulates the values contained in those thread-locals.
     ///
-    /// Should only be called from a thread (typically the main thread) under the following conditions:
+    /// This function can be safely called from a thread (typically the main thread) under the following conditions:
     /// - All other threads that use this [`Control`] instance must have been directly or indirectly spawned
     ///   from this thread; ***and***
     /// - Any prior updates to holder values must have had a *happened before* relationship to this call;
@@ -143,19 +165,20 @@ where
     ///   
     /// In particular, the last two conditions are satisfied if the call to this method takes place after
     /// this thread joins (directly or indirectly) with all threads that have registered with this [`Control`]
-    /// instance.
+    /// instance. This holds even for implicit joins from scoped threads.
     ///
     /// These conditions ensure the absence of data races with a proper "happens-before" condition between any
     /// thread-local data updates and this call.
     ///
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn ensure_tls_dropped(&self, lock: &mut ControlLock<'_, T, U>) {
-        self.0.ensure_tls_dropped(&mut lock.0)
+    pub unsafe fn collect_all(&self, lock: &mut ControlLock<'_, T, U>) {
+        self.0.collect_all(&mut lock.0)
     }
 }
 
+/// Holds the data to be accumulated and registers with a [`Control`] instance to provide the framework's capabilities.
+///
+/// Functionality for [`Holder`] is provided through [`HolderLocalKey`].
 #[derive(Debug)]
 pub struct Holder<T, U>(Holder0<T, U>)
 where
@@ -203,20 +226,22 @@ impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
         self.with(|h| h.init_control(&control, addr_of_tl(self)))
     }
 
+    /// Initializes [`Holder`] data.
     fn init_data(&'static self) {
         self.with(|h| h.init_data())
     }
 
+    /// Ensures [`Holder`] is properly initialized by initializing it if not.
     fn ensure_initialized(&'static self, control: &Control<T, U>) {
         self.with(|h| h.ensure_initialized(&control, addr_of_tl(self)))
     }
 
-    /// Invokes `f` on data. Panics if data is [`None`].
+    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
     fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> V {
         self.with(|h| h.with_data(f))
     }
 
-    /// Invokes `f` on data. Panics if data is [`None`].
+    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V {
         self.with(|h| h.with_data_mut(f))
     }
@@ -384,7 +409,7 @@ mod tests {
 
             println!("after h.join(): {:?}", control);
 
-            control.ensure_tls_dropped(&mut control.lock());
+            unsafe { control.collect_all(&mut control.lock()) };
             // let keys = [];
             // assert_control_map(&control, &keys, "After call to `ensure_tls_dropped`");
         });

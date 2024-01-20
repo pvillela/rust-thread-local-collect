@@ -8,7 +8,7 @@ use std::{
     thread::{self, ThreadId},
 };
 
-pub trait ControlState {
+pub(crate) trait ControlState {
     type Node;
     type Acc;
     type Dat;
@@ -17,14 +17,11 @@ pub trait ControlState {
     fn acc_mut(&mut self) -> &mut Self::Acc;
     fn register_node(&mut self, node: Self::Node, tid: &ThreadId);
     fn deregister_thread(&mut self, tid: &ThreadId);
-    fn ensure_tls_dropped(
-        &mut self,
-        op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync),
-    );
+    fn collect_all(&mut self, op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync));
 }
 
 #[derive(Debug)]
-pub struct ControlStateS<T, U, Node> {
+pub(crate) struct ControlStateS<T, U, Node> {
     pub(crate) acc: U,
     pub(crate) tmap: HashMap<ThreadId, Node>,
     ensure_tls_dropped: fn(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
@@ -51,7 +48,7 @@ impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
         self.tmap.remove(tid);
     }
 
-    fn ensure_tls_dropped(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
+    fn collect_all(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
         (self.ensure_tls_dropped)(self, op)
     }
 }
@@ -78,7 +75,7 @@ impl<T, U, Node> ControlStateS<T, U, Node> {
 /// `U` is the type of the accumulated value resulting from an initial base value and
 /// the application of an operation to each thread-local value and the current accumulated
 /// value upon dropping of each thread-local value. (See [`new`](Control::new) method.)
-pub struct ControlS<State>
+pub(crate) struct ControlS<State>
 where
     State: ControlState,
 {
@@ -161,8 +158,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn ensure_tls_dropped(&self, lock: &mut MutexGuard<'_, State>) {
-        lock.ensure_tls_dropped(self.op.deref())
+    pub fn collect_all(&self, lock: &mut MutexGuard<'_, State>) {
+        lock.collect_all(self.op.deref())
     }
 
     fn tl_data_dropped(&self, tid: &ThreadId, data: Option<State::Dat>) {
@@ -174,7 +171,7 @@ where
     }
 }
 
-pub trait GuardedData<S: 'static> {
+pub(crate) trait GuardedData<S: 'static> {
     type Guard<'a>: DerefMut<Target = S> + 'a
     where
         Self: 'a;
@@ -199,7 +196,7 @@ impl<S: 'static> GuardedData<S> for Arc<Mutex<S>> {
 }
 
 /// Holds thead-local data to enable registering it with [`Control`].
-pub struct HolderS<GData, CState>
+pub(crate) struct HolderS<GData, CState>
 where
     GData: GuardedData<Option<CState::Dat>> + 'static,
     CState: ControlState,
@@ -280,18 +277,25 @@ where
     }
 }
 
+/// Provides convenient access to `Holder` functionality across the different framework modules
+/// ([`crate::joined`], [`crate::simple_joined`], [`crate::forced`]).
+///
+/// - `Ctrl` is the module-specific Control type.
+/// - References to `Holder` in methods refer to the module-specific Holder type.
 pub trait HolderLocalKey<T, Ctrl> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Ctrl);
 
+    /// Initializes `Holder` data.
     fn init_data(&'static self);
 
+    /// Ensures `Holder` is properly initialized (both data and control link) by initializing it if not.
     fn ensure_initialized(&'static self, control: &Ctrl);
 
-    /// Invokes `f` on data. Panics if data is [`None`].
+    /// Invokes `f` on `Holder` data. Panics if data is not initialized.
     fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> V;
 
-    /// Invokes `f` on data. Panics if data is [`None`].
+    /// Invokes `f` on `Holder` data. Panics if data is not initialized.
     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V;
 }
 

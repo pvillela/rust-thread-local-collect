@@ -1,8 +1,8 @@
 //! Support for ensuring that destructors are run on thread-local variables after the threads terminate,
 //! as well as support for accumulating the thread-local values using a binary operation.
 
-pub use crate::common::HolderLocalKey;
 use crate::common::{ControlS, ControlStateS, HolderS};
+pub use crate::HolderLocalKey;
 use std::{
     cell::RefCell,
     sync::{Arc, Mutex},

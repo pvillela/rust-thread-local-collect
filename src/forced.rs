@@ -1,8 +1,8 @@
 //! Support for ensuring that destructors are run on thread-local variables after the threads terminate,
 //! as well as support for accumulating the thread-local values using a binary operation.
 
-pub use crate::common::HolderLocalKey;
 use crate::common::{ControlS, ControlStateS, HolderS};
+pub use crate::HolderLocalKey;
 use std::{
     cell::RefCell,
     sync::{Arc, Mutex},
@@ -253,7 +253,7 @@ mod tests {
 
             println!("after h.join(): {:?}", control);
 
-            control.ensure_tls_dropped(&mut control.lock());
+            control.collect_all(&mut control.lock());
             // let keys = [];
             // assert_control_map(&control, &keys, "After call to `ensure_tls_dropped`");
         });
@@ -322,7 +322,7 @@ mod tests {
 
             println!("after h.join(): {:?}", control);
 
-            control.ensure_tls_dropped(&mut control.lock());
+            control.collect_all(&mut control.lock());
             // let keys = [];
             // assert_control_map(&control, &keys, "After call to `ensure_tls_dropped`");
         });

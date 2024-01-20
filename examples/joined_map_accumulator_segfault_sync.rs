@@ -12,7 +12,10 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_drop::joined::{Control, Holder, HolderLocalKey};
+use thread_local_drop::{
+    joined::{Control, Holder},
+    HolderLocalKey,
+};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -78,7 +81,7 @@ fn main() {
         for k in 0..N_REPEATS1 {
             thread::sleep(Duration::from_millis(SLEEP_MILLIS_MAIN));
             let mut control_lock = control.lock();
-            control.ensure_tls_dropped(&mut control_lock);
+            unsafe { control.collect_all(&mut control_lock) };
             let acc = control.take_acc(&mut control_lock, HashMap::new());
             let len = format!("{:?}", acc).len();
             println!("k={k},len={len}; ");
@@ -89,7 +92,8 @@ fn main() {
         for k in 0..N_REPEATS2 {
             thread::sleep(Duration::from_millis(SLEEP_MILLIS_MAIN));
             let mut control_lock = control.lock();
-            control.ensure_tls_dropped(&mut control_lock);
+            // SAFETY: OK to call function below after all other threads have joined.
+            unsafe { control.collect_all(&mut control_lock) };
             let acc = control.take_acc(&mut control_lock, HashMap::new());
             let len = format!("{:?}", acc).len();
             println!("k={k},len={len}; ");

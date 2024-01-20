@@ -8,7 +8,10 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_drop::joined::{Control, Holder, HolderLocalKey};
+use thread_local_drop::{
+    joined::{Control, Holder},
+    HolderLocalKey,
+};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -77,7 +80,8 @@ fn main() {
 
     {
         let mut lock = control.lock();
-        control.ensure_tls_dropped(&mut lock);
+        // SAFETY: OK to call function below after all other threads have joined.
+        unsafe { control.collect_all(&mut lock) };
 
         println!("After call to `ensure_tls_dropped`: control={:?}", control);
 

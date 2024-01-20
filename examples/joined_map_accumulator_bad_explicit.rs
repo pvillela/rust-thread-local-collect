@@ -8,7 +8,10 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_drop::joined::{Control, Holder, HolderLocalKey};
+use thread_local_drop::{
+    joined::{Control, Holder},
+    HolderLocalKey,
+};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -82,7 +85,7 @@ fn main() {
 
         // Don't do this in production code. For demonstration purposes only.
         // Making this call before joining with `h` is dangerous because there is a data race.
-        control.ensure_tls_dropped(&mut control.lock());
+        unsafe { control.collect_all(&mut control.lock()) };
 
         println!(
             "After premature call to `ensure_tls_dropped`: control={:?}",
@@ -98,8 +101,8 @@ fn main() {
     {
         let mut lock = control.lock();
 
-        // Due to the explicit join above, there is no data race here.
-        control.ensure_tls_dropped(&mut lock);
+        // SAFETY: Due to the explicit join above, there is no data race here.
+        unsafe { control.collect_all(&mut lock) };
 
         println!(
             "After 2nd call to `ensure_tls_dropped`: control={:?}",

@@ -8,7 +8,10 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_drop::joined::{Control, Holder, HolderLocalKey};
+use thread_local_drop::{
+    joined::{Control, Holder},
+    HolderLocalKey,
+};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -82,7 +85,7 @@ fn main() {
 
         // Don't do this in production code. For demonstration purposes only.
         // Making this call before joining with `_h` is dangerous because there is a data race.
-        control.ensure_tls_dropped(&mut control.lock());
+        unsafe { control.collect_all(&mut control.lock()) };
 
         println!(
             "After premature call to `ensure_tls_dropped`: control={:?}",
@@ -98,12 +101,12 @@ fn main() {
     {
         let mut lock = control.lock();
 
-        // Due to the implicit join above, we have a data race here. Therefore, the
+        // SAFETY: Due to the implicit join above, we have a data race here. Therefore, the
         // address in `control`'s `tmap` associated with the spawned thread may point to an invalid memory chunk,
         // resulting in a sgementation fault when the address is dereferenced by `ensure_tls_dropped`.
         // In case the memory chunk pointed to by the address is valid, there may be additional issues further
         // below where the accumulator is printed.
-        control.ensure_tls_dropped(&mut lock);
+        unsafe { control.collect_all(&mut lock) };
 
         println!(
             "After 2nd call to `ensure_tls_dropped`: control={:?}",

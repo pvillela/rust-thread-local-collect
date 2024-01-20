@@ -1,7 +1,10 @@
 //! Simple example usage of [`thread_local_drop`].
 
 use std::thread::{self, ThreadId};
-use thread_local_drop::joined::{Control, Holder, HolderLocalKey};
+use thread_local_drop::{
+    joined::{Control, Holder},
+    HolderLocalKey,
+};
 
 // Define your data type, e.g.:
 type Data = i32;
@@ -43,8 +46,8 @@ fn main() {
         // Acquire `control`'s lock.
         let mut lock = control.lock();
 
-        // Call this after all other threads registered with `control` have been joined.
-        control.ensure_tls_dropped(&mut lock);
+        // SAFETY: Call this after all other threads registered with `control` have been joined.
+        unsafe { control.collect_all(&mut lock) };
 
         control.with_acc(&lock, |acc| println!("accumulated={}", acc));
     }
