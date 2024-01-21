@@ -1,9 +1,8 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads. The following features and constraints apply:
-//!
+//! across threads. The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
 //! collection/aggregation.
-//! - The collocation/aggregation operation should only be executed after all participating threads,
+//! - The collection/aggregation function is unsafe unless executed after all participating threads,
 //! other than the thread responsible for collection/aggregation, have
 //! terminated and joined directly or indirectly into the thread respnosible for collection. Implicit joins by
 //! scoped threads are correctly handled.
@@ -103,6 +102,14 @@ impl<T, U: 'static> Holder0<T, U> {
 /// Obtained by calling [`Control::lock`].
 ///
 /// This object also provides convenient read-only access to [Control]'s accumulated value.
+///
+/// Note:
+/// - The aggregated value is reflective of all participating threads if and only if it is accessed after
+/// all participating theads have
+///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
+///   - [`Control::collect_all`] has been called after the above.
+/// - Implicit joins by scoped threads are correctly handled.
+
 pub struct ControlLock<'a, T, U>(MutexGuard<'a, JoinedState<T, U>>);
 
 impl<'a, T, U> ControlLock<'a, T, U> {
@@ -136,6 +143,13 @@ where
 
     /// Provides read-only access to the accumulated value in the [Control] struct.
     ///
+    /// Note:
+    /// - The aggregated value is reflective of all participating threads if and only if it is accessed after
+    /// all participating theads have
+    ///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
+    ///   - [`Control::collect_all`] has been called after the above.
+    /// - Implicit joins by scoped threads are correctly handled.
+    ///
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     ///
     /// See also [`take_acc`](Self::take_acc) and [`ControlLock::acc`].
@@ -145,6 +159,13 @@ where
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
     /// the existing accumulated value.
+    ///
+    /// Note:
+    /// - The aggregated value is reflective of all participating threads if and only if it is accessed after
+    /// all participating theads have
+    ///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
+    ///   - [`Control::collect_all`] has been called after the above.
+    /// - Implicit joins by scoped threads are correctly handled.
     ///
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     ///
@@ -190,8 +211,7 @@ where
 {
     /// Creates a new `Holder` instance with a function to initialize the data.
     ///
-    /// The `make_data` function will be called lazily when data is first accessed to initialize
-    /// the inner data value.
+    /// The `make_data` function will be called by [`HolderLocalKey::init_data`].
     pub fn new(make_data: fn() -> T) -> Self {
         Self(Holder0::new(make_data))
     }
@@ -219,6 +239,9 @@ where
         self.0.with_data_mut(f)
     }
 }
+
+//=================
+// Implementation of HolderLocalKey.
 
 impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.

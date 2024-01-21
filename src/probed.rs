@@ -1,17 +1,27 @@
-//! Support for ensuring that destructors are run on thread-local variables after the threads terminate,
-//! as well as support for accumulating the thread-local values using a binary operation.
+//! This module supports the collection and aggregation of the values of a designated thread-local variable
+//! across threads. The following features and constraints apply ...
+//! - The designated thread-local variable may be defined and used in the thread responsible for
+//! collection/aggregation.
+//! - The collection/aggregation function may be executed at any time as it ensures synchronization with
+//! the participating threads, However, thread-local values need to be initialized again after such a call.
+//! - After all participating threads other than the thread responsible for collection/aggregation have
+//! terminated and joined directly or indirectly into the thread respnosible for collection, a call to the
+//! collection/aggregation function will result in the final aggregated value. Implicit joins by
+//! scoped threads are correctly handled.
 
-use crate::common::{ControlS, ControlStateS, HolderS};
-pub use crate::HolderLocalKey;
+use crate::common::{ControlS, ControlStateS, HolderLocalKey, HolderS};
 use std::{
     cell::RefCell,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     thread::{LocalKey, ThreadId},
 };
 
-pub type ForcedState<T, U> = ControlStateS<T, U, Arc<Mutex<Option<T>>>>;
+//=================
+// Core implementation based on common module
 
-impl<T, U> ForcedState<T, U> {
+type ProbedState<T, U> = ControlStateS<T, U, Arc<Mutex<Option<T>>>>;
+
+impl<T, U> ProbedState<T, U> {
     fn ensure_tls_dropped(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
         for (tid, node) in state.tmap.iter() {
             log::trace!("executing `ensure_tls_dropped` for key={:?}", tid);
@@ -26,32 +36,32 @@ impl<T, U> ForcedState<T, U> {
     }
 }
 
-pub type Control<T, U> = ControlS<ForcedState<T, U>>;
+type Control0<T, U> = ControlS<ProbedState<T, U>>;
 
-impl<T, U> Control<T, U>
+impl<T, U> Control0<T, U>
 where
     T: 'static,
     U: 'static,
 {
-    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-        Control {
-            state: Arc::new(Mutex::new(ForcedState::new(
+    fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
+        Control0 {
+            state: Arc::new(Mutex::new(ProbedState::new(
                 acc_base,
-                ForcedState::ensure_tls_dropped,
+                ProbedState::ensure_tls_dropped,
             ))),
             op: Arc::new(op),
         }
     }
 }
 
-pub type Holder<T, U> = HolderS<Arc<Mutex<Option<T>>>, ForcedState<T, U>>;
+type Holder0<T, U> = HolderS<Arc<Mutex<Option<T>>>, ProbedState<T, U>>;
 
-impl<T, U: 'static> Holder<T, U> {
+impl<T, U: 'static> Holder0<T, U> {
     /// Creates a new `Holder` instance with a function to initialize the data.
     ///
     /// The `make_data` function will be called lazily when data is first accessed to initialize
     /// the inner data value.
-    pub fn new(make_data: fn() -> T) -> Self {
+    fn new(make_data: fn() -> T) -> Self {
         Self {
             data: Arc::new(Mutex::new(None)),
             control: RefCell::new(None),
@@ -60,32 +70,176 @@ impl<T, U: 'static> Holder<T, U> {
     }
 }
 
+//=================
+// Public wrappers
+
+/// Lock object required for certain operations on [`Control`].
+///
+/// Obtained by calling [`Control::lock`].
+///
+/// This object also provides convenient read-only access to [Control]'s accumulated value.
+///
+/// Note:
+/// - The aggregated value is reflective of all participating threads if and only if it is accessed after
+/// all participating theads have
+///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
+///   - [`Control::collect_all`] has been called after the above.
+/// - Implicit joins by scoped threads are correctly handled.
+
+pub struct ControlLock<'a, T, U>(MutexGuard<'a, ProbedState<T, U>>);
+
+impl<'a, T, U> ControlLock<'a, T, U> {
+    /// Returns the [`Control`] object's accumulated value.
+    pub fn acc(&self) -> &U {
+        self.0.acc()
+    }
+}
+
+/// Keeps track of threads using the designated thread-local variable. Contains an accumulation operation `op`
+/// and an accumulated value `acc`. The accumulated value is updated by applying `op` to each thread-local
+/// data value and `acc` when the thread-local value is dropped or the [`Control::collect_all`] method is called.
+#[derive(Debug)]
+pub struct Control<T, U>(Control0<T, U>);
+
+impl<T, U> Control<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
+    /// Instantiates a [`Control`] object with `acc`_base as the initial value of its accumulator and
+    /// `op` as its aggregation operation.
+    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
+        Self(Control0::new(acc_base, op))
+    }
+
+    /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
+    pub fn lock(&self) -> ControlLock<'_, T, U> {
+        ControlLock(self.0.lock())
+    }
+
+    /// Provides read-only access to the accumulated value in the [Control] struct.
+    ///
+    /// Note:
+    /// - The aggregated value is reflective of all participating threads if and only if it is accessed after
+    /// all participating theads have
+    ///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
+    ///   - [`Control::collect_all`] has been called after the above.
+    /// - Implicit joins by scoped threads are correctly handled.
+    ///
+    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
+    ///
+    /// See also [`take_acc`](Self::take_acc) and [`ControlLock::acc`].
+    pub fn with_acc<V>(&self, lock: &ControlLock<'_, T, U>, f: impl FnOnce(&U) -> V) -> V {
+        self.0.with_acc(&lock.0, f)
+    }
+
+    /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
+    /// the existing accumulated value.
+    ///
+    /// Note:
+    /// - The aggregated value is reflective of all participating threads if and only if it is accessed after
+    /// all participating theads have
+    ///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
+    ///   - [`Control::collect_all`] has been called after the above.
+    /// - Implicit joins by scoped threads are correctly handled.
+    ///
+    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
+    ///
+    /// See also [`with_acc`](Self::with_acc) and [`ControlLock::acc`].
+    pub fn take_acc(&self, lock: &mut ControlLock<'_, T, U>, replacement: U) -> U {
+        self.0.take_acc(&mut lock.0, replacement)
+    }
+
+    /// Forces all registered thread-local values that have not already been dropped to be effectively dropped
+    /// by replacing the [`Holder`] data with [`None`], and accumulates the values contained in those thread-locals.
+    ///
+    /// This method may be executed at any time as it ensures synchronization with
+    /// the participating threads, However, thread-local values need to be initialized again after such a call.
+    ///
+    /// After all participating threads other than the thread responsible for collection/aggregation have
+    /// terminated and joined directly or indirectly into the thread respnosible for collection, a call to this method
+    /// will result in the final aggregated value. Implicit joins by scoped threads are correctly handled.
+    ///
+    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
+    pub fn collect_all(&self, lock: &mut ControlLock<'_, T, U>) {
+        self.0.collect_all(&mut lock.0)
+    }
+}
+
+/// Holds the data to be accumulated and registers with a [`Control`] instance to provide the framework's capabilities.
+///
+/// Functionality for [`Holder`] is provided through [`HolderLocalKey`].
+#[derive(Debug)]
+pub struct Holder<T, U>(Holder0<T, U>)
+where
+    T: 'static;
+
+impl<T, U> Holder<T, U>
+where
+    U: 'static,
+{
+    /// Creates a new `Holder` instance with a function to initialize the data.
+    ///
+    /// The `make_data` function will be called by [`HolderLocalKey::init_data`].
+    pub fn new(make_data: fn() -> T) -> Self {
+        Self(Holder0::new(make_data))
+    }
+
+    /// Establishes link with control.
+    fn init_control(&self, control: &Control<T, U>, node: Arc<Mutex<Option<T>>>) {
+        self.0.init_control(&control.0, node)
+    }
+
+    fn init_data(&self) {
+        self.0.init_data()
+    }
+
+    fn ensure_initialized(&self, control: &Control<T, U>, node: Arc<Mutex<Option<T>>>) {
+        self.0.ensure_initialized(&control.0, node)
+    }
+
+    /// Invokes `f` on data. Panics if data is [`None`].
+    fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> V {
+        self.0.with_data(f)
+    }
+
+    /// Invokes `f` on data. Panics if data is [`None`].
+    fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> V {
+        self.0.with_data_mut(f)
+    }
+}
+
+//=================
+// Implementation of HolderLocalKey.
+
 impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Control<T, U>) {
         self.with(|h| {
-            let node = h.data.clone();
+            let node = h.0.data.clone();
             h.init_control(&control, node);
         })
     }
 
+    /// Initializes [`Holder`] data.
     fn init_data(&'static self) {
         self.with(|h| h.init_data())
     }
 
+    /// Ensures [`Holder`] is properly initialized by initializing it if not.
     fn ensure_initialized(&'static self, control: &Control<T, U>) {
         self.with(|h| {
-            let node = h.data.clone();
+            let node = h.0.data.clone();
             h.ensure_initialized(&control, node);
         })
     }
 
-    /// Invokes `f` on data. Panics if data is [`None`].
+    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
     fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> V {
         self.with(|h| h.with_data(f))
     }
 
-    /// Invokes `f` on data. Panics if data is [`None`].
+    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V {
         self.with(|h| h.with_data_mut(f))
     }

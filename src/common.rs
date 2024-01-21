@@ -278,7 +278,7 @@ where
 }
 
 /// Provides convenient access to `Holder` functionality across the different framework modules
-/// ([`crate::joined`], [`crate::simple_joined`], [`crate::forced`]).
+/// ([`crate::joined`], [`crate::simple_joined`], [`crate::probed`]).
 ///
 /// - `Ctrl` is the module-specific Control type.
 /// - References to `Holder` in methods refer to the module-specific Holder type.
