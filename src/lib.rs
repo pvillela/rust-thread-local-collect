@@ -73,7 +73,7 @@
 
 pub mod channeled;
 mod common;
-pub mod forced;
 pub mod joined;
+pub mod probed;
 pub mod simple_joined;
 pub use common::HolderLocalKey;
