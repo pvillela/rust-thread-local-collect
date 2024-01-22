@@ -4,7 +4,7 @@
 use env_logger;
 #[allow(unused)]
 use std::env::set_var;
-use thread_local_drop::{
+use thread_local_collect::{
     joined::{Control, Holder},
     HolderLocalKey,
 };

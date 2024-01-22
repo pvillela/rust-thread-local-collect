@@ -18,7 +18,7 @@
 //!
 //! ```rust
 //! use std::thread::{self, ThreadId};
-//! use thread_local_drop::joined::{Control, Holder};
+//! use thread_local_collect::joined::{Control, Holder};
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -69,7 +69,7 @@
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-drop/blob/main/examples/map_accumulator.rs).
+//! See another example at [`examples/map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/map_accumulator.rs).
 
 pub mod channeled;
 mod common;

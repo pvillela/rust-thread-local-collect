@@ -1,5 +1,5 @@
 [package]
-name = "thread-local-drop"
+name = "thread-local-collect"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,6 +10,6 @@ derive_more = "0.99"
 log = "0.4"
 
 [dev-dependencies]
-env_logger = "0.10"
+env_logger = "0.11"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"

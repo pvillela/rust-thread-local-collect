@@ -1,7 +1,7 @@
-//! Simple example usage of [`thread_local_drop`].
+//! Simple example usage of [`thread_local_collect`].
 
 use std::thread::{self, ThreadId};
-use thread_local_drop::{
+use thread_local_collect::{
     joined::{Control, Holder},
     HolderLocalKey,
 };

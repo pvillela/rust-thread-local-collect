@@ -1,4 +1,4 @@
-# thread-local-drop
+# thread-local-collect
 
 This library supports the controlled and deliberate dropping and **_extraction_** of thread-local values, even before the corresponding threads terminate. Computations that use thread-local variables and need to be able to extract the thread-local values can benefit from this library.
 
@@ -19,10 +19,10 @@ The core concepts in this framework are the `Control` and `Holder` structs.
 Here's an outline of how this little framework can be used:
 
 ```rust
-//! Simple example usage of [`thread_local_drop`].
+//! Simple example usage of [`thread_local_collect`].
 
 use std::thread::{self, ThreadId};
-use thread_local_drop::joined::{Control, Holder};
+use thread_local_collect::joined::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;
@@ -73,4 +73,4 @@ fn main() {
 
 ## Other examples
 
-See another example at [`examples/map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-drop/blob/main/examples/map_accumulator.rs).
+See another example at [`examples/map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/map_accumulator.rs).

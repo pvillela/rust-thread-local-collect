@@ -12,7 +12,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_drop::{
+use thread_local_collect::{
     joined::{Control, Holder},
     HolderLocalKey,
 };

@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_drop`].
+//! Example usage of [`thread_local_collect`].
 
 use env_logger;
 use std::{
@@ -8,7 +8,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_drop::{
+use thread_local_collect::{
     joined::{Control, Holder},
     HolderLocalKey,
 };
