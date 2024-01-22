@@ -45,7 +45,7 @@ impl<T, U> ChanneledState<T, U> {
         &mut self.acc
     }
 
-    fn collect_all(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) -> CollectStatus {
+    fn receive_tls(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) -> CollectStatus {
         while let Ok(payload) = self.receiver.try_recv() {
             match payload {
                 ChannelItem::Payload(tid, data) => op(data, &mut self.acc, &tid),
@@ -123,12 +123,12 @@ where
         replace(acc, replacement)
     }
 
-    pub fn start_collect(&self) {
+    pub fn start_receiving_tls(&self) {
         let control = self.clone();
         thread::spawn(move || {
             loop {
                 let mut lock = control.lock();
-                let res = lock.collect_all(control.op.as_ref());
+                let res = lock.receive_tls(control.op.as_ref());
                 if let CollectStatus::Terminated = res {
                     return;
                 }
@@ -137,12 +137,12 @@ where
         });
     }
 
-    pub fn end_collect(&self) {
+    pub fn stop_receiving_tls(&self) {
         self.lock().sender.send(ChannelItem::EndCollect).unwrap();
     }
 
-    pub fn collect_all(&self, lock: &mut MutexGuard<'_, ChanneledState<T, U>>) {
-        lock.collect_all(self.op.as_ref());
+    pub fn receive_tls(&self, lock: &mut MutexGuard<'_, ChanneledState<T, U>>) {
+        lock.receive_tls(self.op.as_ref());
     }
 }
 
@@ -302,7 +302,7 @@ mod tests {
 
             hs.into_iter().for_each(|h| h.join().unwrap());
 
-            control.collect_all(&mut control.lock());
+            control.receive_tls(&mut control.lock());
 
             println!("after hs join: {:?}", control.lock().acc);
         });
@@ -360,7 +360,7 @@ mod tests {
 
             h.join().unwrap();
 
-            control.collect_all(&mut control.lock());
+            control.receive_tls(&mut control.lock());
 
             println!("after h.join(): {:?}", control.lock().acc);
         });
@@ -395,7 +395,7 @@ mod tests {
 
         thread::sleep(Duration::from_millis(100));
 
-        control.start_collect();
+        control.start_receiving_tls();
 
         thread::scope(|s| {
             let h = s.spawn(|| {
@@ -417,7 +417,7 @@ mod tests {
 
             h.join().unwrap();
 
-            control.end_collect();
+            control.stop_receiving_tls();
 
             println!("after h.join(): {:?}", control.lock().acc);
         });
