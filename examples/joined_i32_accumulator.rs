@@ -47,7 +47,7 @@ fn main() {
         let mut lock = control.lock();
 
         // SAFETY: Call this after all other threads registered with `control` have been joined.
-        unsafe { control.collect_all(&mut lock) };
+        unsafe { control.take_tls(&mut lock) };
 
         control.with_acc(&lock, |acc| println!("accumulated={}", acc));
     }

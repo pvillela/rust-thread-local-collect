@@ -17,14 +17,14 @@ pub(crate) trait ControlState {
     fn acc_mut(&mut self) -> &mut Self::Acc;
     fn register_node(&mut self, node: Self::Node, tid: &ThreadId);
     fn deregister_thread(&mut self, tid: &ThreadId);
-    fn collect_all(&mut self, op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync));
+    fn take_tls(&mut self, op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync));
 }
 
 #[derive(Debug)]
 pub(crate) struct ControlStateS<T, U, Node> {
     pub(crate) acc: U,
     pub(crate) tmap: HashMap<ThreadId, Node>,
-    ensure_tls_dropped: fn(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
+    take_tls: fn(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
 }
 
 impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
@@ -48,20 +48,20 @@ impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
         self.tmap.remove(tid);
     }
 
-    fn collect_all(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
-        (self.ensure_tls_dropped)(self, op)
+    fn take_tls(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
+        (self.take_tls)(self, op)
     }
 }
 
 impl<T, U, Node> ControlStateS<T, U, Node> {
     pub(crate) fn new(
         acc: U,
-        ensure_tls_dropped: fn(this: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
+        take_tls: fn(this: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
     ) -> Self {
         Self {
             acc,
             tmap: HashMap::new(),
-            ensure_tls_dropped,
+            take_tls: take_tls,
         }
     }
 
@@ -158,8 +158,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn collect_all(&self, lock: &mut MutexGuard<'_, State>) {
-        lock.collect_all(self.op.deref())
+    pub fn take_tls(&self, lock: &mut MutexGuard<'_, State>) {
+        lock.take_tls(self.op.deref())
     }
 
     fn tl_data_dropped(&self, tid: &ThreadId, data: Option<State::Dat>) {

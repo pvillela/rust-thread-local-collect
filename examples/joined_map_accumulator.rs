@@ -81,9 +81,9 @@ fn main() {
     {
         let mut lock = control.lock();
         // SAFETY: OK to call function below after all other threads have joined.
-        unsafe { control.collect_all(&mut lock) };
+        unsafe { control.take_tls(&mut lock) };
 
-        println!("After call to `ensure_tls_dropped`: control={:?}", control);
+        println!("After call to `take_tls`: control={:?}", control);
 
         control.with_acc(&lock, |acc| println!("accumulated={:?}", acc));
     }

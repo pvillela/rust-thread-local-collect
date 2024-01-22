@@ -26,7 +26,7 @@ use std::{
 type TrivialState<T, U> = ControlStateS<T, U, ()>;
 
 impl<T, U> TrivialState<T, U> {
-    fn ensure_tls_dropped(_state: &mut Self, _op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {}
+    fn take_tls(_state: &mut Self, _op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {}
 }
 
 type Control0<T, U> = ControlS<TrivialState<T, U>>;
@@ -40,7 +40,7 @@ where
         Control0 {
             state: Arc::new(Mutex::new(TrivialState::new(
                 acc_base,
-                TrivialState::ensure_tls_dropped,
+                TrivialState::take_tls,
             ))),
             op: Arc::new(op),
         }

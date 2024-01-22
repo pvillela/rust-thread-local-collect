@@ -72,7 +72,7 @@ fn main() {
             print_tl("Spawned thread before sleep");
             thread::sleep(Duration::from_millis(200));
 
-            // At this point, the control tmap is empty due to the timoing of the call to ensure_tls_dropped
+            // At this point, the control tmap is empty due to the timoing of the call to take_tls
             // below and the data has been set to None. The call below updates the data to Some of a
             // HashMap with the entry (2, "bb").
             insert_tl_entry(2, Foo("bb".to_owned()), &control);
@@ -85,12 +85,9 @@ fn main() {
 
         // Don't do this in production code. For demonstration purposes only.
         // Making this call before joining with `_h` is dangerous because there is a data race.
-        unsafe { control.collect_all(&mut control.lock()) };
+        unsafe { control.take_tls(&mut control.lock()) };
 
-        println!(
-            "After premature call to `ensure_tls_dropped`: control={:?}",
-            control
-        );
+        println!("After premature call to `take_tls`: control={:?}", control);
 
         // Implicit join at end of scope.
         // _h.join().unwrap();
@@ -103,15 +100,12 @@ fn main() {
 
         // SAFETY: Due to the implicit join above, we have a data race here. Therefore, the
         // address in `control`'s `tmap` associated with the spawned thread may point to an invalid memory chunk,
-        // resulting in a sgementation fault when the address is dereferenced by `ensure_tls_dropped`.
+        // resulting in a sgementation fault when the address is dereferenced by `take_tls`.
         // In case the memory chunk pointed to by the address is valid, there may be additional issues further
         // below where the accumulator is printed.
-        unsafe { control.collect_all(&mut lock) };
+        unsafe { control.take_tls(&mut lock) };
 
-        println!(
-            "After 2nd call to `ensure_tls_dropped`: control={:?}",
-            control
-        );
+        println!("After 2nd call to `take_tls`: control={:?}", control);
 
         // Due to the above-mentioned data race, if the address in question points to a valid memory chunk and
         // a segmentation fault doesn't occur above, then there can be 3 possibilities:

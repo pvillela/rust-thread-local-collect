@@ -22,14 +22,14 @@ use std::{
 type ProbedState<T, U> = ControlStateS<T, U, Arc<Mutex<Option<T>>>>;
 
 impl<T, U> ProbedState<T, U> {
-    fn ensure_tls_dropped(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
+    fn take_tls(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
         for (tid, node) in state.tmap.iter() {
-            log::trace!("executing `ensure_tls_dropped` for key={:?}", tid);
+            log::trace!("executing `take_tls` for key={:?}", tid);
             let mut data_ref = node.lock().unwrap();
             let data = data_ref.take();
-            log::trace!("executed `take` -- `ensure_tls_dropped` for key={:?}", tid);
+            log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
             if let Some(data) = data {
-                log::trace!("executing `op` -- `ensure_tls_dropped` for key={:?}", tid);
+                log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
                 op(data, &mut state.acc, tid);
             }
         }
@@ -47,7 +47,7 @@ where
         Control0 {
             state: Arc::new(Mutex::new(ProbedState::new(
                 acc_base,
-                ProbedState::ensure_tls_dropped,
+                ProbedState::take_tls,
             ))),
             op: Arc::new(op),
         }
@@ -83,7 +83,7 @@ impl<T, U: 'static> Holder0<T, U> {
 /// - The aggregated value is reflective of all participating threads if and only if it is accessed after
 /// all participating theads have
 ///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
-///   - [`Control::collect_all`] has been called after the above.
+///   - [`Control::take_tls`] has been called after the above.
 /// - Implicit joins by scoped threads are correctly handled.
 
 pub struct ControlLock<'a, T, U>(MutexGuard<'a, ProbedState<T, U>>);
@@ -97,7 +97,7 @@ impl<'a, T, U> ControlLock<'a, T, U> {
 
 /// Keeps track of threads using the designated thread-local variable. Contains an accumulation operation `op`
 /// and an accumulated value `acc`. The accumulated value is updated by applying `op` to each thread-local
-/// data value and `acc` when the thread-local value is dropped or the [`Control::collect_all`] method is called.
+/// data value and `acc` when the thread-local value is dropped or the [`Control::take_tls`] method is called.
 #[derive(Debug)]
 pub struct Control<T, U>(Control0<T, U>);
 
@@ -123,7 +123,7 @@ where
     /// - The aggregated value is reflective of all participating threads if and only if it is accessed after
     /// all participating theads have
     ///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
-    ///   - [`Control::collect_all`] has been called after the above.
+    ///   - [`Control::take_tls`] has been called after the above.
     /// - Implicit joins by scoped threads are correctly handled.
     ///
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
@@ -140,7 +140,7 @@ where
     /// - The aggregated value is reflective of all participating threads if and only if it is accessed after
     /// all participating theads have
     ///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
-    ///   - [`Control::collect_all`] has been called after the above.
+    ///   - [`Control::take_tls`] has been called after the above.
     /// - Implicit joins by scoped threads are correctly handled.
     ///
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
@@ -161,8 +161,26 @@ where
     /// will result in the final aggregated value. Implicit joins by scoped threads are correctly handled.
     ///
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    pub fn collect_all(&self, lock: &mut ControlLock<'_, T, U>) {
-        self.0.collect_all(&mut lock.0)
+    pub fn take_tls(&self, lock: &mut ControlLock<'_, T, U>) {
+        self.0.take_tls(&mut lock.0)
+    }
+
+    pub fn probe_tls(&self, lock: &ControlLock<'_, T, U>) -> U
+    where
+        T: Clone,
+        U: Clone,
+    {
+        let state = &lock.0;
+        let mut acc_probed = state.acc.clone();
+        for (tid, node) in state.tmap.iter() {
+            log::trace!("executing `probe_tls` for key={:?}", tid);
+            let data = node.lock().unwrap();
+            if let Some(data) = data.as_ref() {
+                log::trace!("executing `op` -- `probe_tls` for key={:?}", tid);
+                (self.0.op)(data.clone(), &mut acc_probed, tid);
+            }
+        }
+        acc_probed
     }
 }
 
@@ -407,9 +425,9 @@ mod tests {
 
             println!("after h.join(): {:?}", control);
 
-            control.collect_all(&mut control.lock());
+            control.take_tls(&mut control.lock());
             // let keys = [];
-            // assert_control_map(&control, &keys, "After call to `ensure_tls_dropped`");
+            // assert_control_map(&control, &keys, "After call to `take_tls`");
         });
 
         {
@@ -476,9 +494,9 @@ mod tests {
 
             println!("after h.join(): {:?}", control);
 
-            control.collect_all(&mut control.lock());
+            control.take_tls(&mut control.lock());
             // let keys = [];
-            // assert_control_map(&control, &keys, "After call to `ensure_tls_dropped`");
+            // assert_control_map(&control, &keys, "After call to `take_tls`");
         });
 
         {
