@@ -12,12 +12,12 @@ use std::{
 };
 
 enum ChannelItem<T> {
-    EndCollect,
+    StopReceiving,
     Payload(ThreadId, T),
 }
 
-enum CollectStatus {
-    Terminated,
+enum ReceiveStatus {
+    Stopped,
     CycleCompleted,
 }
 
@@ -45,14 +45,14 @@ impl<T, U> ChanneledState<T, U> {
         &mut self.acc
     }
 
-    fn receive_tls(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) -> CollectStatus {
+    fn receive_tls(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) -> ReceiveStatus {
         while let Ok(payload) = self.receiver.try_recv() {
             match payload {
                 ChannelItem::Payload(tid, data) => op(data, &mut self.acc, &tid),
-                ChannelItem::EndCollect => return CollectStatus::Terminated,
+                ChannelItem::StopReceiving => return ReceiveStatus::Stopped,
             }
         }
-        CollectStatus::CycleCompleted
+        ReceiveStatus::CycleCompleted
     }
 }
 
@@ -129,7 +129,7 @@ where
             loop {
                 let mut lock = control.lock();
                 let res = lock.receive_tls(control.op.as_ref());
-                if let CollectStatus::Terminated = res {
+                if let ReceiveStatus::Stopped = res {
                     return;
                 }
                 thread::yield_now(); // this is unnecessary if Mutex is fair
@@ -138,7 +138,7 @@ where
     }
 
     pub fn stop_receiving_tls(&self) {
-        self.lock().sender.send(ChannelItem::EndCollect).unwrap();
+        self.lock().sender.send(ChannelItem::StopReceiving).unwrap();
     }
 
     pub fn receive_tls(&self, lock: &mut MutexGuard<'_, ChanneledState<T, U>>) {
