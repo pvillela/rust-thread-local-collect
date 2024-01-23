@@ -4,6 +4,7 @@
 use std::{
     cell::RefCell,
     mem::replace,
+    ops::Deref,
     sync::{
         mpsc::{channel, Receiver, Sender},
         Arc, Mutex, MutexGuard,
@@ -21,6 +22,7 @@ enum ReceiveStatus {
     CycleCompleted,
 }
 
+#[derive(Debug)]
 pub struct ChanneledState<T, U> {
     acc: U,
     sender: Sender<ChannelItem<T>>,
@@ -56,6 +58,18 @@ impl<T, U> ChanneledState<T, U> {
     }
 }
 
+/// Guard object of a [`Control`]'s `acc` field.
+#[derive(Debug)]
+pub struct AccGuard<'a, T, U>(MutexGuard<'a, ChanneledState<T, U>>);
+
+impl<'a, T, U> Deref for AccGuard<'a, T, U> {
+    type Target = U;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.acc()
+    }
+}
+
 /// Controls the destruction of thread-local values registered with it.
 /// Such values of type `T` must be held in thread-locals of type [`Holder<T>`].
 /// `U` is the type of the accumulated value resulting from an initial base value and
@@ -78,11 +92,7 @@ impl<T, U> Clone for Control<T, U> {
     }
 }
 
-impl<T, U> Control<T, U>
-where
-    T: 'static + Send,
-    U: 'static + Send,
-{
+impl<T, U> Control<T, U> {
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Control {
             state: Arc::new(Mutex::new(ChanneledState::new(acc_base))),
@@ -90,11 +100,17 @@ where
         }
     }
 
+    /// Returns a guard of the object's `acc` field. This guard holds a lock on `self` which is only released
+    /// when the guard object is dropped.
+    pub fn acc(&self) -> AccGuard<'_, T, U> {
+        AccGuard(self.lock())
+    }
+
     /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
     ///
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn lock<'a>(&'a self) -> MutexGuard<'a, ChanneledState<T, U>> {
+    fn lock<'a>(&'a self) -> MutexGuard<'a, ChanneledState<T, U>> {
         self.state.lock().unwrap()
     }
 
@@ -103,13 +119,9 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn with_acc<V>(
-        &self,
-        lock: &MutexGuard<'_, ChanneledState<T, U>>,
-        f: impl FnOnce(&U) -> V,
-    ) -> V {
-        let acc = lock.acc();
-        f(acc)
+    pub fn with_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
+        let acc = self.acc();
+        f(&acc)
     }
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
@@ -118,17 +130,22 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub fn take_acc(&self, lock: &mut MutexGuard<'_, ChanneledState<T, U>>, replacement: U) -> U {
+    pub fn take_acc(&self, replacement: U) -> U {
+        let mut lock = self.lock();
         let acc = lock.acc_mut();
         replace(acc, replacement)
     }
 
-    pub fn start_receiving_tls(&self) {
+    pub fn start_receiving_tls(&self)
+    where
+        T: 'static + Send,
+        U: 'static + Send,
+    {
         let control = self.clone();
         thread::spawn(move || {
             loop {
-                let mut lock = control.lock();
-                let res = lock.receive_tls(control.op.as_ref());
+                let mut state = control.lock();
+                let res = state.receive_tls(control.op.as_ref());
                 if let ReceiveStatus::Stopped = res {
                     return;
                 }
@@ -141,8 +158,8 @@ where
         self.lock().sender.send(ChannelItem::StopReceiving).unwrap();
     }
 
-    pub fn receive_tls(&self, lock: &mut MutexGuard<'_, ChanneledState<T, U>>) {
-        lock.receive_tls(self.op.as_ref());
+    pub fn receive_tls(&self) {
+        self.lock().receive_tls(self.op.as_ref());
     }
 }
 
@@ -165,33 +182,11 @@ impl<T> Holder<T> {
         Self(RefCell::new(None))
     }
 
-    // fn control(&self) -> Ref<'_, Option<Control<T, U>>> {
-    //      Ref::map(self.0.borrow(), |r|&r.map(|i|i.control))
-
-    // }
-
-    // fn sender_guard(&self) -> RefMut<'_, Option<Sender<T>>> {
-    //     self.data.borrow_mut()
-    // }
-
-    // /// Establishes link with control.
-    // fn init_control(&self, control: &Control<T, U>) {
-    //     let mut ctrl_ref = self.control.borrow_mut();
-    //     *ctrl_ref = Some(control.clone());
-    // }
-
-    // fn init_channel(&self) -> Receiver<T> {
-    //     let mut guard = self.sender_guard();
-    //     let (sender, receiver) = channel();
-    //     *guard = Some(sender);
-    //     receiver
-    // }
-
     pub fn ensure_initialized<U>(&self, control: &Control<T, U>) {
         let mut inner = self.0.borrow_mut();
         if inner.is_none() {
-            let lock = control.state.lock().unwrap();
-            let sender = lock.sender.clone();
+            let state = control.lock();
+            let sender = state.sender.clone();
             *inner = Some(HolderInner {
                 tid: thread::current().id(),
                 sender,
@@ -234,6 +229,7 @@ mod tests {
     use std::{
         collections::HashMap,
         fmt::Debug,
+        ops::Deref,
         sync::RwLock,
         thread::{self, ThreadId},
         time::Duration,
@@ -302,9 +298,9 @@ mod tests {
 
             hs.into_iter().for_each(|h| h.join().unwrap());
 
-            control.receive_tls(&mut control.lock());
+            control.receive_tls();
 
-            println!("after hs join: {:?}", control.lock().acc);
+            println!("after hs join: {:?}", control.acc());
         });
 
         {
@@ -317,8 +313,7 @@ mod tests {
             ]);
 
             {
-                let lock = control.lock();
-                let acc = &lock.acc;
+                let acc = control.acc();
                 assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
             }
         }
@@ -335,7 +330,7 @@ mod tests {
         {
             send_tl_data(1, Foo("a".to_owned()), &control);
             send_tl_data(2, Foo("b".to_owned()), &control);
-            println!("after main thread inserts: {:?}", control.lock().acc);
+            println!("after main thread inserts: {:?}", control.acc());
         }
 
         thread::sleep(Duration::from_millis(100));
@@ -360,9 +355,9 @@ mod tests {
 
             h.join().unwrap();
 
-            control.receive_tls(&mut control.lock());
+            control.receive_tls();
 
-            println!("after h.join(): {:?}", control.lock().acc);
+            println!("after h.join(): {:?}", control.acc());
         });
 
         {
@@ -372,9 +367,8 @@ mod tests {
             let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
 
             {
-                let lock = control.lock();
-                let acc = &lock.acc;
-                assert_eq!(acc, &map, "Accumulator check");
+                let acc = control.acc();
+                assert_eq!(acc.deref(), &map, "Accumulator check");
             }
         }
     }
@@ -390,7 +384,7 @@ mod tests {
         {
             send_tl_data(1, Foo("a".to_owned()), &control);
             send_tl_data(2, Foo("b".to_owned()), &control);
-            println!("after main thread inserts: {:?}", control.lock().acc);
+            println!("after main thread inserts: {:?}", control.acc());
         }
 
         thread::sleep(Duration::from_millis(100));
@@ -419,7 +413,7 @@ mod tests {
 
             control.stop_receiving_tls();
 
-            println!("after h.join(): {:?}", control.lock().acc);
+            println!("after h.join(): {:?}", control.acc());
         });
 
         {
@@ -429,9 +423,8 @@ mod tests {
             let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
 
             {
-                let lock = control.lock();
-                let acc = &lock.acc;
-                assert_eq!(acc, &map, "Accumulator check");
+                let acc = control.acc();
+                assert_eq!(acc.deref(), &map, "Accumulator check");
             }
         }
     }

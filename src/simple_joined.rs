@@ -13,10 +13,11 @@
 //! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
 //! implicit join of a scoped thread.
 
-use crate::common::{ControlS, ControlStateS, HolderLocalKey, HolderS};
+use crate::common::{AccGuardS, ControlS, ControlStateS, HolderLocalKey, HolderS};
 use std::{
     cell::RefCell,
-    sync::{Arc, Mutex, MutexGuard},
+    ops::Deref,
+    sync::{Arc, Mutex},
     thread::{LocalKey, ThreadId},
 };
 
@@ -66,25 +67,15 @@ impl<T, U: 'static> Holder0<T, U> {
 //=================
 // Public wrappers
 
-/// Lock object required for certain operations on [`Control`].
-///
-/// Obtained by calling [`Control::lock`].
-///
-/// This object also provides convenient read-only access to [Control]'s accumulated value.
-///
-/// Limitations:
-/// - The aggregated value is reflective of all participating threads if and only if it is accessed after
-/// all participating theads have
-/// terminated and EXPLICITLY joined directly or indirectly into the thread respnosible for collection.
-/// - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
-/// of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
-/// implicit join of a scoped thread.
-pub struct ControlLock<'a, T, U>(MutexGuard<'a, TrivialState<T, U>>);
+/// Guard object of a [`Control`]'s `acc` field.
+#[derive(Debug)]
+pub struct AccGuard<'a, T, U>(AccGuardS<'a, TrivialState<T, U>>);
 
-impl<'a, T, U> ControlLock<'a, T, U> {
-    /// Returns the [`Control`] object's accumulated value.
-    pub fn acc(&self) -> &U {
-        self.0.acc()
+impl<'a, T, U> Deref for AccGuard<'a, T, U> {
+    type Target = U;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
     }
 }
 
@@ -105,9 +96,10 @@ where
         Self(Control0::new(acc_base, op))
     }
 
-    /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
-    pub fn lock(&self) -> ControlLock<'_, T, U> {
-        ControlLock(self.0.lock())
+    /// Returns a guard of the object's `acc` field. This guard holds a lock on `self` which is only released
+    /// when the guard object is dropped.
+    pub fn acc(&self) -> AccGuard<'_, T, U> {
+        AccGuard(self.0.acc())
     }
 
     /// Provides read-only access to the accumulated value in the [Control] struct.
@@ -123,8 +115,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     ///
     /// See also [`take_acc`](Self::take_acc) and [`ControlLock::acc`].
-    pub fn with_acc<V>(&self, lock: &ControlLock<'_, T, U>, f: impl FnOnce(&U) -> V) -> V {
-        self.0.with_acc(&lock.0, f)
+    pub fn with_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
+        self.0.with_acc(f)
     }
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
@@ -141,8 +133,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     ///
     /// See also [`with_acc`](Self::with_acc) and [`ControlLock::acc`].
-    pub fn take_acc(&self, lock: &mut ControlLock<'_, T, U>, replacement: U) -> U {
-        self.0.take_acc(&mut lock.0, replacement)
+    pub fn take_acc(&self, replacement: U) -> U {
+        self.0.take_acc(replacement)
     }
 }
 
@@ -324,8 +316,7 @@ mod tests {
             ]);
 
             {
-                let lock = control.lock();
-                let acc = lock.acc();
+                let acc = control.acc();
                 assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
             }
         }

@@ -81,9 +81,8 @@ fn main() {
 
     for k in 0..N_REPEATS1 {
         thread::sleep(Duration::from_millis(SLEEP_MILLIS_MAIN));
-        let mut control_lock = control().lock();
-        unsafe { control().take_tls(&mut control_lock) };
-        let acc = control().take_acc(&mut control_lock, HashMap::new());
+        unsafe { control().take_tls() };
+        let acc = control().take_acc(HashMap::new());
         let len = format!("{:?}", acc).len();
         println!("k={k},len={len}; ");
     }
@@ -92,10 +91,9 @@ fn main() {
 
     for k in 0..N_REPEATS2 {
         thread::sleep(Duration::from_millis(SLEEP_MILLIS_MAIN));
-        let mut control_lock = control().lock();
         // SAFETY: OK to call function below after all other threads have joined.
-        unsafe { control().take_tls(&mut control_lock) };
-        let acc = control().take_acc(&mut control_lock, HashMap::new());
+        unsafe { control().take_tls() };
+        let acc = control().take_acc(HashMap::new());
         let len = format!("{:?}", acc).len();
         println!("k={k},len={len}; ");
     }

@@ -7,10 +7,11 @@
 //! terminated and joined directly or indirectly into the thread respnosible for collection. Implicit joins by
 //! scoped threads are correctly handled.
 
-use crate::common::{ControlS, ControlStateS, HolderLocalKey, HolderS};
+use crate::common::{AccGuardS, ControlS, ControlStateS, HolderLocalKey, HolderS};
 use std::{
     cell::RefCell,
-    sync::{Arc, Mutex, MutexGuard},
+    ops::Deref,
+    sync::{Arc, Mutex},
     thread::{LocalKey, ThreadId},
 };
 
@@ -97,25 +98,15 @@ impl<T, U: 'static> Holder0<T, U> {
 //=================
 // Public wrappers
 
-/// Lock object required for certain operations on [`Control`].
-///
-/// Obtained by calling [`Control::lock`].
-///
-/// This object also provides convenient read-only access to [Control]'s accumulated value.
-///
-/// Note:
-/// - The aggregated value is reflective of all participating threads if and only if it is accessed after
-/// all participating theads have
-///   - terminated and joined directly or indirectly into the thread respnosible for collection; and
-///   - [`Control::take_tls`] has been called after the above.
-/// - Implicit joins by scoped threads are correctly handled.
+/// Guard object of a [`Control`]'s `acc` field.
+#[derive(Debug)]
+pub struct AccGuard<'a, T, U>(AccGuardS<'a, JoinedState<T, U>>);
 
-pub struct ControlLock<'a, T, U>(MutexGuard<'a, JoinedState<T, U>>);
+impl<'a, T, U> Deref for AccGuard<'a, T, U> {
+    type Target = U;
 
-impl<'a, T, U> ControlLock<'a, T, U> {
-    /// Returns the [`Control`] object's accumulated value.
-    pub fn acc(&self) -> &U {
-        self.0.acc()
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
     }
 }
 
@@ -136,9 +127,10 @@ where
         Self(Control0::new(acc_base, op))
     }
 
-    /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
-    pub fn lock(&self) -> ControlLock<'_, T, U> {
-        ControlLock(self.0.lock())
+    /// Returns a guard of the object's `acc` field. This guard holds a lock on `self` which is only released
+    /// when the guard object is dropped.
+    pub fn acc(&self) -> AccGuard<'_, T, U> {
+        AccGuard(self.0.acc())
     }
 
     /// Provides read-only access to the accumulated value in the [Control] struct.
@@ -153,8 +145,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     ///
     /// See also [`take_acc`](Self::take_acc) and [`ControlLock::acc`].
-    pub fn with_acc<V>(&self, lock: &ControlLock<'_, T, U>, f: impl FnOnce(&U) -> V) -> V {
-        self.0.with_acc(&lock.0, f)
+    pub fn with_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
+        self.0.with_acc(f)
     }
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
@@ -170,8 +162,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     ///
     /// See also [`with_acc`](Self::with_acc) and [`ControlLock::acc`].
-    pub fn take_acc(&self, lock: &mut ControlLock<'_, T, U>, replacement: U) -> U {
-        self.0.take_acc(&mut lock.0, replacement)
+    pub fn take_acc(&self, replacement: U) -> U {
+        self.0.take_acc(replacement)
     }
 
     /// Forces all registered thread-local values that have not already been dropped to be effectively dropped
@@ -192,8 +184,8 @@ where
     /// thread-local data updates and this call.
     ///
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    pub unsafe fn take_tls(&self, lock: &mut ControlLock<'_, T, U>) {
-        self.0.take_tls(&mut lock.0)
+    pub unsafe fn take_tls(&self) {
+        self.0.take_tls()
     }
 }
 
@@ -277,6 +269,7 @@ mod tests {
     use std::{
         collections::HashMap,
         fmt::Debug,
+        ops::Deref,
         sync::RwLock,
         thread::{self, ThreadId},
         time::Duration,
@@ -375,8 +368,7 @@ mod tests {
             ]);
 
             {
-                let lock = control.lock();
-                let acc = lock.acc();
+                let acc = control.acc();
                 assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
             }
         }
@@ -432,7 +424,7 @@ mod tests {
 
             println!("after h.join(): {:?}", control);
 
-            unsafe { control.take_tls(&mut control.lock()) };
+            unsafe { control.take_tls() };
             // let keys = [];
             // assert_control_map(&control, &keys, "After call to `take_tls`");
         });
@@ -444,9 +436,8 @@ mod tests {
             let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
 
             {
-                let lock = control.lock();
-                let acc = lock.acc();
-                assert_eq!(acc, &map, "Accumulator check");
+                let acc = control.acc();
+                assert_eq!(acc.deref(), &map, "Accumulator check");
             }
         }
     }

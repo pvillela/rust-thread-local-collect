@@ -43,12 +43,9 @@ fn main() {
     });
 
     {
-        // Acquire `control`'s lock.
-        let mut lock = control.lock();
-
         // SAFETY: Call this after all other threads registered with `control` have been joined.
-        unsafe { control.take_tls(&mut lock) };
+        unsafe { control.take_tls() };
 
-        control.with_acc(&lock, |acc| println!("accumulated={}", acc));
+        control.with_acc(|acc| println!("accumulated={}", acc));
     }
 }

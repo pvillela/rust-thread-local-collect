@@ -20,23 +20,24 @@ pub(crate) trait ControlState {
     fn take_tls(&mut self, op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync));
 }
 
-pub(crate) struct AccGuard<'a, CState>
+#[derive(Debug)]
+pub(crate) struct AccGuardS<'a, CState>
 where
     CState: ControlState,
 {
     guard: MutexGuard<'a, CState>,
 }
 
-impl<'a, CState> AccGuard<'a, CState>
+impl<'a, CState> AccGuardS<'a, CState>
 where
     CState: ControlState,
 {
     pub(crate) fn new(lock: MutexGuard<'a, CState>) -> Self {
-        AccGuard { guard: lock }
+        AccGuardS { guard: lock }
     }
 }
 
-impl<CState> Deref for AccGuard<'_, CState>
+impl<CState> Deref for AccGuardS<'_, CState>
 where
     CState: ControlState,
 {
@@ -91,10 +92,6 @@ impl<T, U, Node> ControlStateS<T, U, Node> {
             take_tls: take_tls,
         }
     }
-
-    pub(crate) fn acc(&self) -> &U {
-        ControlState::acc(self)
-    }
 }
 
 /// Controls the destruction of thread-local values registered with it.
@@ -135,35 +132,21 @@ where
         self.op(data, acc, tid);
     }
 
-    pub(crate) fn acc(&self) -> AccGuard<'_, State> {
-        AccGuard::new(self.lock())
+    pub(crate) fn acc(&self) -> AccGuardS<'_, State> {
+        AccGuardS::new(self.lock())
     }
 
     /// Provides access to the accumulated value in the [Control] struct.
-    ///
-    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub(crate) fn with_acc<V>(
-        &self,
-        lock: &MutexGuard<'_, State>,
-        f: impl FnOnce(&State::Acc) -> V,
-    ) -> V {
+    pub(crate) fn with_acc<V>(&self, f: impl FnOnce(&State::Acc) -> V) -> V {
+        let lock = self.lock();
         let acc = lock.acc();
         f(acc)
     }
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
     /// the existing accumulated value.
-    ///
-    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub(crate) fn take_acc(
-        &self,
-        lock: &mut MutexGuard<'_, State>,
-        replacement: State::Acc,
-    ) -> State::Acc {
+    pub(crate) fn take_acc(&self, replacement: State::Acc) -> State::Acc {
+        let mut lock = self.lock();
         let acc = lock.acc_mut();
         replace(acc, replacement)
     }
@@ -193,7 +176,8 @@ where
     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub(crate) fn take_tls(&self, lock: &mut MutexGuard<'_, State>) {
+    pub(crate) fn take_tls(&self) {
+        let mut lock = self.lock();
         lock.take_tls(self.op.deref())
     }
 

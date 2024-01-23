@@ -85,7 +85,7 @@ fn main() {
 
         // Don't do this in production code. For demonstration purposes only.
         // Making this call before joining with `h` is dangerous because there is a data race.
-        unsafe { control.take_tls(&mut control.lock()) };
+        unsafe { control.take_tls() };
 
         println!("After premature call to `take_tls`: control={:?}", control);
 
@@ -96,10 +96,8 @@ fn main() {
     println!("After spawned thread join: control={:?}", control);
 
     {
-        let mut lock = control.lock();
-
         // SAFETY: Due to the explicit join above, there is no data race here.
-        unsafe { control.take_tls(&mut lock) };
+        unsafe { control.take_tls() };
 
         println!("After 2nd call to `take_tls`: control={:?}", control);
 
@@ -109,6 +107,6 @@ fn main() {
         //    completed execution, so the accumulated value does not reflect the second insert in the spawned thread.
         // 2. The destructor of the Holder for the spawned thread has already completed execution and the accumulated
         //    value reflects the second insert in the spawned thread.
-        control.with_acc(&lock, |acc| println!("accumulated={:?}", acc));
+        control.with_acc(|acc| println!("accumulated={:?}", acc));
     }
 }
