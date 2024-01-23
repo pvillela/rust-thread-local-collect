@@ -17,6 +17,12 @@ pub(crate) trait ControlState {
     fn acc_mut(&mut self) -> &mut Self::Acc;
     fn register_node(&mut self, node: Self::Node, tid: &ThreadId);
     fn deregister_thread(&mut self, tid: &ThreadId);
+    fn accumulate_tl(
+        &mut self,
+        op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync),
+        data: Self::Dat,
+        tid: &ThreadId,
+    );
     fn take_tls(&mut self, op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync));
 }
 
@@ -76,6 +82,16 @@ impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
         self.tmap.remove(tid);
     }
 
+    fn accumulate_tl(
+        &mut self,
+        op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync),
+        data: T,
+        tid: &ThreadId,
+    ) {
+        let acc = self.acc_mut();
+        op(data, acc, tid);
+    }
+
     fn take_tls(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
         (self.take_tls)(self, op)
     }
@@ -115,10 +131,6 @@ impl<State> ControlS<State>
 where
     State: ControlState,
 {
-    fn op(&self, data: State::Dat, acc: &mut State::Acc, tid: &ThreadId) {
-        (self.op)(data, acc, tid)
-    }
-
     /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
     ///
     /// An cquired lock can be used with multiple method calls and droped after the last call.
@@ -127,20 +139,14 @@ where
         self.state.lock().unwrap()
     }
 
-    fn accumulate_tl(&self, lock: &mut MutexGuard<'_, State>, data: State::Dat, tid: &ThreadId) {
-        let acc = lock.acc_mut();
-        self.op(data, acc, tid);
-    }
-
     pub(crate) fn acc(&self) -> AccGuardS<'_, State> {
         AccGuardS::new(self.lock())
     }
 
     /// Provides access to the accumulated value in the [Control] struct.
     pub(crate) fn with_acc<V>(&self, f: impl FnOnce(&State::Acc) -> V) -> V {
-        let lock = self.lock();
-        let acc = lock.acc();
-        f(acc)
+        let acc = self.acc();
+        f(&acc)
     }
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
@@ -185,7 +191,7 @@ where
         let mut lock = self.lock();
         lock.deregister_thread(tid);
         if let Some(data) = data {
-            self.accumulate_tl(&mut lock, data, tid);
+            lock.accumulate_tl(self.op.as_ref(), data, tid);
         }
     }
 }
