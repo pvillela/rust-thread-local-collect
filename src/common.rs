@@ -12,6 +12,7 @@ pub trait Param {
     type Dat;
     type Acc;
     type Node;
+    type GData;
 }
 
 // #[derive(Debug)]
@@ -162,22 +163,22 @@ impl<S: 'static> GuardedData<S> for Arc<Mutex<S>> {
 }
 
 /// Holds thead-local data to enable registering it with [`Control`].
-pub struct HolderG<GData, P>
+pub struct HolderG<P>
 where
-    GData: GuardedData<Option<P::Dat>> + 'static,
     P: Param,
     P::Dat: 'static,
+    P::GData: GuardedData<Option<P::Dat>> + 'static,
 {
-    pub(crate) data: GData,
+    pub(crate) data: P::GData,
     pub(crate) control: RefCell<Option<ControlG<P>>>,
     pub(crate) make_data: fn() -> P::Dat,
 }
 
 /// Common trait supporting different `Holder` implementations.
-impl<GData, P> HolderG<GData, P>
+impl<P> HolderG<P>
 where
-    GData: GuardedData<Option<P::Dat>> + 'static,
     P: Param,
+    P::GData: GuardedData<Option<P::Dat>> + 'static,
 {
     fn control(&self) -> Ref<'_, Option<ControlG<P>>> {
         self.control.borrow()
@@ -187,7 +188,7 @@ where
         (self.make_data)()
     }
 
-    fn data_guard(&self) -> GData::Guard<'_> {
+    fn data_guard(&self) -> <P::GData as GuardedData<Option<P::Dat>>>::Guard<'_> {
         self.data.guard()
     }
 
@@ -285,9 +286,9 @@ where
     }
 }
 
-impl<GData, P> Debug for HolderG<GData, P>
+impl<P> Debug for HolderG<P>
 where
-    GData: GuardedData<Option<P::Dat>> + Debug,
+    P::GData: GuardedData<Option<P::Dat>> + Debug,
     P: Param + Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -295,10 +296,10 @@ where
     }
 }
 
-impl<GData, P> Drop for HolderG<GData, P>
+impl<P> Drop for HolderG<P>
 where
     P: Param,
-    GData: GuardedData<Option<P::Dat>> + 'static,
+    P::GData: GuardedData<Option<P::Dat>> + 'static,
 {
     /// Ensures the held data, if any, is deregistered from the associated [`Control`] instance
     /// and the control instance's accumulation operation is invoked with the held data.

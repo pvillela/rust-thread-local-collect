@@ -26,6 +26,7 @@ impl<T, U> Param for JoinedParam<T, U> {
     type Dat = T;
     type Acc = U;
     type Node = usize;
+    type GData = RefCell<Option<T>>;
 }
 
 type JoinedState<T, U> = ControlStateG<JoinedParam<T, U>>;
@@ -87,7 +88,7 @@ where
     }
 }
 
-pub type Holder<T, U> = HolderG<RefCell<Option<T>>, JoinedParam<T, U>>;
+pub type Holder<T, U> = HolderG<JoinedParam<T, U>>;
 
 impl<T, U: 'static> Holder<T, U> {
     pub fn new(make_data: fn() -> T) -> Self {
