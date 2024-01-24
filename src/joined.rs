@@ -7,10 +7,11 @@
 //! terminated and joined directly or indirectly into the thread respnosible for collection. Implicit joins by
 //! scoped threads are correctly handled.
 
-use crate::common::{AccGuardS, ControlS, ControlStateS, HolderLocalKey, HolderS};
+use crate::common::{AccGuardS, ControlS, ControlStateS, HolderLocalKey, HolderS, Param};
 use std::{
     cell::RefCell,
-    ops::Deref,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
     thread::{LocalKey, ThreadId},
 };
@@ -18,43 +19,16 @@ use std::{
 //=================
 // Core implementation based on common module
 
-type JoinedState<T, U> = ControlStateS<T, U, usize>;
+#[derive(Debug)]
+struct JoinedParam<T, U>(PhantomData<T>, PhantomData<U>);
 
-impl<T, U> JoinedState<T, U>
-where
-    T: 'static,
-    U: 'static,
-{
-    /// This function is UNSAFE. Its unsafe nature is masked so that it can be used as part of the framework
-    /// defined in the [crate::common] module. [`Control::take_tls`] is flagged as unsafe because this
-    /// function is unsafe.
-    ///
-    /// This function can be called safely provided that:
-    /// - All other threads have terminaged and been joined, which means that there is a proper
-    ///   "happens-before" relationship and the only possible remaining activity on those threads
-    ///   would be Holder drop method execution on implicitly joined scoped threads,
-    ///   but that method uses the above Mutex to prevent race conditions.
-    fn take_tls(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
-        for (tid, addr) in state.tmap.iter() {
-            log::trace!("executing `take_tls` for key={:?}", tid);
-            // Safety: provided that:
-            // - All other threads have terminaged and been joined, which means that there is a proper
-            //   "happens-before" relationship and the only possible remaining activity on those threads
-            //   would be Holder drop method execution on implicitly joined scoped threads,
-            //   but that method uses the above Mutex to prevent race conditions.
-            let tl: &LocalKey<Holder0<T, U>> = unsafe { tl_from_addr(*addr) };
-            tl.with(|h| {
-                let mut data_ref = h.data.borrow_mut();
-                let data = data_ref.take();
-                log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
-                if let Some(data) = data {
-                    log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
-                    op(data, &mut state.acc, tid);
-                }
-            });
-        }
-    }
+impl<T, U> Param for JoinedParam<T, U> {
+    type Dat = T;
+    type Acc = U;
+    type Node = usize;
 }
+
+type JoinedState<T, U> = ControlStateS<JoinedParam<T, U>>;
 
 fn addr_of_tl<H>(tl: &LocalKey<H>) -> usize {
     let tl_ptr: *const LocalKey<H> = tl;
@@ -65,7 +39,7 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
     &*(addr as *const LocalKey<H>)
 }
 
-type Control0<T, U> = ControlS<JoinedState<T, U>>;
+type Control0<T, U> = ControlS<JoinedParam<T, U>>;
 
 impl<T, U> Control0<T, U>
 where
@@ -74,16 +48,46 @@ where
 {
     fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Control0 {
-            state: Arc::new(Mutex::new(JoinedState::new(
-                acc_base,
-                JoinedState::take_tls,
-            ))),
+            state: Arc::new(Mutex::new(JoinedState::new(acc_base))),
             op: Arc::new(op),
+        }
+    }
+
+    /// This function is UNSAFE. Its unsafe nature is masked so that it can be used as part of the framework
+    /// defined in the [crate::common] module. [`Control::take_tls`] is flagged as unsafe because this
+    /// function is unsafe.
+    ///
+    /// This function can be called safely provided that:
+    /// - All other threads have terminaged and been joined, which means that there is a proper
+    ///   "happens-before" relationship and the only possible remaining activity on those threads
+    ///   would be Holder drop method execution on implicitly joined scoped threads,
+    ///   but that method uses the above Mutex to prevent race conditions.
+    unsafe fn take_tls(&self) {
+        let mut guard = self.lock();
+        // Need explicit deref_mut to avoid compilation error in for loop.
+        let state = guard.deref_mut();
+        for (tid, addr) in state.tmap.iter() {
+            log::trace!("executing `take_tls` for key={:?}", tid);
+            // Safety: provided that:
+            // - All other threads have terminaged and been joined, which means that there is a proper
+            //   "happens-before" relationship and the only possible remaining activity on those threads
+            //   would be Holder drop method execution on implicitly joined scoped threads,
+            //   but that method uses the above Mutex to prevent race conditions.
+            let tl: &LocalKey<Holder0<T, U>> = tl_from_addr(*addr);
+            tl.with(|h| {
+                let mut data_ref = h.data.borrow_mut();
+                let data = data_ref.take();
+                log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
+                if let Some(data) = data {
+                    log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
+                    (self.op)(data, &mut state.acc, tid);
+                }
+            });
         }
     }
 }
 
-type Holder0<T, U> = HolderS<RefCell<Option<T>>, JoinedState<T, U>>;
+type Holder0<T, U> = HolderS<RefCell<Option<T>>, JoinedParam<T, U>>;
 
 impl<T, U: 'static> Holder0<T, U> {
     fn new(make_data: fn() -> T) -> Self {
@@ -99,8 +103,7 @@ impl<T, U: 'static> Holder0<T, U> {
 // Public wrappers
 
 /// Guard object of a [`Control`]'s `acc` field.
-#[derive(Debug)]
-pub struct AccGuard<'a, T, U>(AccGuardS<'a, JoinedState<T, U>>);
+pub struct AccGuard<'a, T, U>(AccGuardS<'a, JoinedParam<T, U>>);
 
 impl<'a, T, U> Deref for AccGuard<'a, T, U> {
     type Target = U;
@@ -368,7 +371,8 @@ mod tests {
             ]);
 
             {
-                let acc = control.acc();
+                let guard = control.acc();
+                let acc = guard.deref();
                 assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
             }
         }

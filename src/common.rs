@@ -8,55 +8,25 @@ use std::{
     thread::{self, ThreadId},
 };
 
-pub(crate) trait ControlState {
-    type Node;
-    type Acc;
+pub(crate) trait Param {
     type Dat;
-
-    fn acc(&self) -> &Self::Acc;
-    fn acc_mut(&mut self) -> &mut Self::Acc;
-    fn register_node(&mut self, node: Self::Node, tid: &ThreadId);
-
-    /// Used by a `Holder` to notify its `Control` that the holder's data has been dropped.
-    ///
-    /// The `data` argument is defined mostly for the beefit of module [`crate::simple_joined`]
-    /// and would have been unnecessary if the framework implemented only modules
-    /// [`crate::joined`] and [`crate::probed`]. Having said that, the `data` argument makes
-    /// the generic implementation simpler and uniform across all modules. Without the `data`
-    /// argument, the implementations for [`crate::joined`] and [`crate::probed`] would be
-    /// different from each other and a bit more complex.
-    fn tl_data_dropped(
-        &mut self,
-        op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync),
-        data: Option<Self::Dat>,
-        tid: &ThreadId,
-    );
-
-    fn take_tls(&mut self, op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync));
+    type Acc;
+    type Node;
 }
 
-#[derive(Debug)]
-pub(crate) struct AccGuardS<'a, CState>
-where
-    CState: ControlState,
-{
-    guard: MutexGuard<'a, CState>,
+// #[derive(Debug)]
+pub(crate) struct AccGuardS<'a, P: Param> {
+    guard: MutexGuard<'a, ControlStateS<P>>,
 }
 
-impl<'a, CState> AccGuardS<'a, CState>
-where
-    CState: ControlState,
-{
-    pub(crate) fn new(lock: MutexGuard<'a, CState>) -> Self {
+impl<'a, P: Param> AccGuardS<'a, P> {
+    pub(crate) fn new(lock: MutexGuard<'a, ControlStateS<P>>) -> Self {
         AccGuardS { guard: lock }
     }
 }
 
-impl<CState> Deref for AccGuardS<'_, CState>
-where
-    CState: ControlState,
-{
-    type Target = CState::Acc;
+impl<P: Param> Deref for AccGuardS<'_, P> {
+    type Target = P::Acc;
 
     fn deref(&self) -> &Self::Target {
         self.guard.acc()
@@ -64,26 +34,21 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct ControlStateS<T, U, Node> {
-    pub(crate) acc: U,
-    pub(crate) tmap: HashMap<ThreadId, Node>,
-    take_tls: fn(state: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
+pub(crate) struct ControlStateS<P: Param> {
+    pub(crate) acc: P::Acc,
+    pub(crate) tmap: HashMap<ThreadId, P::Node>,
 }
 
-impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
-    type Acc = U;
-    type Dat = T;
-    type Node = Node;
-
-    fn acc(&self) -> &U {
+impl<P: Param> ControlStateS<P> {
+    fn acc(&self) -> &P::Acc {
         &self.acc
     }
 
-    fn acc_mut(&mut self) -> &mut U {
+    fn acc_mut(&mut self) -> &mut P::Acc {
         &mut self.acc
     }
 
-    fn register_node(&mut self, node: Self::Node, tid: &ThreadId) {
+    fn register_node(&mut self, node: P::Node, tid: &ThreadId) {
         self.tmap.insert(tid.clone(), node);
     }
 
@@ -97,8 +62,8 @@ impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
     /// different from each other and a bit more complex.
     fn tl_data_dropped(
         &mut self,
-        op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync),
-        data: Option<Self::Dat>,
+        op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
+        data: Option<P::Dat>,
         tid: &ThreadId,
     ) {
         self.tmap.remove(tid);
@@ -107,21 +72,13 @@ impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
             op(data, acc, tid);
         }
     }
-
-    fn take_tls(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
-        (self.take_tls)(self, op)
-    }
 }
 
-impl<T, U, Node> ControlStateS<T, U, Node> {
-    pub(crate) fn new(
-        acc: U,
-        take_tls: fn(this: &mut Self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)),
-    ) -> Self {
+impl<P: Param> ControlStateS<P> {
+    pub(crate) fn new(acc: P::Acc) -> Self {
         Self {
             acc,
             tmap: HashMap::new(),
-            take_tls: take_tls,
         }
     }
 }
@@ -131,80 +88,49 @@ impl<T, U, Node> ControlStateS<T, U, Node> {
 /// `U` is the type of the accumulated value resulting from an initial base value and
 /// the application of an operation to each thread-local value and the current accumulated
 /// value upon dropping of each thread-local value. (See [`new`](Control::new) method.)
-pub(crate) struct ControlS<State>
-where
-    State: ControlState,
-{
+pub(crate) struct ControlS<P: Param> {
     /// Keeps track of registered threads and accumulated value.
-    pub(crate) state: Arc<Mutex<State>>,
+    pub(crate) state: Arc<Mutex<ControlStateS<P>>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
-    pub(crate) op: Arc<dyn Fn(State::Dat, &mut State::Acc, &ThreadId) + Send + Sync>,
+    pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync>,
 }
 
 /// Locking functionality underlying [`ControlC`].
-impl<State> ControlS<State>
-where
-    State: ControlState,
-{
+impl<P: Param> ControlS<P> {
     /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
     ///
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub(crate) fn lock(&self) -> MutexGuard<'_, State> {
+    pub(crate) fn lock(&self) -> MutexGuard<'_, ControlStateS<P>> {
         self.state.lock().unwrap()
     }
 
-    pub(crate) fn acc(&self) -> AccGuardS<'_, State> {
+    pub(crate) fn acc(&self) -> AccGuardS<'_, P> {
         AccGuardS::new(self.lock())
     }
 
     /// Provides access to the accumulated value in the [Control] struct.
-    pub(crate) fn with_acc<V>(&self, f: impl FnOnce(&State::Acc) -> V) -> V {
+    pub(crate) fn with_acc<V>(&self, f: impl FnOnce(&P::Acc) -> V) -> V {
         let acc = self.acc();
         f(&acc)
     }
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
     /// the existing accumulated value.
-    pub(crate) fn take_acc(&self, replacement: State::Acc) -> State::Acc {
+    pub(crate) fn take_acc(&self, replacement: P::Acc) -> P::Acc {
         let mut lock = self.lock();
         let acc = lock.acc_mut();
         replace(acc, replacement)
     }
 
-    fn register_node(&self, node: State::Node, tid: &ThreadId) {
+    fn register_node(&self, node: P::Node, tid: &ThreadId) {
         let mut lock = self.lock();
         lock.register_node(node, tid)
     }
 
-    /// Forces all registered thread-local values that have not already been dropped to be effectively dropped
-    /// by replacing the [`Holder`] data with [`None`], and accumulates the values contained in those thread-locals.
-    ///
-    /// Should only be called from a thread (typically the main thread) under the following conditions:
-    /// - All other threads that use this [`Control`] instance must have been directly or indirectly spawned
-    ///   from this thread; ***and***
-    /// - Any prior updates to holder values must have had a *happened before* relationship to this call;
-    ///   ***and***
-    /// - Any further updates to holder values must have a *happened after* relationship to this call.
-    ///   
-    /// In particular, the last two conditions are satisfied if the call to this method takes place after
-    /// this thread joins (directly or indirectly) with all threads that have registered with this [`Control`]
-    /// instance.
-    ///
-    /// These conditions ensure the absence of data races with a proper "happens-before" condition between any
-    /// thread-local data updates and this call.
-    ///
-    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub(crate) fn take_tls(&self) {
-        let mut lock = self.lock();
-        lock.take_tls(self.op.deref())
-    }
-
     /// Used by a `Holder` to notify its `Control` that the holder's data has been dropped.
-    fn tl_data_dropped(&self, data: Option<State::Dat>, tid: &ThreadId) {
+    fn tl_data_dropped(&self, data: Option<P::Dat>, tid: &ThreadId) {
         let mut lock = self.lock();
         lock.tl_data_dropped(self.op.deref(), data, tid);
     }
@@ -235,28 +161,28 @@ impl<S: 'static> GuardedData<S> for Arc<Mutex<S>> {
 }
 
 /// Holds thead-local data to enable registering it with [`Control`].
-pub(crate) struct HolderS<GData, CState>
+pub(crate) struct HolderS<GData, P>
 where
-    GData: GuardedData<Option<CState::Dat>> + 'static,
-    CState: ControlState,
-    CState::Dat: 'static,
+    GData: GuardedData<Option<P::Dat>> + 'static,
+    P: Param,
+    P::Dat: 'static,
 {
     pub(crate) data: GData,
-    pub(crate) control: RefCell<Option<ControlS<CState>>>,
-    pub(crate) make_data: fn() -> CState::Dat,
+    pub(crate) control: RefCell<Option<ControlS<P>>>,
+    pub(crate) make_data: fn() -> P::Dat,
 }
 
 /// Common trait supporting different `Holder` implementations.
-impl<GData, CState> HolderS<GData, CState>
+impl<GData, P> HolderS<GData, P>
 where
-    GData: GuardedData<Option<CState::Dat>> + 'static,
-    CState: ControlState,
+    GData: GuardedData<Option<P::Dat>> + 'static,
+    P: Param,
 {
-    fn control(&self) -> Ref<'_, Option<ControlS<CState>>> {
+    fn control(&self) -> Ref<'_, Option<ControlS<P>>> {
         self.control.borrow()
     }
 
-    fn make_data(&self) -> CState::Dat {
+    fn make_data(&self) -> P::Dat {
         (self.make_data)()
     }
 
@@ -265,7 +191,7 @@ where
     }
 
     /// Establishes link with control.
-    pub(crate) fn init_control(&self, control: &ControlS<CState>, node: CState::Node) {
+    pub(crate) fn init_control(&self, control: &ControlS<P>, node: P::Node) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
         control.register_node(node, &thread::current().id())
@@ -278,7 +204,7 @@ where
         }
     }
 
-    pub(crate) fn ensure_initialized(&self, control: &ControlS<CState>, node: CState::Node) {
+    pub(crate) fn ensure_initialized(&self, control: &ControlS<P>, node: P::Node) {
         if self.control().as_ref().is_none() {
             self.init_control(control, node);
         }
@@ -291,7 +217,7 @@ where
     fn drop_data(&self) {
         let mut data_guard = self.data_guard();
         let data = data_guard.take();
-        let control: Ref<'_, Option<ControlS<CState>>> = self.control();
+        let control: Ref<'_, Option<ControlS<P>>> = self.control();
         if control.is_none() {
             return;
         }
@@ -300,18 +226,18 @@ where
     }
 
     /// Invokes `f` on data. Panics if data is [`None`].
-    pub(crate) fn with_data<V>(&self, f: impl FnOnce(&CState::Dat) -> V) -> V {
+    pub(crate) fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
         let guard = self.data_guard();
         // f(guard.unwrap()) // instead of 2 lines below
-        let data: Option<&CState::Dat> = guard.as_ref();
+        let data: Option<&P::Dat> = guard.as_ref();
         f(data.unwrap())
     }
 
     /// Invokes `f` on data. Panics if data is [`None`].
-    pub(crate) fn with_data_mut<V>(&self, f: impl FnOnce(&mut CState::Dat) -> V) -> V {
+    pub(crate) fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
         let mut guard = self.data_guard();
         // f(guard.unwrap_mut()) // instead of 2 lines below
-        let data: Option<&mut CState::Dat> = guard.as_mut();
+        let data: Option<&mut P::Dat> = guard.as_mut();
         f(data.unwrap())
     }
 }
@@ -338,10 +264,7 @@ pub trait HolderLocalKey<T, Ctrl> {
     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V;
 }
 
-impl<State> Clone for ControlS<State>
-where
-    State: ControlState,
-{
+impl<P: Param> Clone for ControlS<P> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
@@ -350,30 +273,31 @@ where
     }
 }
 
-impl<State: Debug> Debug for ControlS<State>
+impl<P> Debug for ControlS<P>
 where
-    State: ControlState,
+    P: Param + Debug,
+    P::Acc: Debug,
+    P::Node: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("Control({:?})", self.state))
     }
 }
 
-impl<T, GData, CtrlState> Debug for HolderS<GData, CtrlState>
+impl<GData, P> Debug for HolderS<GData, P>
 where
-    T: Debug,
-    GData: GuardedData<Option<T>> + Debug,
-    CtrlState: ControlState<Dat = T>,
+    GData: GuardedData<Option<P::Dat>> + Debug,
+    P: Param + Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("Holder{{data: {:?}}}", &self.data))
     }
 }
 
-impl<GData, CState> Drop for HolderS<GData, CState>
+impl<GData, P> Drop for HolderS<GData, P>
 where
-    CState: ControlState,
-    GData: GuardedData<Option<CState::Dat>> + 'static,
+    P: Param,
+    GData: GuardedData<Option<P::Dat>> + 'static,
 {
     /// Ensures the held data, if any, is deregistered from the associated [`Control`] instance
     /// and the control instance's accumulation operation is invoked with the held data.
