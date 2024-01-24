@@ -8,24 +8,24 @@ use std::{
     thread::{self, ThreadId},
 };
 
-pub(crate) trait Param {
+pub trait Param {
     type Dat;
     type Acc;
     type Node;
 }
 
 // #[derive(Debug)]
-pub(crate) struct AccGuardS<'a, P: Param> {
-    guard: MutexGuard<'a, ControlStateS<P>>,
+pub struct AccGuardG<'a, P: Param> {
+    guard: MutexGuard<'a, ControlStateG<P>>,
 }
 
-impl<'a, P: Param> AccGuardS<'a, P> {
-    pub(crate) fn new(lock: MutexGuard<'a, ControlStateS<P>>) -> Self {
-        AccGuardS { guard: lock }
+impl<'a, P: Param> AccGuardG<'a, P> {
+    pub(crate) fn new(lock: MutexGuard<'a, ControlStateG<P>>) -> Self {
+        AccGuardG { guard: lock }
     }
 }
 
-impl<P: Param> Deref for AccGuardS<'_, P> {
+impl<P: Param> Deref for AccGuardG<'_, P> {
     type Target = P::Acc;
 
     fn deref(&self) -> &Self::Target {
@@ -34,12 +34,12 @@ impl<P: Param> Deref for AccGuardS<'_, P> {
 }
 
 #[derive(Debug)]
-pub(crate) struct ControlStateS<P: Param> {
+pub(crate) struct ControlStateG<P: Param> {
     pub(crate) acc: P::Acc,
     pub(crate) tmap: HashMap<ThreadId, P::Node>,
 }
 
-impl<P: Param> ControlStateS<P> {
+impl<P: Param> ControlStateG<P> {
     fn acc(&self) -> &P::Acc {
         &self.acc
     }
@@ -74,7 +74,7 @@ impl<P: Param> ControlStateS<P> {
     }
 }
 
-impl<P: Param> ControlStateS<P> {
+impl<P: Param> ControlStateG<P> {
     pub(crate) fn new(acc: P::Acc) -> Self {
         Self {
             acc,
@@ -88,37 +88,37 @@ impl<P: Param> ControlStateS<P> {
 /// `U` is the type of the accumulated value resulting from an initial base value and
 /// the application of an operation to each thread-local value and the current accumulated
 /// value upon dropping of each thread-local value. (See [`new`](Control::new) method.)
-pub(crate) struct ControlS<P: Param> {
+pub struct ControlG<P: Param> {
     /// Keeps track of registered threads and accumulated value.
-    pub(crate) state: Arc<Mutex<ControlStateS<P>>>,
+    pub(crate) state: Arc<Mutex<ControlStateG<P>>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
     pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync>,
 }
 
 /// Locking functionality underlying [`ControlC`].
-impl<P: Param> ControlS<P> {
+impl<P: Param> ControlG<P> {
     /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
     ///
     /// An cquired lock can be used with multiple method calls and droped after the last call.
     /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    pub(crate) fn lock(&self) -> MutexGuard<'_, ControlStateS<P>> {
+    pub(crate) fn lock(&self) -> MutexGuard<'_, ControlStateG<P>> {
         self.state.lock().unwrap()
     }
 
-    pub(crate) fn acc(&self) -> AccGuardS<'_, P> {
-        AccGuardS::new(self.lock())
+    pub fn acc(&self) -> AccGuardG<'_, P> {
+        AccGuardG::new(self.lock())
     }
 
     /// Provides access to the accumulated value in the [Control] struct.
-    pub(crate) fn with_acc<V>(&self, f: impl FnOnce(&P::Acc) -> V) -> V {
+    pub fn with_acc<V>(&self, f: impl FnOnce(&P::Acc) -> V) -> V {
         let acc = self.acc();
         f(&acc)
     }
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
     /// the existing accumulated value.
-    pub(crate) fn take_acc(&self, replacement: P::Acc) -> P::Acc {
+    pub fn take_acc(&self, replacement: P::Acc) -> P::Acc {
         let mut lock = self.lock();
         let acc = lock.acc_mut();
         replace(acc, replacement)
@@ -136,7 +136,8 @@ impl<P: Param> ControlS<P> {
     }
 }
 
-pub(crate) trait GuardedData<S: 'static> {
+#[doc(hidden)]
+pub trait GuardedData<S: 'static> {
     type Guard<'a>: DerefMut<Target = S> + 'a
     where
         Self: 'a;
@@ -161,24 +162,24 @@ impl<S: 'static> GuardedData<S> for Arc<Mutex<S>> {
 }
 
 /// Holds thead-local data to enable registering it with [`Control`].
-pub(crate) struct HolderS<GData, P>
+pub struct HolderG<GData, P>
 where
     GData: GuardedData<Option<P::Dat>> + 'static,
     P: Param,
     P::Dat: 'static,
 {
     pub(crate) data: GData,
-    pub(crate) control: RefCell<Option<ControlS<P>>>,
+    pub(crate) control: RefCell<Option<ControlG<P>>>,
     pub(crate) make_data: fn() -> P::Dat,
 }
 
 /// Common trait supporting different `Holder` implementations.
-impl<GData, P> HolderS<GData, P>
+impl<GData, P> HolderG<GData, P>
 where
     GData: GuardedData<Option<P::Dat>> + 'static,
     P: Param,
 {
-    fn control(&self) -> Ref<'_, Option<ControlS<P>>> {
+    fn control(&self) -> Ref<'_, Option<ControlG<P>>> {
         self.control.borrow()
     }
 
@@ -191,7 +192,7 @@ where
     }
 
     /// Establishes link with control.
-    pub(crate) fn init_control(&self, control: &ControlS<P>, node: P::Node) {
+    pub(crate) fn init_control(&self, control: &ControlG<P>, node: P::Node) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
         control.register_node(node, &thread::current().id())
@@ -204,7 +205,7 @@ where
         }
     }
 
-    pub(crate) fn ensure_initialized(&self, control: &ControlS<P>, node: P::Node) {
+    pub(crate) fn ensure_initialized(&self, control: &ControlG<P>, node: P::Node) {
         if self.control().as_ref().is_none() {
             self.init_control(control, node);
         }
@@ -217,7 +218,7 @@ where
     fn drop_data(&self) {
         let mut data_guard = self.data_guard();
         let data = data_guard.take();
-        let control: Ref<'_, Option<ControlS<P>>> = self.control();
+        let control: Ref<'_, Option<ControlG<P>>> = self.control();
         if control.is_none() {
             return;
         }
@@ -242,7 +243,7 @@ where
     }
 }
 
-/// Provides convenient access to `Holder` functionality across the different framework modules
+/// Provides access to `Holder` functionality across the different framework modules
 /// ([`crate::joined`], [`crate::simple_joined`], [`crate::probed`]).
 ///
 /// - `Ctrl` is the module-specific Control type.
@@ -264,7 +265,7 @@ pub trait HolderLocalKey<T, Ctrl> {
     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V;
 }
 
-impl<P: Param> Clone for ControlS<P> {
+impl<P: Param> Clone for ControlG<P> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
@@ -273,7 +274,7 @@ impl<P: Param> Clone for ControlS<P> {
     }
 }
 
-impl<P> Debug for ControlS<P>
+impl<P> Debug for ControlG<P>
 where
     P: Param + Debug,
     P::Acc: Debug,
@@ -284,7 +285,7 @@ where
     }
 }
 
-impl<GData, P> Debug for HolderS<GData, P>
+impl<GData, P> Debug for HolderG<GData, P>
 where
     GData: GuardedData<Option<P::Dat>> + Debug,
     P: Param + Debug,
@@ -294,7 +295,7 @@ where
     }
 }
 
-impl<GData, P> Drop for HolderS<GData, P>
+impl<GData, P> Drop for HolderG<GData, P>
 where
     P: Param,
     GData: GuardedData<Option<P::Dat>> + 'static,
