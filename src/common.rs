@@ -16,13 +16,22 @@ pub(crate) trait ControlState {
     fn acc(&self) -> &Self::Acc;
     fn acc_mut(&mut self) -> &mut Self::Acc;
     fn register_node(&mut self, node: Self::Node, tid: &ThreadId);
-    fn deregister_thread(&mut self, tid: &ThreadId);
-    fn accumulate_tl(
+
+    /// Used by a `Holder` to notify its `Control` that the holder's data has been dropped.
+    ///
+    /// The `data` argument is defined mostly for the beefit of module [`crate::simple_joined`]
+    /// and would have been unnecessary if the framework implemented only modules
+    /// [`crate::joined`] and [`crate::probed`]. Having said that, the `data` argument makes
+    /// the generic implementation simpler and uniform across all modules. Without the `data`
+    /// argument, the implementations for [`crate::joined`] and [`crate::probed`] would be
+    /// different from each other and a bit more complex.
+    fn tl_data_dropped(
         &mut self,
         op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync),
-        data: Self::Dat,
+        data: Option<Self::Dat>,
         tid: &ThreadId,
     );
+
     fn take_tls(&mut self, op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync));
 }
 
@@ -78,18 +87,25 @@ impl<T, U, Node> ControlState for ControlStateS<T, U, Node> {
         self.tmap.insert(tid.clone(), node);
     }
 
-    fn deregister_thread(&mut self, tid: &ThreadId) {
-        self.tmap.remove(tid);
-    }
-
-    fn accumulate_tl(
+    /// Used by a `Holder` to notify its `Control` that the holder's data has been dropped.
+    ///
+    /// The `data` argument is defined mostly for the beefit of module [`crate::simple_joined`]
+    /// and would have been unnecessary if the framework implemented only modules
+    /// [`crate::joined`] and [`crate::probed`]. Having said that, the `data` argument makes
+    /// the generic implementation simpler and uniform across all modules. Without the `data`
+    /// argument, the implementations for [`crate::joined`] and [`crate::probed`] would be
+    /// different from each other and a bit more complex.
+    fn tl_data_dropped(
         &mut self,
-        op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync),
-        data: T,
+        op: &(dyn Fn(Self::Dat, &mut Self::Acc, &ThreadId) + Send + Sync),
+        data: Option<Self::Dat>,
         tid: &ThreadId,
     ) {
-        let acc = self.acc_mut();
-        op(data, acc, tid);
+        self.tmap.remove(tid);
+        if let Some(data) = data {
+            let acc = self.acc_mut();
+            op(data, acc, tid);
+        }
     }
 
     fn take_tls(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {
@@ -187,12 +203,10 @@ where
         lock.take_tls(self.op.deref())
     }
 
-    fn tl_data_dropped(&self, tid: &ThreadId, data: Option<State::Dat>) {
+    /// Used by a `Holder` to notify its `Control` that the holder's data has been dropped.
+    fn tl_data_dropped(&self, data: Option<State::Dat>, tid: &ThreadId) {
         let mut lock = self.lock();
-        lock.deregister_thread(tid);
-        if let Some(data) = data {
-            lock.accumulate_tl(self.op.as_ref(), data, tid);
-        }
+        lock.tl_data_dropped(self.op.deref(), data, tid);
     }
 }
 
@@ -282,7 +296,7 @@ where
             return;
         }
         let control = Ref::map(control, |x| x.as_ref().unwrap());
-        control.tl_data_dropped(&thread::current().id(), data);
+        control.tl_data_dropped(data, &thread::current().id());
     }
 
     /// Invokes `f` on data. Panics if data is [`None`].
