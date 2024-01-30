@@ -8,8 +8,6 @@ use std::{
     thread::{self, ThreadId},
 };
 
-pub trait Discr {}
-
 pub trait Param {
     type Dat;
     type Acc;
@@ -57,8 +55,6 @@ impl<P: Param> ControlStateG<P> {
 pub struct TmapD<P: Param> {
     pub(crate) tmap: HashMap<ThreadId, P::Node>,
 }
-
-impl<P: Param> Discr for TmapD<P> {}
 
 impl<P: Param<Discr = TmapD<P>>> ControlStateG<P> {
     pub fn new(acc_base: P::Acc) -> Self {
