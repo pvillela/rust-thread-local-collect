@@ -246,7 +246,7 @@ where
         f(data.unwrap())
     }
 
-    pub(crate) fn drop_data(&self) {
+    fn drop_data(&self) {
         (self.drop_data)(self)
     }
 }
