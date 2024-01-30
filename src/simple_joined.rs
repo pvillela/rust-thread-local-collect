@@ -1,324 +1,247 @@
-// //! This module supports the collection and aggregation of the values of a designated thread-local variable
-// //! across threads. It is a simplified version of the [`crate::joined`] module which does not rely on
-// //! unsafe code. The following constraints apply ...
-// //! - The designated thread-local variable should NOT be used in the thread responsible for
-// //! collection/aggregation. If this condition is violated, the thread-local value on that thread will NOT
-// //! be collected and aggregated.
-// //! - The collection/aggregation functionality occurs as a result of the execution of the destructors of the
-// //! participating threads.
-// //! - The aggregated value is reflective of all participating threads if and only if it is accessed after
-// //! all participating theads have
-// //! terminated and EXPLICITLY joined directly or indirectly into the thread respnosible for collection.
-// //! - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
-// //! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
-// //! implicit join of a scoped thread.
+//! This module supports the collection and aggregation of the values of a designated thread-local variable
+//! across threads. It is a simplified version of the [`crate::joined`] module which does not rely on
+//! unsafe code. The following constraints apply ...
+//! - The designated thread-local variable should NOT be used in the thread responsible for
+//! collection/aggregation. If this condition is violated, the thread-local value on that thread will NOT
+//! be collected and aggregated.
+//! - The collection/aggregation functionality occurs as a result of the execution of the destructors of the
+//! participating threads.
+//! - The aggregated value is reflective of all participating threads if and only if it is accessed after
+//! all participating theads have
+//! terminated and EXPLICITLY joined directly or indirectly into the thread respnosible for collection.
+//! - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
+//! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
+//! implicit join of a scoped thread.
 
-// use crate::common::{AccGuardS, ControlS, ControlStateS, HolderLocalKey, HolderS};
-// use std::{
-//     cell::RefCell,
-//     ops::Deref,
-//     sync::{Arc, Mutex},
-//     thread::{LocalKey, ThreadId},
-// };
+use crate::common::{ControlG, ControlStateG, HolderG, HolderLocalKey, Param};
+use std::{
+    cell::{Ref, RefCell},
+    marker::PhantomData,
+    sync::{Arc, Mutex},
+    thread::{self, LocalKey, ThreadId},
+};
 
-// //=================
-// // Core implementation based on common module
+//=================
+// Core implementation based on common module
 
-// type TrivialState<T, U> = ControlStateS<T, U, ()>;
+#[derive(Debug)]
+pub struct SimpleP<T, U>(PhantomData<T>, PhantomData<U>);
 
-// impl<T, U> TrivialState<T, U> {
-//     fn take_tls(_state: &mut Self, _op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) {}
-// }
+#[derive(Debug)]
+pub struct SimpleD;
 
-// type Control0<T, U> = ControlS<TrivialState<T, U>>;
+impl<T, U> Param for SimpleP<T, U> {
+    type Dat = T;
+    type Acc = U;
+    type Node = ();
+    type GData = RefCell<Option<T>>;
+    type Discr = SimpleD; // could have used unit type `()` instead.
+}
 
-// impl<T, U> Control0<T, U>
-// where
-//     T: 'static,
-//     U: 'static,
-// {
-//     fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-//         Control0 {
-//             state: Arc::new(Mutex::new(TrivialState::new(
-//                 acc_base,
-//                 TrivialState::take_tls,
-//             ))),
-//             op: Arc::new(op),
-//         }
-//     }
-// }
+type SimpleState<T, U> = ControlStateG<SimpleP<T, U>>;
 
-// type Holder0<T, U> = HolderS<RefCell<Option<T>>, TrivialState<T, U>>;
+pub type Control<T, U> = ControlG<SimpleP<T, U>>;
 
-// impl<T, U: 'static> Holder0<T, U> {
-//     /// Creates a new `Holder` instance with a function to initialize the data.
-//     ///
-//     /// The `make_data` function will be called lazily when data is first accessed to initialize
-//     /// the inner data value.
-//     fn new(make_data: fn() -> T) -> Self {
-//         Self {
-//             data: RefCell::new(None),
-//             control: RefCell::new(None),
-//             make_data,
-//         }
-//     }
-// }
+impl<T, U> Control<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
+    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
+        Control {
+            state: Arc::new(Mutex::new(SimpleState {
+                acc: acc_base,
+                d: SimpleD,
+            })),
+            op: Arc::new(op),
+        }
+    }
 
-// //=================
-// // Public wrappers
+    /// Used by a `Holder` to notify its `Control` that the holder's data has been dropped.
+    fn tl_data_dropped(&self, data: Option<T>, tid: &ThreadId) {
+        let mut lock = self.lock();
+        let acc = &mut lock.acc;
+        if let Some(data) = data {
+            (self.op)(data, acc, tid);
+        }
+    }
+}
 
-// /// Guard object of a [`Control`]'s `acc` field.
-// #[derive(Debug)]
-// pub struct AccGuard<'a, T, U>(AccGuardS<'a, TrivialState<T, U>>);
+pub type Holder<T, U> = HolderG<SimpleP<T, U>>;
 
-// impl<'a, T, U> Deref for AccGuard<'a, T, U> {
-//     type Target = U;
+impl<T, U: 'static> Holder<T, U> {
+    /// Establishes link with control.
+    fn init_control_fn(this: &Self, control: &Control<T, U>, _node: ()) {
+        let mut ctrl_ref = this.control.borrow_mut();
+        *ctrl_ref = Some(control.clone());
+    }
 
-//     fn deref(&self) -> &Self::Target {
-//         self.0.deref()
-//     }
-// }
+    fn drop_data_fn(this: &Self) {
+        let mut data_guard = this.data_guard();
+        let data = data_guard.take();
+        let control = this.control();
+        if control.is_none() {
+            return;
+        }
+        let control = Ref::map(control, |x| x.as_ref().unwrap());
+        control.tl_data_dropped(data, &thread::current().id());
+    }
 
-// /// Contains an accumulation operation `op`
-// /// and an accumulated value `acc`. The accumulated value is updated by applying `op` to each thread-local
-// /// data value and `acc` when the thread-local value is dropped.
-// #[derive(Debug)]
-// pub struct Control<T, U>(Control0<T, U>);
+    /// Creates a new `Holder` instance with a function to initialize the data.
+    ///
+    /// The `make_data` function will be called lazily when data is first accessed to initialize
+    /// the inner data value.
+    pub fn new(make_data: fn() -> T) -> Self {
+        Self {
+            data: RefCell::new(None),
+            control: RefCell::new(None),
+            make_data,
+            init_control: Self::init_control_fn,
+            drop_data: Self::drop_data_fn,
+        }
+    }
+}
 
-// impl<T, U> Control<T, U>
-// where
-//     T: 'static,
-//     U: 'static,
-// {
-//     /// Instantiates a [`Control`] object with `acc`_base as the initial value of its accumulator and
-//     /// `op` as its aggregation operation.
-//     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-//         Self(Control0::new(acc_base, op))
-//     }
+//=================
+// Implementation of HolderLocalKey.
 
-//     /// Returns a guard of the object's `acc` field. This guard holds a lock on `self` which is only released
-//     /// when the guard object is dropped.
-//     pub fn acc(&self) -> AccGuard<'_, T, U> {
-//         AccGuard(self.0.acc())
-//     }
+impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
+    /// Establishes link with control.
+    fn init_control(&'static self, control: &Control<T, U>) {
+        self.with(|h| h.init_control(&control, ()))
+    }
 
-//     /// Provides read-only access to the accumulated value in the [Control] struct.
-//     ///
-//     /// Limitations:
-//     /// - The aggregated value is reflective of all participating threads if and only if it is accessed after
-//     /// all participating theads have
-//     /// terminated and EXPLICITLY joined directly or indirectly into the thread respnosible for collection.
-//     /// - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
-//     /// of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
-//     /// implicit join of a scoped thread.
-//     ///
-//     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-//     ///
-//     /// See also [`take_acc`](Self::take_acc) and [`ControlLock::acc`].
-//     pub fn with_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
-//         self.0.with_acc(f)
-//     }
+    /// Initializes [`Holder`] data.
+    fn init_data(&'static self) {
+        self.with(|h| h.init_data())
+    }
 
-//     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
-//     /// the existing accumulated value.
-//     ///
-//     /// Limitations:
-//     /// - The aggregated value is reflective of all participating threads if and only if it is accessed after
-//     /// all participating theads have
-//     /// terminated and EXPLICITLY joined directly or indirectly into the thread respnosible for collection.
-//     /// - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
-//     /// of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
-//     /// implicit join of a scoped thread.
-//     ///
-//     /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-//     ///
-//     /// See also [`with_acc`](Self::with_acc) and [`ControlLock::acc`].
-//     pub fn take_acc(&self, replacement: U) -> U {
-//         self.0.take_acc(replacement)
-//     }
-// }
+    /// Ensures [`Holder`] is properly initialized by initializing it if not.
+    fn ensure_initialized(&'static self, control: &Control<T, U>) {
+        self.with(|h| h.ensure_initialized(&control, ()))
+    }
 
-// /// Holds the data to be accumulated and registers with a [`Control`] instance to provide the framework's capabilities.
-// ///
-// /// Functionality for [`Holder`] is provided through [`HolderLocalKey`].
-// #[derive(Debug)]
-// pub struct Holder<T, U>(Holder0<T, U>)
-// where
-//     T: 'static;
+    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
+    fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> V {
+        self.with(|h| h.with_data(f))
+    }
 
-// impl<T, U> Holder<T, U>
-// where
-//     U: 'static,
-// {
-//     /// Creates a new `Holder` instance with a function to initialize the data.
-//     ///
-//     /// The `make_data` function will be called by [`HolderLocalKey::init_data`].
-//     pub fn new(make_data: fn() -> T) -> Self {
-//         Self(Holder0::new(make_data))
-//     }
+    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
+    fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V {
+        self.with(|h| h.with_data_mut(f))
+    }
+}
 
-//     /// Establishes link with control.
-//     fn init_control(&self, control: &Control<T, U>) {
-//         self.0.init_control(&control.0, ())
-//     }
+#[cfg(test)]
+mod tests {
+    use super::{Control, Holder, HolderLocalKey};
 
-//     fn init_data(&self) {
-//         self.0.init_data()
-//     }
+    use std::{
+        collections::HashMap,
+        fmt::Debug,
+        ops::Deref,
+        sync::RwLock,
+        thread::{self, ThreadId},
+        time::Duration,
+    };
 
-//     fn ensure_initialized(&self, control: &Control<T, U>) {
-//         self.0.ensure_initialized(&control.0, ())
-//     }
+    #[derive(Debug, Clone, PartialEq)]
+    struct Foo(String);
 
-//     /// Invokes `f` on data. Panics if data is [`None`].
-//     fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> V {
-//         self.0.with_data(f)
-//     }
+    type Data = HashMap<u32, Foo>;
 
-//     /// Invokes `f` on data. Panics if data is [`None`].
-//     fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> V {
-//         self.0.with_data_mut(f)
-//     }
-// }
+    type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
 
-// //=================
-// // Implementation of HolderLocalKey.
+    thread_local! {
+        static MY_FOO_MAP: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
+    }
 
-// impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
-//     /// Establishes link with control.
-//     fn init_control(&'static self, control: &Control<T, U>) {
-//         self.with(|h| h.init_control(&control))
-//     }
+    fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
+        MY_FOO_MAP.ensure_initialized(control);
+        MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
+    }
 
-//     /// Initializes [`Holder`] data.
-//     fn init_data(&'static self) {
-//         self.with(|h| h.init_data())
-//     }
+    fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: &ThreadId) {
+        println!(
+            "`op` called from {:?} with data {:?}",
+            thread::current().id(),
+            data
+        );
 
-//     /// Ensures [`Holder`] is properly initialized by initializing it if not.
-//     fn ensure_initialized(&'static self, control: &Control<T, U>) {
-//         self.with(|h| h.ensure_initialized(&control))
-//     }
+        acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+        for (k, v) in data {
+            acc.get_mut(tid).unwrap().insert(k, v.clone());
+        }
+    }
 
-//     /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
-//     fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> V {
-//         self.with(|h| h.with_data(f))
-//     }
+    fn assert_tl(other: &Data, msg: &str) {
+        MY_FOO_MAP.with_data(|map| {
+            assert_eq!(map, other, "{msg}");
+        });
+    }
 
-//     /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
-//     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V {
-//         self.with(|h| h.with_data_mut(f))
-//     }
-// }
+    #[test]
+    fn test_all() {
+        let control = Control::new(HashMap::new(), op);
+        let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
-// #[cfg(test)]
-// mod tests {
-//     use super::{Control, Holder, HolderLocalKey};
+        thread::scope(|s| {
+            let hs = (0..2)
+                .map(|i| {
+                    s.spawn({
+                        // These are to prevent the move closure from moving `control` and `spawned_tids`.
+                        // The closure has to be `move` because it needs to own `i`.
+                        let control = &control;
+                        let spawned_tids = &spawned_tids;
 
-//     use std::{
-//         collections::HashMap,
-//         fmt::Debug,
-//         sync::RwLock,
-//         thread::{self, ThreadId},
-//         time::Duration,
-//     };
+                        move || {
+                            let si = i.to_string();
 
-//     #[derive(Debug, Clone, PartialEq)]
-//     struct Foo(String);
+                            let mut lock = spawned_tids.write().unwrap();
+                            lock[i] = thread::current().id();
+                            drop(lock);
 
-//     type Data = HashMap<u32, Foo>;
+                            insert_tl_entry(1, Foo("a".to_owned() + &si), control);
 
-//     type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
+                            let other = HashMap::from([(1, Foo("a".to_owned() + &si))]);
+                            assert_tl(&other, "After 1st insert");
 
-//     thread_local! {
-//         static MY_FOO_MAP: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
-//     }
+                            insert_tl_entry(2, Foo("b".to_owned() + &si), control);
 
-//     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-//         MY_FOO_MAP.ensure_initialized(control);
-//         MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
-//     }
+                            let other = HashMap::from([
+                                (1, Foo("a".to_owned() + &si)),
+                                (2, Foo("b".to_owned() + &si)),
+                            ]);
+                            assert_tl(&other, "After 2nd insert");
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
 
-//     fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: &ThreadId) {
-//         println!(
-//             "`op` called from {:?} with data {:?}",
-//             thread::current().id(),
-//             data
-//         );
+            thread::sleep(Duration::from_millis(50));
 
-//         acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
-//         for (k, v) in data {
-//             acc.get_mut(tid).unwrap().insert(k, v.clone());
-//         }
-//     }
+            let spawned_tids = spawned_tids.try_read().unwrap();
+            println!("spawned_tid={:?}", spawned_tids);
 
-//     fn assert_tl(other: &Data, msg: &str) {
-//         MY_FOO_MAP.with_data(|map| {
-//             assert_eq!(map, other, "{msg}");
-//         });
-//     }
+            hs.into_iter().for_each(|h| h.join().unwrap());
 
-//     #[test]
-//     fn test_all() {
-//         let control = Control::new(HashMap::new(), op);
-//         let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
+            println!("after hs join: {:?}", control);
+        });
 
-//         thread::scope(|s| {
-//             let hs = (0..2)
-//                 .map(|i| {
-//                     s.spawn({
-//                         // These are to prevent the move closure from moving `control` and `spawned_tids`.
-//                         // The closure has to be `move` because it needs to own `i`.
-//                         let control = &control;
-//                         let spawned_tids = &spawned_tids;
+        {
+            let spawned_tids = spawned_tids.try_read().unwrap();
+            let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
+            let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
+            let map = HashMap::from([
+                (spawned_tids[0].clone(), map_0),
+                (spawned_tids[1].clone(), map_1),
+            ]);
 
-//                         move || {
-//                             let si = i.to_string();
-
-//                             let mut lock = spawned_tids.write().unwrap();
-//                             lock[i] = thread::current().id();
-//                             drop(lock);
-
-//                             insert_tl_entry(1, Foo("a".to_owned() + &si), control);
-
-//                             let other = HashMap::from([(1, Foo("a".to_owned() + &si))]);
-//                             assert_tl(&other, "After 1st insert");
-
-//                             insert_tl_entry(2, Foo("b".to_owned() + &si), control);
-
-//                             let other = HashMap::from([
-//                                 (1, Foo("a".to_owned() + &si)),
-//                                 (2, Foo("b".to_owned() + &si)),
-//                             ]);
-//                             assert_tl(&other, "After 2nd insert");
-//                         }
-//                     })
-//                 })
-//                 .collect::<Vec<_>>();
-
-//             thread::sleep(Duration::from_millis(50));
-
-//             let spawned_tids = spawned_tids.try_read().unwrap();
-//             println!("spawned_tid={:?}", spawned_tids);
-
-//             hs.into_iter().for_each(|h| h.join().unwrap());
-
-//             println!("after hs join: {:?}", control);
-//         });
-
-//         {
-//             let spawned_tids = spawned_tids.try_read().unwrap();
-//             let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
-//             let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
-//             let map = HashMap::from([
-//                 (spawned_tids[0].clone(), map_0),
-//                 (spawned_tids[1].clone(), map_1),
-//             ]);
-
-//             {
-//                 let acc = control.acc();
-//                 assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
-//             }
-//         }
-//     }
-// }
+            {
+                let guard = control.acc();
+                let acc = guard.deref();
+                assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
+            }
+        }
+    }
+}

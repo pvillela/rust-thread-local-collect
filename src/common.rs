@@ -197,7 +197,7 @@ where
     P: Param,
     P::GData: GuardedData<Option<P::Dat>> + 'static,
 {
-    fn control(&self) -> Ref<'_, Option<ControlG<P>>> {
+    pub(crate) fn control(&self) -> Ref<'_, Option<ControlG<P>>> {
         self.control.borrow()
     }
 
@@ -205,7 +205,7 @@ where
         (self.make_data)()
     }
 
-    fn data_guard(&self) -> <P::GData as GuardedData<Option<P::Dat>>>::Guard<'_> {
+    pub(crate) fn data_guard(&self) -> <P::GData as GuardedData<Option<P::Dat>>>::Guard<'_> {
         self.data.guard()
     }
 
