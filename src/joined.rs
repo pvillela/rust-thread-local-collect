@@ -24,7 +24,7 @@
 //! // Define your data type, e.g.:
 //! type Data = i32;
 //!
-//! // Define your accumulated value type. It can be `()` if you don't need an accumulator.
+//! // Define your accumulated value type.
 //! type AccValue = i32;
 //!
 //! // Define your thread-local:
@@ -33,7 +33,6 @@
 //! }
 //!
 //! // Define your accumulation operation.
-//! // You can use the closure `|_, _, _| ()` inline in the `Control` constructor if you don't need an accumulator.
 //! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
 //!     *acc += data;
 //! }
@@ -90,6 +89,7 @@ use std::{
 //=================
 // Core implementation based on common module
 
+/// Parameter bundle that enables specialization of the common generic structs for this module.
 #[derive(Debug)]
 pub struct JoinedP<T, U>(PhantomData<T>, PhantomData<U>);
 
@@ -112,6 +112,7 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
     &*(addr as *const LocalKey<H>)
 }
 
+/// Specialization of [`ControlG`] for this module.
 pub type Control<T, U> = ControlG<JoinedP<T, U>>;
 
 impl<T, U> Control<T, U>
@@ -119,6 +120,7 @@ where
     T: 'static,
     U: 'static,
 {
+    /// Instantiates a [`Control`] object for this module.
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Control {
             state: Arc::new(Mutex::new(JoinedState::new(acc_base))),
@@ -126,15 +128,15 @@ where
         }
     }
 
-    /// This function is UNSAFE. Its unsafe nature is masked so that it can be used as part of the framework
-    /// defined in the [crate::common] module. [`Control::take_tls`] is flagged as unsafe because this
-    /// function is unsafe.
+    /// Collects and accumulates the values of linked thread-local variables.
     ///
     /// This function can be called safely provided that:
-    /// - All other threads have terminaged and been joined, which means that there is a proper
-    ///   "happens-before" relationship and the only possible remaining activity on those threads
-    ///   would be Holder drop method execution on implicitly joined scoped threads,
-    ///   but that method uses the above Mutex to prevent race conditions.
+    /// - All other threads have terminaged and been joined directly or indirectly, explicitly or implicitly.
+    ///
+    /// The above condition establishes a proper "happens-before" relationship for all explicitly joined threads,
+    /// and the only possible remaining activity would be [`HolderG`] drop method execution on implicitly joined
+    /// scoped threads.
+    /// But that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
     pub unsafe fn take_tls(&self) {
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
@@ -142,10 +144,12 @@ where
         for (tid, addr) in state.d.tmap.iter() {
             log::trace!("executing `take_tls` for key={:?}", tid);
             // Safety: provided that:
-            // - All other threads have terminaged and been joined, which means that there is a proper
-            //   "happens-before" relationship and the only possible remaining activity on those threads
-            //   would be Holder drop method execution on implicitly joined scoped threads,
-            //   but that method uses the above Mutex to prevent race conditions.
+            // - All other threads have terminaged and been joined directly or indirectly, explicitly or implicitly.
+            //
+            // The above condition establishes a proper "happens-before" relationship for all explicitly joined threads,
+            // and the only possible remaining activity would be [`HolderG`] drop method execution on implicitly joined
+            // scoped threads.
+            // But that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
             let tl: &LocalKey<Holder<T, U>> = tl_from_addr(*addr);
             tl.with(|h| {
                 let mut data_ref = h.data.borrow_mut();
@@ -160,9 +164,11 @@ where
     }
 }
 
+/// Specialization of [`HolderG`] for this module.
 pub type Holder<T, U> = HolderG<JoinedP<T, U>>;
 
 impl<T, U: 'static> Holder<T, U> {
+    /// Instantiates a [`Holder`] object for this module.
     pub fn new(make_data: fn() -> T) -> Self {
         Self {
             data: RefCell::new(None),
@@ -198,7 +204,7 @@ impl<T, U> HolderLocalKey<JoinedP<T, U>> for LocalKey<Holder<T, U>> {
         self.with(|h| h.with_data(f))
     }
 
-    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
+    /// Invokes `f` mutably on [`Holder`] data. Panics if data is [`None`].
     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V {
         self.with(|h| h.with_data_mut(f))
     }
