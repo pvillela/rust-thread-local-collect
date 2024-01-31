@@ -96,8 +96,8 @@ impl<T, U: 'static> Holder<T, U> {
             data: RefCell::new(None),
             control: RefCell::new(None),
             make_data,
-            init_control: Self::init_control_fn,
-            drop_data: Self::drop_data_fn,
+            init_control_fn: Self::init_control_fn,
+            drop_data_fn: Self::drop_data_fn,
         }
     }
 }

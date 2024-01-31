@@ -183,8 +183,8 @@ where
     pub(crate) data: P::GData,
     pub(crate) control: RefCell<Option<ControlG<P>>>,
     pub(crate) make_data: fn() -> P::Dat,
-    pub(crate) init_control: fn(this: &Self, control: &ControlG<P>, node: P::Node),
-    pub(crate) drop_data: fn(&Self),
+    pub(crate) init_control_fn: fn(this: &Self, control: &ControlG<P>, node: P::Node),
+    pub(crate) drop_data_fn: fn(&Self),
 }
 
 /// Common trait supporting different `Holder` implementations.
@@ -206,7 +206,7 @@ where
     }
 
     pub(crate) fn init_control(&self, control: &ControlG<P>, node: P::Node) {
-        (self.init_control)(self, control, node)
+        (self.init_control_fn)(self, control, node)
     }
 
     pub(crate) fn init_data(&self) {
@@ -243,7 +243,7 @@ where
     }
 
     fn drop_data(&self) {
-        (self.drop_data)(self)
+        (self.drop_data_fn)(self)
     }
 }
 
