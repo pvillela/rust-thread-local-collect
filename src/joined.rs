@@ -6,6 +6,66 @@
 //! other than the thread responsible for collection/aggregation, have
 //! terminated and joined directly or indirectly into the thread respnosible for collection. Implicit joins by
 //! scoped threads are correctly handled.
+//!
+//! ## Usage pattern
+//!
+//! Here's an outline of how this little framework can be used:
+//!
+//! ```rust
+//! use std::thread::{self, ThreadId};
+//! use thread_local_collect::joined::{Control, Holder};
+//!
+//! // Define your data type, e.g.:
+//! type Data = i32;
+//!
+//! // Define your accumulated value type. It can be `()` if you don't need an accumulator.
+//! type AccValue = i32;
+//!
+//! // Define your thread-local:
+//! thread_local! {
+//!     static MY_TL: Holder<Data, AccValue> = Holder::new(|| 0);
+//! }
+//!
+//! // Define your accumulation operation.
+//! // You can use the closure `|_, _, _| ()` inline in the `Control` constructor if you don't need an accumulator.
+//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+//!     *acc += data;
+//! }
+//!
+//! // Create a function to update the thread-local value:
+//! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
+//!     control.with_tl_mut(&MY_TL, |data| {
+//!         *data = value;
+//!     });
+//! }
+//!
+//! fn main() {
+//!     let control = Control::new(0, op);
+//!
+//!     update_tl(1, &control);
+//!
+//!     thread::scope(|s| {
+//!         s.spawn(|| {
+//!             update_tl(10, &control);
+//!         });
+//!     });
+//!
+//!     {
+//!         // Acquire `control`'s lock.
+//!         let mut lock = control.lock();
+//!
+//!         // Call this after all other threads registered with `control` have been joined.
+//!         control.take_tls(&mut lock);
+//!
+//!         control.with_acc(&lock, |acc| println!("accumulated={}", acc));
+//!     }
+//! }
+//! ```
+//!
+//! ## Other examples
+//! [joined]
+//!
+//! See another example at [`examples/map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/map_accumulator.rs).
 
 use crate::{
     common::{ControlG, ControlStateG, HolderG, HolderLocalKey, Param},

@@ -1,3 +1,5 @@
+//! This module contains common traits and structs that are used by the other modules in this libray.
+
 use std::{
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
