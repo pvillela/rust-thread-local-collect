@@ -12,7 +12,7 @@ use thread_local_collect::{
 // Define your data type, e.g.:
 type Data = i32;
 
-// Define your accumulated value type. It can be `()` if you don't need an accumulator.
+// Define your accumulated value type.
 type AccValue = i32;
 
 // Define your thread-local:
@@ -21,7 +21,6 @@ thread_local! {
 }
 
 // Define your accumulation operation.
-// You can use the closure `|_, _, _| ()` inline in the `Control` constructor if you don't need an accumulator.
 fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
     *acc += data;
 }
