@@ -12,8 +12,14 @@
 //! Here's an outline of how this little framework can be used:
 //!
 //! ```rust
-//! use std::thread::{self, ThreadId};
-//! use thread_local_collect::joined::{Control, Holder};
+//! use std::{
+//!     ops::Deref,
+//!     thread::{self, ThreadId},
+//! };
+//! use thread_local_collect::{
+//!     joined::{Control, Holder},
+//!     HolderLocalKey,
+//! };
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -34,7 +40,8 @@
 //!
 //! // Create a function to update the thread-local value:
 //! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     control.with_tl_mut(&MY_TL, |data| {
+//!     MY_TL.ensure_initialized(control);
+//!     MY_TL.with_data_mut(|data| {
 //!         *data = value;
 //!     });
 //! }
@@ -51,21 +58,22 @@
 //!     });
 //!
 //!     {
-//!         // Acquire `control`'s lock.
-//!         let mut lock = control.lock();
+//!         // SAFETY: Call this after all other threads registered with `control` have been joined.
+//!         unsafe { control.take_tls() };
 //!
-//!         // Call this after all other threads registered with `control` have been joined.
-//!         control.take_tls(&mut lock);
+//!         // Print the accumulated value.
+//!         control.with_acc(|acc| println!("accumulated={}", acc));
 //!
-//!         control.with_acc(&lock, |acc| println!("accumulated={}", acc));
+//!         // Another way to print the accumulated value.
+//!         let acc = control.acc();
+//!         println!("accumulated={}", acc.deref());
 //!     }
 //! }
 //! ```
 //!
 //! ## Other examples
-//! [joined]
 //!
-//! See another example at [`examples/map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/map_accumulator.rs).
+//! See another example at [`examples/joined_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/joined_map_accumulator.rs).
 
 use crate::{
     common::{ControlG, ControlStateG, HolderG, HolderLocalKey, Param},
