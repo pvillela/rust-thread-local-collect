@@ -123,7 +123,7 @@ impl<P: Param> ControlG<P> {
         self.state.lock().unwrap()
     }
 
-    /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is during the guard's
+    /// Returns a guard object that dereferences to `self`'s accumulated value. A lock held is during the guard's
     /// lifetime.
     pub fn acc(&self) -> AccGuardG<'_, P> {
         AccGuardG::new(self.lock())
@@ -287,24 +287,21 @@ where
 
 /// Provides access to [`HolderG`] specializations of different framework modules
 /// ([`crate::joined`], [`crate::simple_joined`], [`crate::probed`]).
-///
-/// - `Ctrl` is the module-specific Control type.
-/// - `T` is the held data type.
-pub trait HolderLocalKey<T, Ctrl> {
+pub trait HolderLocalKey<P: Param> {
     /// Establishes link with control.
-    fn init_control(&'static self, control: &Ctrl);
+    fn init_control(&'static self, control: &ControlG<P>);
 
     /// Initializes held data.
     fn init_data(&'static self);
 
     /// Ensures [`HolderG`] instance is properly initialized (both data and control link) by initializing it if not.
-    fn ensure_initialized(&'static self, control: &Ctrl);
+    fn ensure_initialized(&'static self, control: &ControlG<P>);
 
     /// Invokes `f` on the held data. Panics if the data is not initialized.
-    fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> V;
+    fn with_data<V>(&'static self, f: impl FnOnce(&P::Dat) -> V) -> V;
 
     /// Invokes `f` mutably on the held data. Panics if the data is not initialized.
-    fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V;
+    fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut P::Dat) -> V) -> V;
 }
 
 impl<P: Param> Clone for ControlG<P> {

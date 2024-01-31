@@ -177,7 +177,7 @@ impl<T, U: 'static> Holder<T, U> {
 //=================
 // Implementation of HolderLocalKey.
 
-impl<T, U> HolderLocalKey<T, Control<T, U>> for LocalKey<Holder<T, U>> {
+impl<T, U> HolderLocalKey<JoinedP<T, U>> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Control<T, U>) {
         self.with(|h| h.init_control(&control, addr_of_tl(self)))
