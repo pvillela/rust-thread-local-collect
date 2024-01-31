@@ -5,6 +5,7 @@ use std::{
     collections::HashMap,
     env::set_var,
     fmt::Debug,
+    ops::Deref,
     thread::{self, ThreadId},
     time::Duration,
 };
@@ -84,6 +85,11 @@ fn main() {
 
         println!("After call to `take_tls`: control={:?}", control);
 
+        // Print the accumulated value.
         control.with_acc(|acc| println!("accumulated={:?}", acc));
+
+        // Another way to print the accumulated value.
+        let acc = control.acc();
+        println!("accumulated={:?}", acc.deref());
     }
 }
