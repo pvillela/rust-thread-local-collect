@@ -4,8 +4,8 @@
 //! - The designated thread-local variable should NOT be used in the thread responsible for
 //! collection/aggregation. If this condition is violated, the thread-local value on that thread will NOT
 //! be collected and aggregated.
-//! - The collection/aggregation functionality occurs as a result of the execution of the destructors of the
-//! participating threads.
+//! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
+//! accumulated value when the thread-local variables are dropped following thread termination.
 //! - The aggregated value is reflective of all participating threads if and only if it is accessed after
 //! all participating theads have
 //! terminated and EXPLICITLY joined directly or indirectly into the thread respnosible for collection.

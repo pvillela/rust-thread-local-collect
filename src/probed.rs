@@ -2,8 +2,11 @@
 //! across threads. The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
 //! collection/aggregation.
-//! - The collection/aggregation function may be executed at any time as it ensures synchronization with
-//! the participating threads, However, thread-local values need to be initialized again after such a call.
+//! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
+//! accumulated value when the thread-local variables are dropped following thread termination.
+//! - The [`Control`] object's collection/aggregation function may be executed at any time as it ensures
+//! synchronization with the participating threads, However, thread-local values need to be initialized again
+//! if used after such a call.
 //! - After all participating threads other than the thread responsible for collection/aggregation have
 //! terminated and joined directly or indirectly into the thread respnosible for collection, a call to the
 //! collection/aggregation function will result in the final aggregated value. Implicit joins by

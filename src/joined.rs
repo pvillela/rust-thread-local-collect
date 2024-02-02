@@ -2,8 +2,10 @@
 //! across threads. The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
 //! collection/aggregation.
-//! - The collection/aggregation function is unsafe unless executed after all participating threads,
-//! other than the thread responsible for collection/aggregation, have
+//! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
+//! accumulated value when the thread-local variables are dropped following thread termination.
+//! - The [`Control`] object's collection/aggregation function is unsafe unless executed after all participating
+//! threads, other than the thread responsible for collection/aggregation, have
 //! terminated and joined directly or indirectly into the thread respnosible for collection. Implicit joins by
 //! scoped threads are correctly handled.
 //!
@@ -128,15 +130,21 @@ where
         }
     }
 
-    /// Collects and accumulates the values of linked thread-local variables.
+    /// This method takes the values of any remaining linked thread-local-variables and aggregates those values
+    /// with this object's accumulator, replacing those values with [`None`].
     ///
     /// This function can be called safely provided that:
-    /// - All other threads have terminaged and been joined directly or indirectly, explicitly or implicitly.
+    /// - All threads other than the one where this method is called have terminaged and been joined directly or
+    ///   indirectly, explicitly or implicitly.
     ///
-    /// The above condition establishes a proper "happens-before" relationship for all explicitly joined threads,
-    /// and the only possible remaining activity would be [`HolderG`] drop method execution on implicitly joined
-    /// scoped threads.
-    /// But that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
+    /// The above condition establishes a proper "happens-before" relationship for all explicitly joined threads.
+    ///
+    /// When called safely, as indicated above, all linked thread-local variables corresponding to explicitly
+    /// joined threads will have been dropped (and their values will have been accumulated) at the time this method
+    /// is called. At that point, the only possible remaining linked thread-local variables would be associated with
+    /// implicitly joined scoped threads or the thread where this method was called, The only only possible
+    /// concurrent activity would be [`HolderG`] drop method execution on the implicitly joined scoped threads,
+    /// but that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
     pub unsafe fn take_tls(&self) {
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
