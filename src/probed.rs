@@ -61,14 +61,32 @@ where
         let state = guard.borrow_mut().deref_mut();
         for (tid, node) in state.d.tmap.iter() {
             log::trace!("executing `take_tls` for key={:?}", tid);
-            let mut data_ref = node.lock().unwrap();
-            let data = data_ref.take();
+            let data = node.lock().unwrap().take();
             log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
             if let Some(data) = data {
                 log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
                 (self.op)(data, &mut state.acc, tid);
             }
         }
+    }
+
+    pub fn probe_tls(&self) -> U
+    where
+        T: Clone,
+        U: Clone,
+    {
+        let state = self.lock();
+        let mut acc_clone = state.acc.clone();
+        for (tid, node) in state.d.tmap.iter() {
+            log::trace!("executing `probe_tls` for key={:?}", tid);
+            let data = node.lock().unwrap().clone();
+            log::trace!("executed `clone` -- `probe_tls` for key={:?}", tid);
+            if let Some(data) = data {
+                log::trace!("executing `op` -- `probe_tls` for key={:?}", tid);
+                (self.op)(data, &mut acc_clone, tid);
+            }
+        }
+        acc_clone
     }
 }
 

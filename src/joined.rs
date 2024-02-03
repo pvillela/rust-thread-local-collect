@@ -160,8 +160,7 @@ where
             // But that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
             let tl: &LocalKey<Holder<T, U>> = tl_from_addr(*addr);
             tl.with(|h| {
-                let mut data_ref = h.data.borrow_mut();
-                let data = data_ref.take();
+                let data = h.data.borrow_mut().take();
                 log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
                 if let Some(data) = data {
                     log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
