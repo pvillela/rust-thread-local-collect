@@ -266,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn test_1() {
+    fn explicit_joins_no_take_tls() {
         let control = Control::new(HashMap::new(), op);
         let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
@@ -303,10 +303,11 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
 
-            thread::sleep(Duration::from_millis(50));
-
-            let spawned_tids = spawned_tids.try_read().unwrap();
-            println!("spawned_tid={:?}", spawned_tids);
+            {
+                thread::sleep(Duration::from_millis(50));
+                let spawned_tids = spawned_tids.try_read().unwrap();
+                println!("spawned_tid={:?}", spawned_tids);
+            }
 
             hs.into_iter().for_each(|h| h.join().unwrap());
 
@@ -331,11 +332,75 @@ mod tests {
     }
 
     #[test]
-    fn test_2() {
+    fn implicit_joins() {
+        let control = Control::new(HashMap::new(), op);
+        let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
+
+        thread::scope(|s| {
+            (0..2).for_each(|i| {
+                s.spawn({
+                    // These are to prevent the move closure from moving `control` and `spawned_tids`.
+                    // The closure has to be `move` because it needs to own `i`.
+                    let control = &control;
+                    let spawned_tids = &spawned_tids;
+
+                    move || {
+                        let si = i.to_string();
+
+                        let mut lock = spawned_tids.write().unwrap();
+                        lock[i] = thread::current().id();
+                        drop(lock);
+
+                        insert_tl_entry(1, Foo("a".to_owned() + &si), control);
+
+                        let other = HashMap::from([(1, Foo("a".to_owned() + &si))]);
+                        assert_tl(&other, "After 1st insert");
+
+                        insert_tl_entry(2, Foo("b".to_owned() + &si), control);
+
+                        let other = HashMap::from([
+                            (1, Foo("a".to_owned() + &si)),
+                            (2, Foo("b".to_owned() + &si)),
+                        ]);
+                        assert_tl(&other, "After 2nd insert");
+                    }
+                });
+            });
+
+            {
+                thread::sleep(Duration::from_millis(50));
+                let spawned_tids = spawned_tids.try_read().unwrap();
+                println!("spawned_tid={:?}", spawned_tids);
+            }
+        });
+
+        {
+            // Safety: called after all other threads implicitly joined.
+            unsafe { control.take_tls() };
+            println!("after hs join: {:?}", control);
+
+            let spawned_tids = spawned_tids.try_read().unwrap();
+            let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
+            let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
+            let map = HashMap::from([
+                (spawned_tids[0].clone(), map_0),
+                (spawned_tids[1].clone(), map_1),
+            ]);
+
+            {
+                let guard = control.acc();
+                let acc = guard.deref();
+                assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn own_thread_and_implicit_join() {
         let control = Control::new(HashMap::new(), op);
 
-        let main_tid = thread::current().id();
-        println!("main_tid={:?}", main_tid);
+        let own_tid = thread::current().id();
+        println!("main_tid={:?}", own_tid);
         let spawned_tid = RwLock::new(thread::current().id());
 
         {
@@ -350,7 +415,7 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
 
         thread::scope(|s| {
-            let h = s.spawn(|| {
+            s.spawn(|| {
                 let mut lock = spawned_tid.write().unwrap();
                 *lock = thread::current().id();
                 drop(lock);
@@ -368,28 +433,22 @@ mod tests {
                 assert_tl(&other, "After spawned thread sleep");
             });
 
-            thread::sleep(Duration::from_millis(50));
-
-            let spawned_tid = spawned_tid.try_read().unwrap();
-            println!("spawned_tid={:?}", spawned_tid);
-
-            // let keys = [main_tid.clone(), spawned_tid.clone()];
-            // assert_control_map(&control, &keys, "Before joining spawned thread");
-
-            h.join().unwrap();
-
-            println!("after h.join(): {:?}", control);
-
-            unsafe { control.take_tls() };
-            // let keys = [];
-            // assert_control_map(&control, &keys, "After call to `take_tls`");
+            {
+                thread::sleep(Duration::from_millis(50));
+                let spawned_tid = spawned_tid.try_read().unwrap();
+                println!("spawned_tid={:?}", spawned_tid);
+            }
         });
 
         {
+            // Safety: called after all other threads implicitly joined.
+            unsafe { control.take_tls() };
+            println!("after implicit join: {:?}", control);
+
             let spawned_tid = spawned_tid.try_read().unwrap();
             let map1 = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
             let map2 = HashMap::from([(1, Foo("aa".to_owned())), (2, Foo("bb".to_owned()))]);
-            let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
+            let map = HashMap::from([(own_tid.clone(), map1), (spawned_tid.clone(), map2)]);
 
             {
                 let acc = control.acc();
