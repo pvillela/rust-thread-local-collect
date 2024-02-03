@@ -135,6 +135,14 @@ impl<P: Param> ControlG<P> {
         f(&acc)
     }
 
+    /// Returns a clone of [`self`]'s accumulated value.
+    pub fn clone_acc(&self) -> P::Acc
+    where
+        P::Acc: Clone,
+    {
+        self.acc().clone()
+    }
+
     /// Returns [`self`]'s accumulated value, using a value of the same type to replace
     /// the existing accumulated value.
     pub fn take_acc(&self, replacement: P::Acc) -> P::Acc {
