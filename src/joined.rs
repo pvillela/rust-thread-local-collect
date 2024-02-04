@@ -77,14 +77,15 @@
 //! See another example at [`examples/joined_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/joined_map_accumulator.rs).
 
 use crate::{
-    common::{ControlG, ControlStateG, HolderG, HolderLocalKey, Param},
-    TmapD,
+    common::{ControlG, ControlStateG, CoreParam, HolderG, HolderLocalKey},
+    GDataParam, NodeD, RegisterNode, TmapD,
 };
 use std::{
     cell::RefCell,
     marker::PhantomData,
     ops::DerefMut,
     sync::{Arc, Mutex},
+    thread,
     thread::{LocalKey, ThreadId},
 };
 
@@ -93,17 +94,51 @@ use std::{
 
 /// Parameter bundle that enables specialization of the common generic structs for this module.
 #[derive(Debug)]
-pub struct JoinedP<T, U>(PhantomData<T>, PhantomData<U>);
+pub struct P<T, U> {
+    own_tl_addr: Option<usize>,
+    tid: ThreadId,
+    _t: PhantomData<T>,
+    _u: PhantomData<U>,
+}
 
-impl<T, U> Param for JoinedP<T, U> {
+pub type JoinedP<T, U> = NodeD<P<T, U>>;
+
+impl<T, U> CoreParam for P<T, U> {
     type Dat = T;
     type Acc = U;
     type Node = usize;
+    type Discr = Self;
+}
+
+impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
-    type Discr = TmapD<Self>;
+}
+
+impl<T, U> RegisterNode<P<T, U>> for P<T, U> {
+    fn register_node(&mut self, node: usize, tid: &ThreadId) {
+        if *tid == self.tid {
+            self.own_tl_addr = Some(node);
+        }
+    }
 }
 
 type JoinedState<T, U> = ControlStateG<JoinedP<T, U>>;
+
+impl<T, U> JoinedState<T, U> {
+    pub fn new(acc_base: U) -> Self {
+        Self {
+            acc: acc_base,
+            d0: NodeD {
+                d1: P {
+                    own_tl_addr: None,
+                    tid: thread::current().id(),
+                    _t: PhantomData,
+                    _u: PhantomData,
+                },
+            },
+        }
+    }
+}
 
 fn addr_of_tl<H>(tl: &LocalKey<H>) -> usize {
     let tl_ptr: *const LocalKey<H> = tl;
@@ -149,22 +184,20 @@ where
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
         let state = guard.deref_mut();
-        for (tid, addr) in state.d.tmap.iter() {
-            log::trace!("executing `take_tls` for key={:?}", tid);
+        if let Some(addr) = state.d0.d1.own_tl_addr {
             // Safety: provided that:
-            // - All other threads have terminaged and been joined directly or indirectly, explicitly or implicitly.
+            // - All other threads have terminaged and been explicitly joined directly or indirectly.
             //
             // The above condition establishes a proper "happens-before" relationship for all explicitly joined threads,
-            // and the only possible remaining activity would be [`HolderG`] drop method execution on implicitly joined
-            // scoped threads.
-            // But that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
-            let tl: &LocalKey<Holder<T, U>> = tl_from_addr(*addr);
+            // and the only possible remaining activity would be [`HolderG`] drop method execution on the thread that
+            // calls this method. But that drop method can't be executed concurrently with this one.
+            let tl: &LocalKey<Holder<T, U>> = tl_from_addr(addr);
             tl.with(|h| {
                 let data = h.data.borrow_mut().take();
-                log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
+                log::trace!("`take_tls`: executing data take");
                 if let Some(data) = data {
-                    log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
-                    (self.op)(data, &mut state.acc, tid);
+                    log::trace!("`take_tls`: executing `op`");
+                    (self.op)(data, &mut state.acc, &thread::current().id());
                 }
             });
         }
@@ -397,7 +430,7 @@ mod tests {
 
     #[test] // uncomment to enable test that demonstrates race condition in Control::take_tls
     #[allow(unused)]
-    fn own_thread_and_implicit_join() {
+    fn own_thread_and_explicit_join() {
         let control = Control::new(HashMap::new(), op);
 
         let own_tid = thread::current().id();

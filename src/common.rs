@@ -10,51 +10,57 @@ use std::{
     thread::{self, ThreadId},
 };
 
+//=================
+// Common items that support all modules except `channeled`
+
 /// Encapsulates the types used by [`ControlG`], [`HolderG`], and their specializations.
-pub trait Param {
+pub trait CoreParam {
     /// Type of data held in thread-local variable.
     type Dat;
     /// Type of accumulated value.
     type Acc;
+    /// Discriminant type used to enable different specializations of the generic data structures.
+    type Discr;
     #[doc(hidden)]
-    /// Type of node in [`TmapD`].
+    /// Type of node in [`TmapD`] and [`NodeD`].
     type Node;
+}
+
+pub trait GDataParam {
     #[doc(hidden)]
     /// Guarded data type used by [`HolderG`].
     type GData;
-    /// Discriminant type used to enable different specializations of the generic data structures.
-    type Discr;
 }
 
 /// Data structure that holds the state of a [`ControlG`].
 #[derive(Debug)]
-pub(crate) struct ControlStateG<P: Param> {
+pub(crate) struct ControlStateG<P: CoreParam> {
     pub(crate) acc: P::Acc,
-    pub(crate) d: P::Discr,
+    pub(crate) d0: P::Discr,
 }
 
-impl<P: Param> ControlStateG<P> {
+impl<P: CoreParam> ControlStateG<P> {
     fn acc(&self) -> &P::Acc {
         &self.acc
     }
 
-    fn acc_mut(&mut self) -> &mut P::Acc {
+    pub(crate) fn acc_mut(&mut self) -> &mut P::Acc {
         &mut self.acc
     }
 }
 
 /// Guard that dereferences to [`Param::Acc`].
-pub struct AccGuardG<'a, P: Param> {
+pub struct AccGuardG<'a, P: CoreParam> {
     guard: MutexGuard<'a, ControlStateG<P>>,
 }
 
-impl<'a, P: Param> AccGuardG<'a, P> {
+impl<'a, P: CoreParam> AccGuardG<'a, P> {
     pub(crate) fn new(lock: MutexGuard<'a, ControlStateG<P>>) -> Self {
         AccGuardG { guard: lock }
     }
 }
 
-impl<P: Param> Deref for AccGuardG<'_, P> {
+impl<P: CoreParam> Deref for AccGuardG<'_, P> {
     type Target = P::Acc;
 
     fn deref(&self) -> &Self::Target {
@@ -62,54 +68,9 @@ impl<P: Param> Deref for AccGuardG<'_, P> {
     }
 }
 
-#[doc(hidden)]
-/// Type used to hold the thread map used by the [`ControlG`] specializations for modules [`crate::joined`] and
-/// [`crate::probed`]. Also used to partially discriminate to common [`ControlG`] functionality used by those
-/// modules.
-#[derive(Debug)]
-pub struct TmapD<P: Param> {
-    pub(crate) tmap: HashMap<ThreadId, P::Node>,
-}
-
-impl<P: Param<Discr = TmapD<P>>> ControlStateG<P> {
-    pub fn new(acc_base: P::Acc) -> Self {
-        Self {
-            acc: acc_base,
-            d: TmapD {
-                tmap: HashMap::new(),
-            },
-        }
-    }
-
-    /// Indirectly called by [`HolderG`] when a thread-local variable starts being used.
-    fn register_node(&mut self, node: P::Node, tid: &ThreadId) {
-        self.d.tmap.insert(tid.clone(), node);
-    }
-
-    /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
-    ///
-    /// The `data` argument is not strictly necessary to support the implementation as the data can be
-    /// recovered from the `tmap`. However, the `data` argument makes
-    /// the generic implementation simpler and uniform across all modules. Without the `data`
-    /// argument, the implementations of this method for [`crate::joined`] and [`crate::probed`] would be
-    /// different from each other and a bit more complex.
-    fn tl_data_dropped(
-        &mut self,
-        op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
-        data: Option<P::Dat>,
-        tid: &ThreadId,
-    ) {
-        self.d.tmap.remove(tid);
-        if let Some(data) = data {
-            let acc = self.acc_mut();
-            op(data, acc, tid);
-        }
-    }
-}
-
 /// Controls the collection and accumulation of thread-local values linked to it.
 /// Such values, of type [`Param::Dat`], must be held in thread-locals of type [`HolderG`]`<P>`.
-pub struct ControlG<P: Param> {
+pub struct ControlG<P: CoreParam> {
     /// Keeps track of linked thread-locals and accumulated value.
     pub(crate) state: Arc<Mutex<ControlStateG<P>>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
@@ -117,7 +78,7 @@ pub struct ControlG<P: Param> {
     pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync>,
 }
 
-impl<P: Param> ControlG<P> {
+impl<P: CoreParam> ControlG<P> {
     /// Acquires a lock on [`ControlG`]'s internal Mutex.
     pub(crate) fn lock(&self) -> MutexGuard<'_, ControlStateG<P>> {
         self.state.lock().unwrap()
@@ -152,17 +113,23 @@ impl<P: Param> ControlG<P> {
     }
 }
 
-impl<P: Param<Discr = TmapD<P>>> ControlG<P> {
-    /// Called by [`HolderG`] when a thread-local variable starts being used.
-    fn register_node(&self, node: P::Node, tid: &ThreadId) {
-        let mut lock = self.lock();
-        lock.register_node(node, tid)
+impl<P: CoreParam> Clone for ControlG<P> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            op: self.op.clone(),
+        }
     }
+}
 
-    /// Used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
-    fn tl_data_dropped(&self, data: Option<P::Dat>, tid: &ThreadId) {
-        let mut lock = self.lock();
-        lock.tl_data_dropped(self.op.deref(), data, tid);
+impl<P> Debug for ControlG<P>
+where
+    P: CoreParam + Debug,
+    P::Acc: Debug,
+    P::Discr: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("Control({:?})", self.state))
     }
 }
 
@@ -196,7 +163,7 @@ impl<S: 'static> GuardedData<S> for Arc<Mutex<S>> {
 /// with the control object.
 pub struct HolderG<P>
 where
-    P: Param,
+    P: CoreParam + GDataParam,
     P::Dat: 'static,
     P::GData: GuardedData<Option<P::Dat>> + 'static,
 {
@@ -209,7 +176,7 @@ where
 
 impl<P> HolderG<P>
 where
-    P: Param,
+    P: CoreParam + GDataParam,
     P::GData: GuardedData<Option<P::Dat>> + 'static,
 {
     /// Returns reference to `control` field.
@@ -220,11 +187,6 @@ where
     /// Returns data guard for the held data.
     pub(crate) fn data_guard(&self) -> <P::GData as GuardedData<Option<P::Dat>>>::Guard<'_> {
         self.data.guard()
-    }
-
-    /// Initializes the `control` field.
-    pub(crate) fn init_control(&self, control: &ControlG<P>, node: P::Node) {
-        (self.init_control_fn)(self, control, node)
     }
 
     /// Initializes the held data.
@@ -268,13 +230,143 @@ where
     }
 }
 
-impl<P: Param<Discr = TmapD<P>>> HolderG<P>
+impl<P> HolderG<P>
 where
-    P: Param,
+    P: CoreParam + GDataParam,
+    P::GData: GuardedData<Option<P::Dat>> + 'static,
+{
+    /// Initializes the `control` field.
+    pub(crate) fn init_control(&self, control: &ControlG<P>, node: P::Node) {
+        (self.init_control_fn)(self, control, node)
+    }
+}
+
+impl<P> Debug for HolderG<P>
+where
+    P: CoreParam + GDataParam + Debug,
+    P::GData: GuardedData<Option<P::Dat>> + Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("Holder{{data: {:?}}}", &self.data))
+    }
+}
+
+impl<P> Drop for HolderG<P>
+where
+    P: CoreParam + GDataParam,
+    P::GData: GuardedData<Option<P::Dat>> + 'static,
+{
+    fn drop(&mut self) {
+        self.drop_data()
+    }
+}
+
+/// Provides access to [`HolderG`] specializations of different framework modules
+/// ([`crate::joined`], [`crate::simple_joined`], [`crate::probed`]).
+pub trait HolderLocalKey<P: CoreParam> {
+    /// Establishes link with control.
+    fn init_control(&'static self, control: &ControlG<P>);
+
+    /// Initializes held data.
+    fn init_data(&'static self);
+
+    /// Ensures [`HolderG`] instance is properly initialized (both data and control link) by initializing it if not.
+    fn ensure_initialized(&'static self, control: &ControlG<P>);
+
+    /// Invokes `f` on the held data. Panics if the data is not initialized.
+    fn with_data<V>(&'static self, f: impl FnOnce(&P::Dat) -> V) -> V;
+
+    /// Invokes `f` mutably on the held data. Panics if the data is not initialized.
+    fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut P::Dat) -> V) -> V;
+}
+
+//=================
+// Common items to support modules `probed` and `joined_bad`.
+
+#[doc(hidden)]
+/// Type used to hold the thread map used by the [`ControlG`] specializations for module [`crate::probed`].
+/// Used also for module [`crate::joined_bad`] which shows a previous incorrect implementation of module
+/// [`crate::joined`].
+/// Also used to partially discriminate common [`ControlG`] functionality used by those modules.
+#[derive(Debug)]
+pub struct TmapD<P>
+where
+    P: CoreParam,
+{
+    pub(crate) tmap: HashMap<ThreadId, P::Node>,
+}
+
+impl<P: CoreParam> CoreParam for TmapD<P> {
+    type Acc = P::Acc;
+    type Dat = P::Dat;
+    type Discr = Self;
+    type Node = P::Node;
+}
+
+impl<P> GDataParam for TmapD<P>
+where
+    P: CoreParam + GDataParam,
+{
+    type GData = P::GData;
+}
+
+impl<P: CoreParam> ControlStateG<TmapD<P>> {
+    pub fn new(acc_base: P::Acc) -> Self {
+        Self {
+            acc: acc_base,
+            d0: TmapD {
+                tmap: HashMap::new(),
+            },
+        }
+    }
+
+    /// Indirectly called by [`HolderG`] when a thread-local variable starts being used.
+    fn register_node(&mut self, node: P::Node, tid: &ThreadId) {
+        self.d0.tmap.insert(tid.clone(), node);
+    }
+
+    /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
+    ///
+    /// The `data` argument is not strictly necessary to support the implementation as the data can be
+    /// recovered from the `tmap`. However, the `data` argument makes
+    /// the generic implementation simpler and uniform across all modules. Without the `data`
+    /// argument, the implementations of this method for [`crate::joined`] and [`crate::probed`] would be
+    /// different from each other and a bit more complex.
+    fn tl_data_dropped(
+        &mut self,
+        op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
+        data: Option<P::Dat>,
+        tid: &ThreadId,
+    ) {
+        self.d0.tmap.remove(tid);
+        if let Some(data) = data {
+            let acc = self.acc_mut();
+            op(data, acc, tid);
+        }
+    }
+}
+
+impl<P: CoreParam> ControlG<TmapD<P>> {
+    /// Called by [`HolderG`] when a thread-local variable starts being used.
+    fn register_node(&self, node: P::Node, tid: &ThreadId) {
+        let mut lock = self.lock();
+        lock.register_node(node, tid)
+    }
+
+    /// Used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
+    fn tl_data_dropped(&self, data: Option<P::Dat>, tid: &ThreadId) {
+        let mut lock = self.lock();
+        lock.tl_data_dropped(self.op.deref(), data, tid);
+    }
+}
+
+impl<P> HolderG<TmapD<P>>
+where
+    P: CoreParam + GDataParam,
     P::GData: GuardedData<Option<P::Dat>> + 'static,
 {
     /// Function to be used as a field in [`HolderG`].
-    pub(crate) fn init_control_fn(this: &Self, control: &ControlG<P>, node: P::Node) {
+    pub(crate) fn init_control_fn(this: &Self, control: &ControlG<TmapD<P>>, node: P::Node) {
         let mut ctrl_ref = this.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
         control.register_node(node, &thread::current().id())
@@ -293,62 +385,101 @@ where
     }
 }
 
-/// Provides access to [`HolderG`] specializations of different framework modules
-/// ([`crate::joined`], [`crate::simple_joined`], [`crate::probed`]).
-pub trait HolderLocalKey<P: Param> {
-    /// Establishes link with control.
-    fn init_control(&'static self, control: &ControlG<P>);
+//=================
+// Common items that support modules `joined` and `simple_joined`
 
-    /// Initializes held data.
-    fn init_data(&'static self);
-
-    /// Ensures [`HolderG`] instance is properly initialized (both data and control link) by initializing it if not.
-    fn ensure_initialized(&'static self, control: &ControlG<P>);
-
-    /// Invokes `f` on the held data. Panics if the data is not initialized.
-    fn with_data<V>(&'static self, f: impl FnOnce(&P::Dat) -> V) -> V;
-
-    /// Invokes `f` mutably on the held data. Panics if the data is not initialized.
-    fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut P::Dat) -> V) -> V;
+#[doc(hidden)]
+/// Type used to hold the node value used by the [`ControlG`] specializations for module [`crate::joined`] and
+/// [`crate::simple_joined`].
+/// Also used to partially discriminate common [`ControlG`] functionality used by those modules.
+#[derive(Debug)]
+pub struct NodeD<P> {
+    pub(crate) d1: P,
 }
 
-impl<P: Param> Clone for ControlG<P> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            op: self.op.clone(),
+impl<P: CoreParam> CoreParam for NodeD<P> {
+    type Acc = P::Acc;
+    type Dat = P::Dat;
+    type Discr = Self;
+    type Node = P::Node;
+}
+
+impl<P: GDataParam> GDataParam for NodeD<P> {
+    type GData = P::GData;
+}
+
+#[doc(hidden)]
+pub trait RegisterNode<P: CoreParam> {
+    fn register_node(&mut self, node: P::Node, tid: &ThreadId);
+}
+
+impl<P: CoreParam> ControlStateG<NodeD<P>> {
+    /// Indirectly called by [`HolderG`] when a thread-local variable starts being used.
+    fn register_node(&mut self, node: P::Node, tid: &ThreadId)
+    where
+        P: RegisterNode<P>,
+    {
+        self.d0.d1.register_node(node, tid);
+    }
+
+    /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
+    ///
+    /// The `data` argument is not strictly necessary to support the implementation as the data can be
+    /// recovered from the `tmap`. However, the `data` argument makes
+    /// the generic implementation simpler and uniform across all modules. Without the `data`
+    /// argument, the implementations of this method for [`crate::joined`] and [`crate::probed`] would be
+    /// different from each other and a bit more complex.
+    fn tl_data_dropped(
+        &mut self,
+        op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
+        data: Option<P::Dat>,
+        tid: &ThreadId,
+    ) {
+        if let Some(data) = data {
+            let acc = self.acc_mut();
+            op(data, acc, tid);
         }
     }
 }
 
-impl<P> Debug for ControlG<P>
-where
-    P: Param + Debug,
-    P::Acc: Debug,
-    P::Node: Debug,
-    P::Discr: Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("Control({:?})", self.state))
+impl<P: CoreParam> ControlG<NodeD<P>> {
+    /// Called by [`HolderG`] when a thread-local variable starts being used.
+    fn register_node(&self, node: P::Node, tid: &ThreadId)
+    where
+        P: RegisterNode<P>,
+    {
+        let mut lock = self.lock();
+        lock.register_node(node, tid)
+    }
+
+    /// Used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
+    fn tl_data_dropped(&self, data: Option<P::Dat>, tid: &ThreadId) {
+        let mut lock = self.lock();
+        lock.tl_data_dropped(self.op.deref(), data, tid);
     }
 }
 
-impl<P> Debug for HolderG<P>
+impl<P> HolderG<NodeD<P>>
 where
-    P::GData: GuardedData<Option<P::Dat>> + Debug,
-    P: Param + Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("Holder{{data: {:?}}}", &self.data))
-    }
-}
-
-impl<P> Drop for HolderG<P>
-where
-    P: Param,
+    P: CoreParam + GDataParam + RegisterNode<P>,
     P::GData: GuardedData<Option<P::Dat>> + 'static,
 {
-    fn drop(&mut self) {
-        self.drop_data()
+    /// Function to be used as a field in [`HolderG`].
+    pub(crate) fn init_control_fn(this: &Self, control: &ControlG<NodeD<P>>, node: P::Node) {
+        let mut ctrl_ref = this.control.borrow_mut();
+        *ctrl_ref = Some(control.clone());
+        control.register_node(node, &thread::current().id())
+    }
+
+    /// Function to be used as a field in [`HolderG`].
+    pub(crate) fn drop_data_fn(this: &Self) {
+        let mut data_guard = this.data_guard();
+        let data = data_guard.take();
+        let control = this.control();
+        if control.is_none() {
+            return;
+        }
+        let control = Ref::map(control, |x| x.as_ref().unwrap());
+        control.tl_data_dropped(data, &thread::current().id());
     }
 }
