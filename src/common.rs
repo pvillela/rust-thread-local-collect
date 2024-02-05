@@ -24,6 +24,16 @@ pub trait CoreParam {
 }
 
 #[doc(hidden)]
+pub trait CtrlStateParam {
+    type CtrlState;
+}
+
+#[doc(hidden)]
+pub trait SubStateParam {
+    type SubState;
+}
+
+#[doc(hidden)]
 pub trait NodeParam {
     /// Type of node in [`TmapD`] and [`NodeD`].
     type Node;
@@ -60,18 +70,20 @@ where
     fn register_node(&mut self, node: P::Node, tid: &ThreadId);
 }
 
-pub trait CtrlStateParam {
-    type CtrlState;
-}
-
 /// Data structure that holds the state of a [`ControlG`].
 #[derive(Debug)]
-pub(crate) struct ControlStateG<P: CoreParam> {
+pub(crate) struct ControlStateG<P>
+where
+    P: CoreParam + SubStateParam,
+{
     pub(crate) acc: P::Acc,
-    pub(crate) d0: P::Discr,
+    pub(crate) d0: P::SubState,
 }
 
-impl<P: CoreParam> ControlStateG<P> {
+impl<P> ControlStateG<P>
+where
+    P: CoreParam + SubStateParam,
+{
     fn acc(&self) -> &P::Acc {
         &self.acc
     }
@@ -352,7 +364,14 @@ where
 {
     type Acc = P::Acc;
     type Dat = P::Dat;
-    type Discr = Self;
+    type Discr = P::Discr;
+}
+
+impl<P> SubStateParam for TmapD<P>
+where
+    P: CoreParam + NodeParam,
+{
+    type SubState = Self;
 }
 
 impl<P> GDataParam for TmapD<P>
@@ -458,6 +477,10 @@ impl<P: CoreParam> CoreParam for NoTmapD<P> {
     type Acc = P::Acc;
     type Dat = P::Dat;
     type Discr = Self;
+}
+
+impl<P> SubStateParam for NoTmapD<P> {
+    type SubState = Self;
 }
 
 impl<P: GDataParam> GDataParam for NoTmapD<P> {
