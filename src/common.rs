@@ -70,14 +70,15 @@ where
     fn register_node(&mut self, node: P::Node, tid: &ThreadId);
 }
 
+#[doc(hidden)]
 /// Data structure that holds the state of a [`ControlG`].
 #[derive(Debug)]
-pub(crate) struct ControlStateG<P>
+pub struct ControlStateG<P>
 where
     P: CoreParam + SubStateParam,
 {
     pub(crate) acc: P::Acc,
-    pub(crate) d0: P::SubState,
+    pub(crate) s: P::SubState,
 }
 
 impl<P> ControlStateG<P>
@@ -177,6 +178,18 @@ where
     fn tl_data_dropped(&self, data: Option<P::Dat>, tid: &ThreadId) {
         let mut lock = self.lock();
         lock.tl_data_dropped(self.op.deref(), data, tid);
+    }
+}
+
+impl<P> ControlG<P>
+where
+    P: CoreParam + NodeParam + CtrlStateParam,
+    P::CtrlState: CtrlStateWithNode<P>,
+{
+    /// Called by [`HolderG`] when a thread-local variable starts being used.
+    fn register_node(&self, node: P::Node, tid: &ThreadId) {
+        let mut lock = self.lock();
+        lock.register_node(node, tid)
     }
 }
 
@@ -298,6 +311,32 @@ where
     }
 }
 
+impl<P> HolderG<P>
+where
+    P: CoreParam + GDataParam + NodeParam + CtrlStateParam,
+    P::Dat: 'static,
+    P::GData: GuardedData<Option<P::Dat>> + 'static,
+    P::CtrlState: CtrlStateWithNode<P>,
+{
+    /// Function to be used as a field in [`HolderG`].
+    pub(crate) fn init_control(&self, control: &ControlG<P>, node: P::Node) {
+        let mut ctrl_ref = self.control.borrow_mut();
+        *ctrl_ref = Some(control.clone());
+        control.register_node(node, &thread::current().id())
+    }
+
+    /// Ensures `self` is initialized, both the held data and the `control` smart pointer.
+    pub(crate) fn ensure_initialized(&self, control: &ControlG<P>, node: P::Node) {
+        if self.control().as_ref().is_none() {
+            self.init_control(control, node);
+        }
+
+        if self.data_guard().is_none() {
+            self.init_data();
+        }
+    }
+}
+
 impl<P> Debug for HolderG<P>
 where
     P: CoreParam + GDataParam + CtrlStateParam + Debug,
@@ -343,7 +382,7 @@ where
 }
 
 //=================
-// Common items to support specific discriminants.
+// Control sub-state structs.
 
 #[doc(hidden)]
 /// Type used to hold the thread map used by the [`ControlG`] specializations for module [`crate::probed`].
@@ -351,14 +390,14 @@ where
 /// [`crate::joined`].
 /// Also used to partially discriminate common [`ControlG`] functionality used by those modules.
 #[derive(Debug)]
-pub struct TmapD<P>
+pub struct TmapS<P>
 where
     P: CoreParam + NodeParam,
 {
     pub(crate) tmap: HashMap<ThreadId, P::Node>,
 }
 
-impl<P> CoreParam for TmapD<P>
+impl<P> CoreParam for TmapS<P>
 where
     P: CoreParam + NodeParam,
 {
@@ -367,35 +406,49 @@ where
     type Discr = P::Discr;
 }
 
-impl<P> SubStateParam for TmapD<P>
+impl<P> NodeParam for TmapS<P>
+where
+    P: CoreParam + NodeParam,
+{
+    type Node = P::Node;
+}
+
+impl<P> CtrlStateParam for TmapS<P>
+where
+    P: CoreParam + NodeParam,
+{
+    type CtrlState = ControlStateG<Self>;
+}
+
+impl<P> SubStateParam for TmapS<P>
 where
     P: CoreParam + NodeParam,
 {
     type SubState = Self;
 }
 
-impl<P> GDataParam for TmapD<P>
+impl<P> GDataParam for TmapS<P>
 where
     P: CoreParam + NodeParam + GDataParam,
 {
     type GData = P::GData;
 }
 
-impl<P> ControlStateG<TmapD<P>>
+impl<P> ControlStateG<TmapS<P>>
 where
     P: CoreParam + NodeParam,
 {
     pub fn new(acc_base: P::Acc) -> Self {
         Self {
             acc: acc_base,
-            d0: TmapD {
+            s: TmapS {
                 tmap: HashMap::new(),
             },
         }
     }
 }
 
-impl<P> CtrlStateCore<P> for ControlStateG<TmapD<P>>
+impl<P> CtrlStateCore<TmapS<P>> for ControlStateG<TmapS<P>>
 where
     P: CoreParam + NodeParam + CtrlStateParam,
 {
@@ -420,7 +473,7 @@ where
         data: Option<P::Dat>,
         tid: &ThreadId,
     ) {
-        self.d0.tmap.remove(tid);
+        self.s.tmap.remove(tid);
         if let Some(data) = data {
             let acc = self.acc_mut();
             op(data, acc, tid);
@@ -428,39 +481,12 @@ where
     }
 }
 
-impl<P> CtrlStateWithNode<P> for ControlStateG<TmapD<P>>
+impl<P> CtrlStateWithNode<TmapS<P>> for ControlStateG<TmapS<P>>
 where
     P: CoreParam + NodeParam + CtrlStateParam,
 {
     fn register_node(&mut self, node: <P as NodeParam>::Node, tid: &ThreadId) {
-        self.d0.tmap.insert(tid.clone(), node);
-    }
-}
-
-impl<P> ControlG<P>
-where
-    P: CoreParam + NodeParam + CtrlStateParam,
-    P::CtrlState: CtrlStateWithNode<P>,
-{
-    /// Called by [`HolderG`] when a thread-local variable starts being used.
-    fn register_node(&self, node: P::Node, tid: &ThreadId) {
-        let mut lock = self.lock();
-        lock.register_node(node, tid)
-    }
-}
-
-impl<P> HolderG<P>
-where
-    P: CoreParam + GDataParam + NodeParam + CtrlStateParam,
-    P::Dat: 'static,
-    P::GData: GuardedData<Option<P::Dat>> + 'static,
-    P::CtrlState: CtrlStateWithNode<P>,
-{
-    /// Function to be used as a field in [`HolderG`].
-    pub(crate) fn init_control(&self, control: &ControlG<P>, node: P::Node) {
-        let mut ctrl_ref = self.control.borrow_mut();
-        *ctrl_ref = Some(control.clone());
-        control.register_node(node, &thread::current().id())
+        self.s.tmap.insert(tid.clone(), node);
     }
 }
 
@@ -469,27 +495,46 @@ where
 /// [`crate::simple_joined`].
 /// Also used to partially discriminate common [`ControlG`] functionality used by those modules.
 #[derive(Debug)]
-pub struct NoTmapD<P> {
-    pub(crate) d1: P,
+pub struct NoTmapS<P>
+where
+    P: CoreParam,
+{
+    pub(crate) d: P::Discr,
 }
 
-impl<P: CoreParam> CoreParam for NoTmapD<P> {
+impl<P> CoreParam for NoTmapS<P>
+where
+    P: CoreParam,
+{
     type Acc = P::Acc;
     type Dat = P::Dat;
-    type Discr = Self;
+    type Discr = P::Discr;
 }
 
-impl<P> SubStateParam for NoTmapD<P> {
+impl<P> CtrlStateParam for NoTmapS<P>
+where
+    P: CoreParam,
+{
+    type CtrlState = ControlStateG<Self>;
+}
+
+impl<P> SubStateParam for NoTmapS<P>
+where
+    P: CoreParam,
+{
     type SubState = Self;
 }
 
-impl<P: GDataParam> GDataParam for NoTmapD<P> {
+impl<P> GDataParam for NoTmapS<P>
+where
+    P: CoreParam + GDataParam,
+{
     type GData = P::GData;
 }
 
-impl<P> CtrlStateCore<P> for ControlStateG<NoTmapD<P>>
+impl<P> CtrlStateCore<NoTmapS<P>> for ControlStateG<NoTmapS<P>>
 where
-    P: CoreParam + NodeParam + CtrlStateParam,
+    P: CoreParam,
 {
     fn acc(&self) -> &<P as CoreParam>::Acc {
         ControlStateG::acc(&self)
