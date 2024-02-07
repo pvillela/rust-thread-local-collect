@@ -330,22 +330,47 @@ where
 
 impl<P> HolderG<P>
 where
+    P: CoreParam + GDataParam + CtrlStateParam,
+    P::Dat: 'static,
+    P::GData: GuardedData<Option<P::Dat>> + 'static,
+    P::CtrlState: CtrlStateCore<P>,
+{
+    /// Function to be used as a field in [`HolderG`].
+    pub(crate) fn init_control(&self, control: &ControlG<P>) {
+        let mut ctrl_ref = self.control.borrow_mut();
+        *ctrl_ref = Some(control.clone());
+    }
+
+    /// Ensures `self` is initialized, both the held data and the `control` smart pointer.
+    pub(crate) fn ensure_initialized(&self, control: &ControlG<P>) {
+        if self.control().as_ref().is_none() {
+            self.init_control(control);
+        }
+
+        if self.data_guard().is_none() {
+            self.init_data();
+        }
+    }
+}
+
+impl<P> HolderG<P>
+where
     P: CoreParam + GDataParam + NodeParam + CtrlStateParam,
     P::Dat: 'static,
     P::GData: GuardedData<Option<P::Dat>> + 'static,
     P::CtrlState: CtrlStateWithNode<P>,
 {
     /// Function to be used as a field in [`HolderG`].
-    pub(crate) fn init_control(&self, control: &ControlG<P>, node: P::Node) {
+    pub(crate) fn init_control_node(&self, control: &ControlG<P>, node: P::Node) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
         control.register_node(node, &thread::current().id())
     }
 
     /// Ensures `self` is initialized, both the held data and the `control` smart pointer.
-    pub(crate) fn ensure_initialized(&self, control: &ControlG<P>, node: P::Node) {
+    pub(crate) fn ensure_initialized_node(&self, control: &ControlG<P>, node: P::Node) {
         if self.control().as_ref().is_none() {
-            self.init_control(control, node);
+            self.init_control_node(control, node);
         }
 
         if self.data_guard().is_none() {

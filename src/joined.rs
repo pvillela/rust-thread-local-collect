@@ -103,7 +103,6 @@ pub struct P<T, U> {
 impl<T, U> CoreParam for P<T, U> {
     type Dat = T;
     type Acc = U;
-    // type Discr = Self;
 }
 
 impl<T, U> NodeParam for P<T, U> {
@@ -112,7 +111,6 @@ impl<T, U> NodeParam for P<T, U> {
 
 impl<T, U> SubStateParam for P<T, U> {
     type SubState = Self;
-    // type SubStateDiscr = NoTmapD;
 }
 
 impl<T, U> UseCtrlStateDefault for P<T, U> {}
@@ -121,13 +119,13 @@ impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
 }
 
-type JoinedState<T, U> = CtrlStateG<P<T, U>>;
+type CtrlState<T, U> = CtrlStateG<P<T, U>>;
 
 impl<T, U> CtrlStateParam for P<T, U> {
-    type CtrlState = JoinedState<T, U>;
+    type CtrlState = CtrlState<T, U>;
 }
 
-impl<T, U> CtrlStateWithNode<P<T, U>> for JoinedState<T, U> {
+impl<T, U> CtrlStateWithNode<P<T, U>> for CtrlState<T, U> {
     fn register_node(&mut self, node: usize, tid: &ThreadId) {
         if *tid == self.s.tid {
             self.s.own_tl_addr = Some(node);
@@ -135,7 +133,7 @@ impl<T, U> CtrlStateWithNode<P<T, U>> for JoinedState<T, U> {
     }
 }
 
-impl<T, U> JoinedState<T, U> {
+impl<T, U> CtrlState<T, U> {
     fn new(acc_base: U) -> Self {
         Self {
             acc: acc_base,
@@ -168,7 +166,7 @@ where
 {
     /// Instantiates a [`Control`] object for this module.
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-        ControlG::new_priv(JoinedState::new(acc_base), op)
+        ControlG::new_priv(CtrlState::new(acc_base), op)
     }
 
     /// This method takes the values of any remaining linked thread-local-variables and aggregates those values
@@ -226,7 +224,7 @@ impl<T, U> Holder<T, U> {
 impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.init_control(&control, addr_of_tl(self)))
+        self.with(|h| h.init_control_node(&control, addr_of_tl(self)))
     }
 
     /// Initializes [`Holder`] data.
@@ -236,7 +234,7 @@ impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
 
     /// Ensures [`Holder`] is properly initialized by initializing it if not.
     fn ensure_initialized(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.ensure_initialized(&control, addr_of_tl(self)))
+        self.with(|h| h.ensure_initialized_node(&control, addr_of_tl(self)))
     }
 
     /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
