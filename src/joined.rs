@@ -104,7 +104,7 @@ pub struct P<T, U> {
 impl<T, U> CoreParam for P<T, U> {
     type Dat = T;
     type Acc = U;
-    type Discr = Self;
+    // type Discr = Self;
 }
 
 impl<T, U> NodeParam for P<T, U> {

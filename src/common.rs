@@ -19,8 +19,8 @@ pub trait CoreParam {
     type Dat;
     /// Type of accumulated value.
     type Acc;
-    /// Discriminant type used to enable different specializations of the generic data structures.
-    type Discr;
+    // /// Discriminant type used to enable different specializations of the generic data structures.
+    // type Discr;
 }
 
 #[doc(hidden)]
@@ -212,7 +212,7 @@ where
     P: CoreParam + CtrlStateParam + Debug,
     P::CtrlState: CtrlStateCore<P> + Debug,
     P::Acc: Debug,
-    P::Discr: Debug,
+    // P::Discr: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("Control({:?})", self.state))
@@ -408,7 +408,7 @@ where
 {
     type Acc = P::Acc;
     type Dat = P::Dat;
-    type Discr = P::Discr;
+    // type Discr = P::Discr;
 }
 
 impl<P> NodeParam for TmapD<P>
