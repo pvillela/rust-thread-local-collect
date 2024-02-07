@@ -8,77 +8,10 @@
 //! threads, other than the thread responsible for collection/aggregation, have
 //! terminated and joined directly or indirectly into the thread respnosible for collection. Implicit joins by
 //! scoped threads are correctly handled.
-//!
-//! ## Usage pattern
-//!
-//! Here's an outline of how this little framework can be used:
-//!
-//! ```rust
-//! use std::{
-//!     ops::Deref,
-//!     thread::{self, ThreadId},
-//! };
-//! use thread_local_collect::{
-//!     joined::{Control, Holder},
-//!     HolderLocalKey,
-//! };
-//!
-//! // Define your data type, e.g.:
-//! type Data = i32;
-//!
-//! // Define your accumulated value type.
-//! type AccValue = i32;
-//!
-//! // Define your thread-local:
-//! thread_local! {
-//!     static MY_TL: Holder<Data, AccValue> = Holder::new(|| 0);
-//! }
-//!
-//! // Define your accumulation operation.
-//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
-//!     *acc += data;
-//! }
-//!
-//! // Create a function to update the thread-local value:
-//! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     MY_TL.ensure_initialized(control);
-//!     MY_TL.with_data_mut(|data| {
-//!         *data = value;
-//!     });
-//! }
-//!
-//! fn main() {
-//!     let control = Control::new(0, op);
-//!
-//!     update_tl(1, &control);
-//!
-//!     thread::scope(|s| {
-//!         s.spawn(|| {
-//!             update_tl(10, &control);
-//!         });
-//!     });
-//!
-//!     {
-//!         // SAFETY: Call this after all other threads registered with `control` have been joined.
-//!         unsafe { control.take_tls() };
-//!
-//!         // Print the accumulated value.
-//!         control.with_acc(|acc| println!("accumulated={}", acc));
-//!
-//!         // Another way to print the accumulated value.
-//!         let acc = control.acc();
-//!         println!("accumulated={}", acc.deref());
-//!     }
-//! }
-//! ```
-//!
-//! ## Other examples
-//!
-//! See another example at [`examples/joined_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/joined_map_accumulator.rs).
 
 use crate::{
     common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
-    CtrlStateParam, CtrlStateWithNode, GDataParam, NodeParam, SubStateParam, UseCtrlStateDefault,
+    GDataParam, NodeParam, SubStateParam, TmapD,
 };
 use std::{
     cell::RefCell,
@@ -94,8 +27,6 @@ use std::{
 /// Parameter bundle that enables specialization of the common generic structs for this module.
 #[derive(Debug)]
 pub struct P<T, U> {
-    own_tl_addr: Option<usize>,
-    tid: ThreadId,
     _t: PhantomData<T>,
     _u: PhantomData<U>,
 }
@@ -110,42 +41,14 @@ impl<T, U> NodeParam for P<T, U> {
 }
 
 impl<T, U> SubStateParam for P<T, U> {
-    type SubState = Self;
+    type SubState = TmapD<Self>;
 }
-
-impl<T, U> UseCtrlStateDefault for P<T, U> {}
 
 impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
 }
 
-type CtrlState<T, U> = CtrlStateG<P<T, U>>;
-
-impl<T, U> CtrlStateParam for P<T, U> {
-    type CtrlState = CtrlState<T, U>;
-}
-
-impl<T, U> CtrlStateWithNode<P<T, U>> for CtrlState<T, U> {
-    fn register_node(&mut self, node: usize, tid: &ThreadId) {
-        if *tid == self.s.tid {
-            self.s.own_tl_addr = Some(node);
-        }
-    }
-}
-
-impl<T, U> CtrlState<T, U> {
-    fn new(acc_base: U) -> Self {
-        Self {
-            acc: acc_base,
-            s: P {
-                own_tl_addr: None,
-                tid: thread::current().id(),
-                _t: PhantomData,
-                _u: PhantomData,
-            },
-        }
-    }
-}
+type CtrlState<T, U> = CtrlStateG<TmapD<P<T, U>>>;
 
 fn addr_of_tl<H>(tl: &LocalKey<H>) -> usize {
     let tl_ptr: *const LocalKey<H> = tl;
@@ -157,7 +60,7 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
 }
 
 /// Specialization of [`ControlG`] for this module.
-pub type Control<T, U> = ControlG<P<T, U>>;
+pub type Control<T, U> = ControlG<TmapD<P<T, U>>>;
 
 impl<T, U> Control<T, U>
 where
@@ -185,22 +88,46 @@ where
     /// concurrent activity would be [`HolderG`] drop method execution on the implicitly joined scoped threads,
     /// but that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
     pub unsafe fn take_tls(&self) {
+        // let mut guard = self.lock();
+        // // Need explicit deref_mut to avoid compilation error in for loop.
+        // let state = guard.deref_mut();
+        // if let Some(addr) = state.s.own_tl_addr {
+        //     // Safety: provided that:
+        //     // - All other threads have terminaged and been explicitly joined directly or indirectly.
+        //     //
+        //     // The above condition establishes a proper "happens-before" relationship for all explicitly joined threads,
+        //     // and the only possible remaining activity would be [`HolderG`] drop method execution on the thread that
+        //     // calls this method. But that drop method can't be executed concurrently with this one.
+        //     let tl: &LocalKey<Holder<T, U>> = tl_from_addr(addr);
+        //     tl.with(|h| {
+        //         let data = h.data.borrow_mut().take();
+        //         log::trace!("`take_tls`: executing data take");
+        //         if let Some(data) = data {
+        //             log::trace!("`take_tls`: executing `op`");
+        //             (self.op)(data, &mut state.acc, &thread::current().id());
+        //         }
+        //     });
+        // }
+
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
         let state = guard.deref_mut();
-        if let Some(addr) = state.s.own_tl_addr {
-            // Safety: provided that:
-            // - All other threads have terminaged and been explicitly joined directly or indirectly.
-            //
-            // The above condition establishes a proper "happens-before" relationship for all explicitly joined threads,
-            // and the only possible remaining activity would be [`HolderG`] drop method execution on the thread that
-            // calls this method. But that drop method can't be executed concurrently with this one.
-            let tl: &LocalKey<Holder<T, U>> = tl_from_addr(addr);
+        for (tid, addr) in state.s.tmap.iter() {
+            // log::trace!("executing `take_tls` for key={:?}", tid);
+            // let data = addr.lock().unwrap().take();
+            // log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
+            // if let Some(data) = data {
+            //     log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
+            //     (self.op)(data, &mut state.acc, tid);
+            // }
+
+            log::trace!("executing `take_tls` for key={:?}", tid);
+            let tl: &LocalKey<Holder<T, U>> = tl_from_addr(*addr);
             tl.with(|h| {
                 let data = h.data.borrow_mut().take();
                 log::trace!("`take_tls`: executing data take");
                 if let Some(data) = data {
-                    log::trace!("`take_tls`: executing `op`");
+                    log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
                     (self.op)(data, &mut state.acc, &thread::current().id());
                 }
             });
@@ -209,7 +136,7 @@ where
 }
 
 /// Specialization of [`HolderG`] for this module.
-pub type Holder<T, U> = HolderG<P<T, U>>;
+pub type Holder<T, U> = HolderG<TmapD<P<T, U>>>;
 
 impl<T, U> Holder<T, U> {
     /// Instantiates a [`Holder`] object.
@@ -221,7 +148,7 @@ impl<T, U> Holder<T, U> {
 //=================
 // Implementation of HolderLocalKey.
 
-impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
+impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Control<T, U>) {
         self.with(|h| h.init_control_node(&control, addr_of_tl(self)))

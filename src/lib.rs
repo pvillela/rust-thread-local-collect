@@ -25,4 +25,4 @@ pub mod joined;
 pub mod probed;
 pub mod simple_joined;
 pub use common::*;
-mod joined_bad;
+mod joined_old;

@@ -14,7 +14,7 @@
 
 use crate::{
     common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
-    CtrlStateParam, GDataParam, NodeParam, SubStateParam, TmapD, UseCtrlStateDefault,
+    GDataParam, NodeParam, SubStateParam, TmapD, UseCtrlStateDefault,
 };
 use std::{
     marker::PhantomData,
@@ -43,7 +43,7 @@ impl<T, U> NodeParam for P<T, U> {
 }
 
 impl<T, U> SubStateParam for P<T, U> {
-    type SubState = TmapD<P<T, U>>;
+    type SubState = TmapD<Self>;
 }
 
 impl<T, U> UseCtrlStateDefault for P<T, U> {}
@@ -53,10 +53,6 @@ impl<T, U> GDataParam for P<T, U> {
 }
 
 type CtrlState<T, U> = CtrlStateG<TmapD<P<T, U>>>;
-
-impl<T, U> CtrlStateParam for P<T, U> {
-    type CtrlState = CtrlState<T, U>;
-}
 
 /// Specialization of [`ControlG`] for this module.
 pub type Control<T, U> = ControlG<TmapD<P<T, U>>>;
