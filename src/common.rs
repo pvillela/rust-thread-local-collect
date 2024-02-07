@@ -19,8 +19,6 @@ pub trait CoreParam {
     type Dat;
     /// Type of accumulated value.
     type Acc;
-    // /// Discriminant type used to enable different specializations of the generic data structures.
-    // type Discr;
 }
 
 #[doc(hidden)]
@@ -31,7 +29,6 @@ pub trait CtrlStateParam {
 #[doc(hidden)]
 pub trait SubStateParam {
     type SubState;
-    type SubStateDiscr;
 }
 
 #[doc(hidden)]
@@ -63,6 +60,8 @@ where
     );
 }
 
+pub trait UseCtrlStateDefault {}
+
 #[doc(hidden)]
 pub trait CtrlStateWithNode<P>: CtrlStateCore<P>
 where
@@ -74,7 +73,7 @@ where
 #[doc(hidden)]
 /// Data structure that holds the state of a [`ControlG`].
 #[derive(Debug)]
-pub struct ControlStateG<P>
+pub struct CtrlStateG<P>
 where
     P: CoreParam + SubStateParam,
 {
@@ -82,7 +81,7 @@ where
     pub(crate) s: P::SubState,
 }
 
-impl<P> ControlStateG<P>
+impl<P> CtrlStateG<P>
 where
     P: CoreParam + SubStateParam,
 {
@@ -208,7 +207,6 @@ where
 impl<P> Clone for ControlG<P>
 where
     P: CoreParam + CtrlStateParam,
-    P::CtrlState: CtrlStateCore<P>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -220,10 +218,8 @@ where
 
 impl<P> Debug for ControlG<P>
 where
-    P: CoreParam + CtrlStateParam + Debug,
-    P::CtrlState: CtrlStateCore<P> + Debug,
-    P::Acc: Debug,
-    // P::Discr: Debug,
+    P: CoreParam + CtrlStateParam,
+    P::CtrlState: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("Control({:?})", self.state))
@@ -405,10 +401,6 @@ where
 //=================
 // Control sub-state structs.
 
-pub trait Discr1Param {
-    type Discr1;
-}
-
 #[doc(hidden)]
 /// Type used to hold the thread map used by the [`ControlG`] specializations for module [`crate::probed`].
 /// Used also for module [`crate::joined_bad`] which shows a previous incorrect implementation of module
@@ -428,7 +420,6 @@ where
 {
     type Acc = P::Acc;
     type Dat = P::Dat;
-    // type Discr = P::Discr;
 }
 
 impl<P> NodeParam for TmapD<P>
@@ -442,7 +433,7 @@ impl<P> CtrlStateParam for TmapD<P>
 where
     P: CoreParam + NodeParam,
 {
-    type CtrlState = ControlStateG<Self>;
+    type CtrlState = CtrlStateG<Self>;
 }
 
 impl<P> SubStateParam for TmapD<P>
@@ -450,7 +441,6 @@ where
     P: CoreParam + NodeParam,
 {
     type SubState = Self;
-    type SubStateDiscr = Self;
 }
 
 impl<P> GDataParam for TmapD<P>
@@ -460,7 +450,7 @@ where
     type GData = P::GData;
 }
 
-impl<P> ControlStateG<TmapD<P>>
+impl<P> CtrlStateG<TmapD<P>>
 where
     P: CoreParam + NodeParam,
 {
@@ -474,16 +464,16 @@ where
     }
 }
 
-impl<P> CtrlStateCore<TmapD<P>> for ControlStateG<TmapD<P>>
+impl<P> CtrlStateCore<TmapD<P>> for CtrlStateG<TmapD<P>>
 where
-    P: CoreParam + NodeParam + CtrlStateParam,
+    P: CoreParam + NodeParam,
 {
     fn acc(&self) -> &P::Acc {
-        ControlStateG::acc(&self)
+        CtrlStateG::acc(&self)
     }
 
     fn acc_mut(&mut self) -> &mut P::Acc {
-        ControlStateG::acc_mut(self)
+        CtrlStateG::acc_mut(self)
     }
 
     /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
@@ -507,9 +497,9 @@ where
     }
 }
 
-impl<P> CtrlStateWithNode<TmapD<P>> for ControlStateG<TmapD<P>>
+impl<P> CtrlStateWithNode<TmapD<P>> for CtrlStateG<TmapD<P>>
 where
-    P: CoreParam + NodeParam + CtrlStateParam,
+    P: CoreParam + NodeParam,
 {
     fn register_node(&mut self, node: <P as NodeParam>::Node, tid: &ThreadId) {
         self.s.tmap.insert(tid.clone(), node);
@@ -520,16 +510,16 @@ where
 /// Unit type used to discriminate substate from [`TmapD`].
 pub struct NoTmapD;
 
-impl<P> CtrlStateCore<P> for ControlStateG<P>
+impl<P> CtrlStateCore<P> for CtrlStateG<P>
 where
-    P: CoreParam + SubStateParam<SubStateDiscr = NoTmapD>,
+    P: CoreParam + SubStateParam + UseCtrlStateDefault,
 {
     fn acc(&self) -> &P::Acc {
-        ControlStateG::acc(&self)
+        CtrlStateG::acc(&self)
     }
 
     fn acc_mut(&mut self) -> &mut P::Acc {
-        ControlStateG::acc_mut(self)
+        CtrlStateG::acc_mut(self)
     }
 
     /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.

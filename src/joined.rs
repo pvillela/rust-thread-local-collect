@@ -77,8 +77,8 @@
 //! See another example at [`examples/joined_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/joined_map_accumulator.rs).
 
 use crate::{
-    common::{ControlG, ControlStateG, CoreParam, HolderG, HolderLocalKey},
-    CtrlStateParam, CtrlStateWithNode, GDataParam, NoTmapD, NodeParam, SubStateParam,
+    common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
+    CtrlStateParam, CtrlStateWithNode, GDataParam, NodeParam, SubStateParam, UseCtrlStateDefault,
 };
 use std::{
     cell::RefCell,
@@ -112,14 +112,16 @@ impl<T, U> NodeParam for P<T, U> {
 
 impl<T, U> SubStateParam for P<T, U> {
     type SubState = Self;
-    type SubStateDiscr = NoTmapD;
+    // type SubStateDiscr = NoTmapD;
 }
+
+impl<T, U> UseCtrlStateDefault for P<T, U> {}
 
 impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
 }
 
-type JoinedState<T, U> = ControlStateG<P<T, U>>;
+type JoinedState<T, U> = CtrlStateG<P<T, U>>;
 
 impl<T, U> CtrlStateParam for P<T, U> {
     type CtrlState = JoinedState<T, U>;
