@@ -84,7 +84,6 @@ use std::{
     cell::RefCell,
     marker::PhantomData,
     ops::DerefMut,
-    sync::{Arc, Mutex},
     thread,
     thread::{LocalKey, ThreadId},
 };
@@ -167,10 +166,7 @@ where
 {
     /// Instantiates a [`Control`] object for this module.
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-        Control {
-            state: Arc::new(Mutex::new(JoinedState::new(acc_base))),
-            op: Arc::new(op),
-        }
+        ControlG::new_priv(JoinedState::new(acc_base), op)
     }
 
     /// This method takes the values of any remaining linked thread-local-variables and aggregates those values
@@ -216,13 +212,9 @@ where
 pub type Holder<T, U> = HolderG<P<T, U>>;
 
 impl<T, U> Holder<T, U> {
-    /// Instantiates a [`HolderG`] object.
+    /// Instantiates a [`Holder`] object.
     pub fn new(make_data: fn() -> T) -> Self {
-        Self {
-            data: RefCell::new(None),
-            control: RefCell::new(None),
-            make_data,
-        }
+        HolderG::new_priv(make_data, RefCell::new(None))
     }
 }
 

@@ -137,11 +137,22 @@ where
     pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync>,
 }
 
-impl<P: CoreParam> ControlG<P>
+impl<P> ControlG<P>
 where
     P: CoreParam + CtrlStateParam,
     P::CtrlState: CtrlStateCore<P>,
 {
+    /// Instantiates a [`Control`] object for this module.
+    pub(crate) fn new_priv(
+        state: P::CtrlState,
+        op: impl Fn(P::Dat, &mut P::Acc, &ThreadId) + 'static + Send + Sync,
+    ) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(state)),
+            op: Arc::new(op),
+        }
+    }
+
     /// Acquires a lock on [`ControlG`]'s internal Mutex.
     pub(crate) fn lock(&self) -> MutexGuard<'_, P::CtrlState> {
         self.state.lock().unwrap()
@@ -265,6 +276,15 @@ where
     P::GData: GuardedData<Option<P::Dat>> + 'static,
     P::CtrlState: CtrlStateCore<P>,
 {
+    /// Instantiates a [`HolderG`] object.
+    pub(crate) fn new_priv(make_data: fn() -> P::Dat, uninit_data: P::GData) -> Self {
+        Self {
+            data: uninit_data,
+            control: RefCell::new(None),
+            make_data,
+        }
+    }
+
     /// Returns reference to `control` field.
     pub(crate) fn control(&self) -> Ref<'_, Option<ControlG<P>>> {
         self.control.borrow()
