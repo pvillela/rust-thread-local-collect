@@ -31,6 +31,7 @@ pub trait CtrlStateParam {
 #[doc(hidden)]
 pub trait SubStateParam {
     type SubState;
+    type SubStateDiscr;
 }
 
 #[doc(hidden)]
@@ -384,20 +385,24 @@ where
 //=================
 // Control sub-state structs.
 
+pub trait Discr1Param {
+    type Discr1;
+}
+
 #[doc(hidden)]
 /// Type used to hold the thread map used by the [`ControlG`] specializations for module [`crate::probed`].
 /// Used also for module [`crate::joined_bad`] which shows a previous incorrect implementation of module
 /// [`crate::joined`].
 /// Also used to partially discriminate common [`ControlG`] functionality used by those modules.
 #[derive(Debug)]
-pub struct TmapS<P>
+pub struct TmapD<P>
 where
-    P: CoreParam + NodeParam,
+    P: NodeParam,
 {
     pub(crate) tmap: HashMap<ThreadId, P::Node>,
 }
 
-impl<P> CoreParam for TmapS<P>
+impl<P> CoreParam for TmapD<P>
 where
     P: CoreParam + NodeParam,
 {
@@ -406,57 +411,58 @@ where
     type Discr = P::Discr;
 }
 
-impl<P> NodeParam for TmapS<P>
+impl<P> NodeParam for TmapD<P>
 where
     P: CoreParam + NodeParam,
 {
     type Node = P::Node;
 }
 
-impl<P> CtrlStateParam for TmapS<P>
+impl<P> CtrlStateParam for TmapD<P>
 where
     P: CoreParam + NodeParam,
 {
     type CtrlState = ControlStateG<Self>;
 }
 
-impl<P> SubStateParam for TmapS<P>
+impl<P> SubStateParam for TmapD<P>
 where
     P: CoreParam + NodeParam,
 {
     type SubState = Self;
+    type SubStateDiscr = Self;
 }
 
-impl<P> GDataParam for TmapS<P>
+impl<P> GDataParam for TmapD<P>
 where
     P: CoreParam + NodeParam + GDataParam,
 {
     type GData = P::GData;
 }
 
-impl<P> ControlStateG<TmapS<P>>
+impl<P> ControlStateG<TmapD<P>>
 where
     P: CoreParam + NodeParam,
 {
     pub fn new(acc_base: P::Acc) -> Self {
         Self {
             acc: acc_base,
-            s: TmapS {
+            s: TmapD {
                 tmap: HashMap::new(),
             },
         }
     }
 }
 
-impl<P> CtrlStateCore<TmapS<P>> for ControlStateG<TmapS<P>>
+impl<P> CtrlStateCore<TmapD<P>> for ControlStateG<TmapD<P>>
 where
     P: CoreParam + NodeParam + CtrlStateParam,
 {
-    fn acc(&self) -> &<P as CoreParam>::Acc {
+    fn acc(&self) -> &P::Acc {
         ControlStateG::acc(&self)
     }
 
-    fn acc_mut(&mut self) -> &mut <P as CoreParam>::Acc {
+    fn acc_mut(&mut self) -> &mut P::Acc {
         ControlStateG::acc_mut(self)
     }
 
@@ -481,7 +487,7 @@ where
     }
 }
 
-impl<P> CtrlStateWithNode<TmapS<P>> for ControlStateG<TmapS<P>>
+impl<P> CtrlStateWithNode<TmapD<P>> for ControlStateG<TmapD<P>>
 where
     P: CoreParam + NodeParam + CtrlStateParam,
 {
@@ -491,56 +497,18 @@ where
 }
 
 #[doc(hidden)]
-/// Type used to hold the node value used by the [`ControlG`] specializations for module [`crate::joined`] and
-/// [`crate::simple_joined`].
-/// Also used to partially discriminate common [`ControlG`] functionality used by those modules.
-#[derive(Debug)]
-pub struct NoTmapS<P>
-where
-    P: CoreParam,
-{
-    pub(crate) d: P::Discr,
-}
+/// Unit type used to discriminate substate from [`TmapD`].
+pub struct NoTmapD;
 
-impl<P> CoreParam for NoTmapS<P>
+impl<P> CtrlStateCore<P> for ControlStateG<P>
 where
-    P: CoreParam,
+    P: CoreParam + SubStateParam<SubStateDiscr = NoTmapD>,
 {
-    type Acc = P::Acc;
-    type Dat = P::Dat;
-    type Discr = P::Discr;
-}
-
-impl<P> CtrlStateParam for NoTmapS<P>
-where
-    P: CoreParam,
-{
-    type CtrlState = ControlStateG<Self>;
-}
-
-impl<P> SubStateParam for NoTmapS<P>
-where
-    P: CoreParam,
-{
-    type SubState = Self;
-}
-
-impl<P> GDataParam for NoTmapS<P>
-where
-    P: CoreParam + GDataParam,
-{
-    type GData = P::GData;
-}
-
-impl<P> CtrlStateCore<NoTmapS<P>> for ControlStateG<NoTmapS<P>>
-where
-    P: CoreParam,
-{
-    fn acc(&self) -> &<P as CoreParam>::Acc {
+    fn acc(&self) -> &P::Acc {
         ControlStateG::acc(&self)
     }
 
-    fn acc_mut(&mut self) -> &mut <P as CoreParam>::Acc {
+    fn acc_mut(&mut self) -> &mut P::Acc {
         ControlStateG::acc_mut(self)
     }
 

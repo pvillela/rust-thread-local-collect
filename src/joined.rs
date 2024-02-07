@@ -78,7 +78,7 @@
 
 use crate::{
     common::{ControlG, ControlStateG, CoreParam, HolderG, HolderLocalKey},
-    CtrlStateWithNode, GDataParam, NoTmapS, NodeParam,
+    CtrlStateParam, CtrlStateWithNode, GDataParam, NoTmapD, NodeParam, SubStateParam,
 };
 use std::{
     cell::RefCell,
@@ -101,43 +101,48 @@ pub struct P<T, U> {
     _u: PhantomData<U>,
 }
 
-pub type JoinedP<T, U> = NoTmapS<P<T, U>>;
-
 impl<T, U> CoreParam for P<T, U> {
     type Dat = T;
     type Acc = U;
     type Discr = Self;
 }
 
-impl<T, U> NodeParam for NoTmapS<P<T, U>> {
+impl<T, U> NodeParam for P<T, U> {
     type Node = usize;
+}
+
+impl<T, U> SubStateParam for P<T, U> {
+    type SubState = Self;
+    type SubStateDiscr = NoTmapD;
 }
 
 impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
 }
 
-impl<T, U> CtrlStateWithNode<NoTmapS<P<T, U>>> for ControlStateG<NoTmapS<P<T, U>>> {
+type JoinedState<T, U> = ControlStateG<P<T, U>>;
+
+impl<T, U> CtrlStateParam for P<T, U> {
+    type CtrlState = JoinedState<T, U>;
+}
+
+impl<T, U> CtrlStateWithNode<P<T, U>> for JoinedState<T, U> {
     fn register_node(&mut self, node: usize, tid: &ThreadId) {
-        if *tid == self.s.d.tid {
-            self.s.d.own_tl_addr = Some(node);
+        if *tid == self.s.tid {
+            self.s.own_tl_addr = Some(node);
         }
     }
 }
 
-type JoinedState<T, U> = ControlStateG<JoinedP<T, U>>;
-
 impl<T, U> JoinedState<T, U> {
-    pub fn new(acc_base: U) -> Self {
+    fn new(acc_base: U) -> Self {
         Self {
             acc: acc_base,
-            s: NoTmapS {
-                d: P {
-                    own_tl_addr: None,
-                    tid: thread::current().id(),
-                    _t: PhantomData,
-                    _u: PhantomData,
-                },
+            s: P {
+                own_tl_addr: None,
+                tid: thread::current().id(),
+                _t: PhantomData,
+                _u: PhantomData,
             },
         }
     }
@@ -153,7 +158,7 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
 }
 
 /// Specialization of [`ControlG`] for this module.
-pub type Control<T, U> = ControlG<JoinedP<T, U>>;
+pub type Control<T, U> = ControlG<P<T, U>>;
 
 impl<T, U> Control<T, U>
 where
@@ -187,7 +192,7 @@ where
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
         let state = guard.deref_mut();
-        if let Some(addr) = state.s.d.own_tl_addr {
+        if let Some(addr) = state.s.own_tl_addr {
             // Safety: provided that:
             // - All other threads have terminaged and been explicitly joined directly or indirectly.
             //
@@ -208,7 +213,7 @@ where
 }
 
 /// Specialization of [`HolderG`] for this module.
-pub type Holder<T, U> = HolderG<JoinedP<T, U>>;
+pub type Holder<T, U> = HolderG<P<T, U>>;
 
 impl<T, U> Holder<T, U> {
     /// Instantiates a [`HolderG`] object.
@@ -224,7 +229,7 @@ impl<T, U> Holder<T, U> {
 //=================
 // Implementation of HolderLocalKey.
 
-impl<T, U> HolderLocalKey<JoinedP<T, U>> for LocalKey<Holder<T, U>> {
+impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Control<T, U>) {
         self.with(|h| h.init_control(&control, addr_of_tl(self)))
