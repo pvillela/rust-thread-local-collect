@@ -13,14 +13,14 @@
 //! scoped threads are correctly handled.
 
 use crate::{
-    common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
+    common::{ControlG, CoreParam, HolderG, HolderLocalKey},
     GDataParam, NodeParam, SubStateParam, TmapD, UseCtrlStateDefault,
 };
 use std::{
     marker::PhantomData,
     ops::DerefMut,
     sync::{Arc, Mutex},
-    thread::{LocalKey, ThreadId},
+    thread::LocalKey,
 };
 
 //=================
@@ -52,8 +52,6 @@ impl<T, U> GDataParam for P<T, U> {
     type GData = Arc<Mutex<Option<T>>>;
 }
 
-type CtrlState<T, U> = CtrlStateG<TmapD<P<T, U>>>;
-
 /// Specialization of [`ControlG`] for this module.
 pub type Control<T, U> = ControlG<TmapD<P<T, U>>>;
 
@@ -62,11 +60,6 @@ where
     T: 'static,
     U: 'static,
 {
-    /// Instantiates a [`Control`] object for this module.
-    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-        ControlG::new_priv(CtrlState::new(acc_base), op)
-    }
-
     /// This method takes the values of any remaining linked thread-local-variables and aggregates those values
     /// with this object's accumulator, replacing those values with [`None`].
     ///
@@ -119,13 +112,6 @@ where
 
 /// Specialization of [`HolderG`] for this module.
 pub type Holder<T, U> = HolderG<TmapD<P<T, U>>>;
-
-impl<T, U> Holder<T, U> {
-    /// Instantiates a [`Holder`] object.
-    pub fn new(make_data: fn() -> T) -> Self {
-        HolderG::new_priv(make_data, Arc::new(Mutex::new(None)))
-    }
-}
 
 //=================
 // Implementation of HolderLocalKey.

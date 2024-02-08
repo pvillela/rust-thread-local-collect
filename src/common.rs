@@ -22,7 +22,9 @@ pub trait CoreParam {
 }
 
 pub trait New<S> {
-    fn new() -> S;
+    type Arg;
+
+    fn new(arg: Self::Arg) -> S;
 }
 
 #[doc(hidden)]
@@ -32,7 +34,7 @@ pub trait CtrlStateParam {
 
 #[doc(hidden)]
 pub trait SubStateParam {
-    type SubState: New<Self::SubState>;
+    type SubState: New<Self::SubState, Arg = ()>;
 }
 
 #[doc(hidden)]
@@ -48,8 +50,9 @@ pub trait GDataParam {
 }
 
 #[doc(hidden)]
-pub trait CtrlStateCore<P>
+pub trait CtrlStateCore<P>: New<Self, Arg = P::Acc>
 where
+    Self: Sized,
     P: CoreParam,
 {
     fn acc(&self) -> &P::Acc;
@@ -83,6 +86,20 @@ where
 {
     pub(crate) acc: P::Acc,
     pub(crate) s: P::SubState,
+}
+
+impl<P> New<Self> for CtrlStateG<P>
+where
+    P: CoreParam + SubStateParam,
+{
+    type Arg = P::Acc;
+
+    fn new(acc_base: P::Acc) -> Self {
+        Self {
+            acc: acc_base,
+            s: P::SubState::new(()),
+        }
+    }
 }
 
 impl<P> CtrlStateG<P>
@@ -146,10 +163,11 @@ where
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Instantiates a [`Control`] object for this module.
-    pub(crate) fn new_priv(
-        state: P::CtrlState,
+    pub fn new(
+        acc_base: P::Acc,
         op: impl Fn(P::Dat, &mut P::Acc, &ThreadId) + 'static + Send + Sync,
     ) -> Self {
+        let state = P::CtrlState::new(acc_base);
         Self {
             state: Arc::new(Mutex::new(state)),
             op: Arc::new(op),
@@ -232,7 +250,10 @@ where
 
 #[doc(hidden)]
 /// Abstraction of data wrappers used by [`HolderG`] specializations for different modules.
-pub trait GuardedData<S: 'static> {
+pub trait GuardedData<S: 'static>: New<Self>
+where
+    Self: Sized,
+{
     type Guard<'a>: DerefMut<Target = S> + 'a
     where
         Self: 'a;
@@ -240,16 +261,32 @@ pub trait GuardedData<S: 'static> {
     fn guard<'a>(&'a self) -> Self::Guard<'a>;
 }
 
-impl<S: 'static> GuardedData<S> for RefCell<S> {
-    type Guard<'a> = RefMut<'a, S>;
+impl<T> New<Self> for RefCell<Option<T>> {
+    type Arg = ();
+
+    fn new(_: Self::Arg) -> Self {
+        RefCell::new(None)
+    }
+}
+
+impl<T: 'static> GuardedData<Option<T>> for RefCell<Option<T>> {
+    type Guard<'a> = RefMut<'a, Option<T>>;
 
     fn guard<'a>(&'a self) -> Self::Guard<'a> {
         self.borrow_mut()
     }
 }
 
-impl<S: 'static> GuardedData<S> for Arc<Mutex<S>> {
-    type Guard<'a> = MutexGuard<'a, S>;
+impl<T> New<Self> for Arc<Mutex<Option<T>>> {
+    type Arg = ();
+
+    fn new(_: Self::Arg) -> Self {
+        Arc::new(Mutex::new(None))
+    }
+}
+
+impl<T: 'static> GuardedData<Option<T>> for Arc<Mutex<Option<T>>> {
+    type Guard<'a> = MutexGuard<'a, Option<T>>;
 
     fn guard<'a>(&'a self) -> Self::Guard<'a> {
         self.lock().unwrap()
@@ -262,7 +299,7 @@ pub struct HolderG<P>
 where
     P: CoreParam + GDataParam + CtrlStateParam,
     P::Dat: 'static,
-    P::GData: GuardedData<Option<P::Dat>> + 'static,
+    P::GData: GuardedData<Option<P::Dat>, Arg = ()> + 'static,
     P::CtrlState: CtrlStateCore<P>,
 {
     pub(crate) data: P::GData,
@@ -273,13 +310,13 @@ where
 impl<P> HolderG<P>
 where
     P: CoreParam + GDataParam + CtrlStateParam,
-    P::GData: GuardedData<Option<P::Dat>> + 'static,
+    P::GData: GuardedData<Option<P::Dat>, Arg = ()> + 'static,
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Instantiates a [`HolderG`] object.
-    pub(crate) fn new_priv(make_data: fn() -> P::Dat, uninit_data: P::GData) -> Self {
+    pub fn new(make_data: fn() -> P::Dat) -> Self {
         Self {
-            data: uninit_data,
+            data: P::GData::new(()),
             control: RefCell::new(None),
             make_data,
         }
@@ -336,7 +373,7 @@ impl<P> HolderG<P>
 where
     P: CoreParam + GDataParam + CtrlStateParam,
     P::Dat: 'static,
-    P::GData: GuardedData<Option<P::Dat>> + 'static,
+    P::GData: GuardedData<Option<P::Dat>, Arg = ()> + 'static,
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Function to be used as a field in [`HolderG`].
@@ -361,7 +398,7 @@ impl<P> HolderG<P>
 where
     P: CoreParam + GDataParam + NodeParam + CtrlStateParam,
     P::Dat: 'static,
-    P::GData: GuardedData<Option<P::Dat>> + 'static,
+    P::GData: GuardedData<Option<P::Dat>, Arg = ()> + 'static,
     P::CtrlState: CtrlStateWithNode<P>,
 {
     /// Function to be used as a field in [`HolderG`].
@@ -386,7 +423,7 @@ where
 impl<P> Debug for HolderG<P>
 where
     P: CoreParam + GDataParam + CtrlStateParam + Debug,
-    P::GData: GuardedData<Option<P::Dat>> + Debug,
+    P::GData: GuardedData<Option<P::Dat>, Arg = ()> + Debug,
     P::CtrlState: CtrlStateCore<P>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -397,7 +434,7 @@ where
 impl<P> Drop for HolderG<P>
 where
     P: CoreParam + GDataParam + CtrlStateParam,
-    P::GData: GuardedData<Option<P::Dat>> + 'static,
+    P::GData: GuardedData<Option<P::Dat>, Arg = ()> + 'static,
     P::CtrlState: CtrlStateCore<P>,
 {
     fn drop(&mut self) {
@@ -479,25 +516,15 @@ where
     type GData = P::GData;
 }
 
-impl<P> New<TmapD<P>> for TmapD<P>
+impl<P> New<Self> for TmapD<P>
 where
     P: NodeParam,
 {
-    fn new() -> Self {
+    type Arg = ();
+
+    fn new(_: ()) -> Self {
         Self {
             tmap: HashMap::new(),
-        }
-    }
-}
-
-impl<P> CtrlStateG<P>
-where
-    P: CoreParam + SubStateParam,
-{
-    pub fn new(acc_base: P::Acc) -> Self {
-        Self {
-            acc: acc_base,
-            s: P::SubState::new(),
         }
     }
 }

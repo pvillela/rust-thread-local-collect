@@ -10,16 +10,10 @@
 //! scoped threads are correctly handled.
 
 use crate::{
-    common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
+    common::{ControlG, CoreParam, HolderG, HolderLocalKey},
     GDataParam, NodeParam, SubStateParam, TmapD,
 };
-use std::{
-    cell::RefCell,
-    marker::PhantomData,
-    ops::DerefMut,
-    thread,
-    thread::{LocalKey, ThreadId},
-};
+use std::{cell::RefCell, marker::PhantomData, ops::DerefMut, thread, thread::LocalKey};
 
 //=================
 // Core implementation based on common module
@@ -48,8 +42,6 @@ impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
 }
 
-type CtrlState<T, U> = CtrlStateG<TmapD<P<T, U>>>;
-
 fn addr_of_tl<H>(tl: &LocalKey<H>) -> usize {
     let tl_ptr: *const LocalKey<H> = tl;
     tl_ptr as usize
@@ -67,11 +59,6 @@ where
     T: 'static,
     U: 'static,
 {
-    /// Instantiates a [`Control`] object for this module.
-    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-        ControlG::new_priv(CtrlState::new(acc_base), op)
-    }
-
     /// This method takes the values of any remaining linked thread-local-variables and aggregates those values
     /// with this object's accumulator, replacing those values with [`None`].
     ///
@@ -88,27 +75,6 @@ where
     /// concurrent activity would be [`HolderG`] drop method execution on the implicitly joined scoped threads,
     /// but that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
     pub unsafe fn take_tls(&self) {
-        // let mut guard = self.lock();
-        // // Need explicit deref_mut to avoid compilation error in for loop.
-        // let state = guard.deref_mut();
-        // if let Some(addr) = state.s.own_tl_addr {
-        //     // Safety: provided that:
-        //     // - All other threads have terminaged and been explicitly joined directly or indirectly.
-        //     //
-        //     // The above condition establishes a proper "happens-before" relationship for all explicitly joined threads,
-        //     // and the only possible remaining activity would be [`HolderG`] drop method execution on the thread that
-        //     // calls this method. But that drop method can't be executed concurrently with this one.
-        //     let tl: &LocalKey<Holder<T, U>> = tl_from_addr(addr);
-        //     tl.with(|h| {
-        //         let data = h.data.borrow_mut().take();
-        //         log::trace!("`take_tls`: executing data take");
-        //         if let Some(data) = data {
-        //             log::trace!("`take_tls`: executing `op`");
-        //             (self.op)(data, &mut state.acc, &thread::current().id());
-        //         }
-        //     });
-        // }
-
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
         let state = guard.deref_mut();
@@ -137,13 +103,6 @@ where
 
 /// Specialization of [`HolderG`] for this module.
 pub type Holder<T, U> = HolderG<TmapD<P<T, U>>>;
-
-impl<T, U> Holder<T, U> {
-    /// Instantiates a [`Holder`] object.
-    pub fn new(make_data: fn() -> T) -> Self {
-        HolderG::new_priv(make_data, RefCell::new(None))
-    }
-}
 
 //=================
 // Implementation of HolderLocalKey.
@@ -205,12 +164,6 @@ mod tests {
     }
 
     fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: &ThreadId) {
-        // println!(
-        //     "`op` called from {:?} with data {:?}",
-        //     thread::current().id(),
-        //     data
-        // );
-
         acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
         for (k, v) in data {
             acc.get_mut(tid).unwrap().insert(k, v.clone());

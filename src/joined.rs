@@ -121,7 +121,9 @@ impl<T, U> GDataParam for P<T, U> {
 }
 
 impl<T, U> New<P<T, U>> for P<T, U> {
-    fn new() -> P<T, U> {
+    type Arg = ();
+
+    fn new(_: ()) -> P<T, U> {
         Self {
             own_tl_addr: None,
             tid: thread::current().id(),
@@ -162,11 +164,6 @@ where
     T: 'static,
     U: 'static,
 {
-    /// Instantiates a [`Control`] object for this module.
-    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-        ControlG::new_priv(CtrlState::new(acc_base), op)
-    }
-
     /// This method takes the values of any remaining linked thread-local-variables and aggregates those values
     /// with this object's accumulator, replacing those values with [`None`].
     ///
@@ -208,13 +205,6 @@ where
 
 /// Specialization of [`HolderG`] for this module.
 pub type Holder<T, U> = HolderG<P<T, U>>;
-
-impl<T, U> Holder<T, U> {
-    /// Instantiates a [`Holder`] object.
-    pub fn new(make_data: fn() -> T) -> Self {
-        HolderG::new_priv(make_data, RefCell::new(None))
-    }
-}
 
 //=================
 // Implementation of HolderLocalKey.

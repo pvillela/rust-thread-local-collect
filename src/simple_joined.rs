@@ -17,11 +17,7 @@ use crate::{
     common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
     CtrlStateParam, GDataParam, New, SubStateParam, UseCtrlStateDefault,
 };
-use std::{
-    cell::RefCell,
-    marker::PhantomData,
-    thread::{LocalKey, ThreadId},
-};
+use std::{cell::RefCell, marker::PhantomData, thread::LocalKey};
 
 //=================
 // Core implementation based on common module
@@ -49,7 +45,9 @@ impl<T, U> GDataParam for P<T, U> {
 }
 
 impl<T, U> New<P<T, U>> for P<T, U> {
-    fn new() -> P<T, U> {
+    type Arg = ();
+
+    fn new(_: ()) -> P<T, U> {
         Self {
             _t: PhantomData,
             _u: PhantomData,
@@ -66,26 +64,8 @@ impl<T, U> CtrlStateParam for P<T, U> {
 /// Specialization of [`ControlG`] for this module.
 pub type Control<T, U> = ControlG<P<T, U>>;
 
-impl<T, U> Control<T, U>
-where
-    T: 'static,
-    U: 'static,
-{
-    /// Instantiates a [`Control`] object for this module.
-    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
-        ControlG::new_priv(CtrlState::new(acc_base), op)
-    }
-}
-
 /// Specialization of [`HolderG`] for this module.
 pub type Holder<T, U> = HolderG<P<T, U>>;
-
-impl<T, U> Holder<T, U> {
-    /// Instantiates a [`Holder`] object.
-    pub fn new(make_data: fn() -> T) -> Self {
-        HolderG::new_priv(make_data, RefCell::new(None))
-    }
-}
 
 //=================
 // Implementation of HolderLocalKey.
