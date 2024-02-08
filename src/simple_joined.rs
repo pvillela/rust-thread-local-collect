@@ -15,7 +15,7 @@
 
 use crate::{
     common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
-    CtrlStateParam, GDataParam, SubStateParam, UseCtrlStateDefault,
+    CtrlStateParam, GDataParam, New, SubStateParam, UseCtrlStateDefault,
 };
 use std::{
     cell::RefCell,
@@ -48,22 +48,19 @@ impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
 }
 
+impl<T, U> New<P<T, U>> for P<T, U> {
+    fn new() -> P<T, U> {
+        Self {
+            _t: PhantomData,
+            _u: PhantomData,
+        }
+    }
+}
+
 type CtrlState<T, U> = CtrlStateG<P<T, U>>;
 
 impl<T, U> CtrlStateParam for P<T, U> {
     type CtrlState = CtrlState<T, U>;
-}
-
-impl<T, U> CtrlState<T, U> {
-    fn new(acc_base: U) -> Self {
-        Self {
-            acc: acc_base,
-            s: P {
-                _t: PhantomData,
-                _u: PhantomData,
-            },
-        }
-    }
 }
 
 /// Specialization of [`ControlG`] for this module.

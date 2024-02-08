@@ -78,7 +78,8 @@
 
 use crate::{
     common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
-    CtrlStateParam, CtrlStateWithNode, GDataParam, NodeParam, SubStateParam, UseCtrlStateDefault,
+    CtrlStateParam, CtrlStateWithNode, GDataParam, New, NodeParam, SubStateParam,
+    UseCtrlStateDefault,
 };
 use std::{
     cell::RefCell,
@@ -119,6 +120,17 @@ impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
 }
 
+impl<T, U> New<P<T, U>> for P<T, U> {
+    fn new() -> P<T, U> {
+        Self {
+            own_tl_addr: None,
+            tid: thread::current().id(),
+            _t: PhantomData,
+            _u: PhantomData,
+        }
+    }
+}
+
 type CtrlState<T, U> = CtrlStateG<P<T, U>>;
 
 impl<T, U> CtrlStateParam for P<T, U> {
@@ -129,20 +141,6 @@ impl<T, U> CtrlStateWithNode<P<T, U>> for CtrlState<T, U> {
     fn register_node(&mut self, node: usize, tid: &ThreadId) {
         if *tid == self.s.tid {
             self.s.own_tl_addr = Some(node);
-        }
-    }
-}
-
-impl<T, U> CtrlState<T, U> {
-    fn new(acc_base: U) -> Self {
-        Self {
-            acc: acc_base,
-            s: P {
-                own_tl_addr: None,
-                tid: thread::current().id(),
-                _t: PhantomData,
-                _u: PhantomData,
-            },
         }
     }
 }

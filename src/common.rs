@@ -21,6 +21,10 @@ pub trait CoreParam {
     type Acc;
 }
 
+pub trait New<S> {
+    fn new() -> S;
+}
+
 #[doc(hidden)]
 pub trait CtrlStateParam {
     type CtrlState;
@@ -28,7 +32,7 @@ pub trait CtrlStateParam {
 
 #[doc(hidden)]
 pub trait SubStateParam {
-    type SubState;
+    type SubState: New<Self::SubState>;
 }
 
 #[doc(hidden)]
@@ -475,16 +479,25 @@ where
     type GData = P::GData;
 }
 
-impl<P> CtrlStateG<TmapD<P>>
+impl<P> New<TmapD<P>> for TmapD<P>
 where
-    P: CoreParam + NodeParam,
+    P: NodeParam,
+{
+    fn new() -> Self {
+        Self {
+            tmap: HashMap::new(),
+        }
+    }
+}
+
+impl<P> CtrlStateG<P>
+where
+    P: CoreParam + SubStateParam,
 {
     pub fn new(acc_base: P::Acc) -> Self {
         Self {
             acc: acc_base,
-            s: TmapD {
-                tmap: HashMap::new(),
-            },
+            s: P::SubState::new(),
         }
     }
 }
