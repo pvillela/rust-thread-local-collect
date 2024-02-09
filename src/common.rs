@@ -1,4 +1,5 @@
-//! This module contains common traits and structs that are used by the other modules in this libray.
+//! This module contains common traits and structs that are used by the other modules in this libray,
+//! except for the [`crate::channeled`] mofule.
 
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -11,9 +12,9 @@ use std::{
 };
 
 //=================
-// Common items that support all modules except `channeled`
+// Traits
 
-/// Encapsulates the types used by [`ControlG`], [`HolderG`], and their specializations.
+/// Encapsulates the core types used by [`ControlG`], [`HolderG`], and their specializations.
 pub trait CoreParam {
     /// Type of data held in thread-local variable.
     type Dat;
@@ -21,6 +22,8 @@ pub trait CoreParam {
     type Acc;
 }
 
+#[doc(hidden)]
+/// Abstracts a type's ability to construct itself.
 pub trait New<S> {
     type Arg;
 
@@ -28,37 +31,56 @@ pub trait New<S> {
 }
 
 #[doc(hidden)]
+/// Abstracts the type of the state of a [`ControlG`].
 pub trait CtrlStateParam {
     type CtrlState;
 }
 
 #[doc(hidden)]
+/// Abstracts the type of a sub-state of a [`CtrlStateG`].
 pub trait SubStateParam {
     type SubState: New<Self::SubState, Arg = ()>;
 }
 
 #[doc(hidden)]
+/// Used to tag an instantiation of [`CtrlStateG`] and enable it to inherit default [`CtrlStateG`] functionality.
+pub trait UseCtrlStateGDefault {}
+
+#[doc(hidden)]
+/// Abstracts the type of node used by structs and functions that depend on a node type.
+/// The node type represents thread-local variable address or reference information that is held
+/// in the state of a [`ControlG`].
 pub trait NodeParam {
-    /// Type of node in [`TmapD`] and [`NodeD`].
     type Node;
 }
 
 #[doc(hidden)]
+/// Abstracts the type of [`GuardedData`] used by [`HolderG`].
 pub trait GDataParam {
-    /// Guarded data type used by [`HolderG`].
     type GData;
 }
 
 #[doc(hidden)]
+/// Abstracts the core features of the state of a [`ControlG`].
 pub trait CtrlStateCore<P>: New<Self, Arg = P::Acc>
 where
     Self: Sized,
     P: CoreParam,
 {
+    /// Returns reference to accumulated value.
     fn acc(&self) -> &P::Acc;
 
+    /// Returns mutable reference to accumulated value.
     fn acc_mut(&mut self) -> &mut P::Acc;
 
+    /// Invoked when thread-local [`HolderG`] is dropped to notify the control state and accumulate
+    /// the thread-local value.
+    ///
+    // The `data` argument is not strictly necessary to support the implementation for state that uses
+    // a node type as the data can be recovered from the corresponding node. However, the `data` argument makes
+    // the generic implementation simpler and uniform across all modules. Without the `data`
+    // argument, the implementations of this method for [`crate::joined`] and [`crate::probed`] would be
+    // different from each other and a bit more complex.
     fn tl_data_dropped(
         &mut self,
         op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
@@ -67,18 +89,18 @@ where
     );
 }
 
-pub trait UseCtrlStateDefault {}
-
 #[doc(hidden)]
+/// Abstracts additional features of the state of a [`ControlG`] that uses a [`NodeParam`].
 pub trait CtrlStateWithNode<P>: CtrlStateCore<P>
 where
     P: CoreParam + NodeParam,
 {
+    /// Registers a node with the control state.
     fn register_node(&mut self, node: P::Node, tid: &ThreadId);
 }
 
 #[doc(hidden)]
-/// Data structure that holds the state of a [`ControlG`].
+/// Data structure that can be used as the state of a [`ControlG`].
 #[derive(Debug)]
 pub struct CtrlStateG<P>
 where
@@ -86,6 +108,19 @@ where
 {
     pub(crate) acc: P::Acc,
     pub(crate) s: P::SubState,
+}
+
+impl<P> CtrlStateG<P>
+where
+    P: CoreParam + SubStateParam,
+{
+    fn acc(&self) -> &P::Acc {
+        &self.acc
+    }
+
+    pub(crate) fn acc_mut(&mut self) -> &mut P::Acc {
+        &mut self.acc
+    }
 }
 
 impl<P> New<Self> for CtrlStateG<P>
@@ -102,20 +137,39 @@ where
     }
 }
 
-impl<P> CtrlStateG<P>
+impl<P> CtrlStateCore<P> for CtrlStateG<P>
 where
-    P: CoreParam + SubStateParam,
+    P: CoreParam + SubStateParam + UseCtrlStateGDefault,
 {
     fn acc(&self) -> &P::Acc {
-        &self.acc
+        CtrlStateG::acc(&self)
     }
 
-    pub(crate) fn acc_mut(&mut self) -> &mut P::Acc {
-        &mut self.acc
+    fn acc_mut(&mut self) -> &mut P::Acc {
+        CtrlStateG::acc_mut(self)
+    }
+
+    /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
+    ///
+    /// The `data` argument is not strictly necessary to support the implementation for state that uses
+    /// a node type as the data can be recovered from the corresponding node. However, the `data` argument makes
+    /// the generic implementation simpler and uniform across all modules. Without the `data`
+    /// argument, the implementations of this method for [`crate::joined`] and [`crate::probed`] would be
+    /// different from each other and a bit more complex.
+    fn tl_data_dropped(
+        &mut self,
+        op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
+        data: Option<P::Dat>,
+        tid: &ThreadId,
+    ) {
+        if let Some(data) = data {
+            let acc = self.acc_mut();
+            op(data, acc, tid);
+        }
     }
 }
 
-/// Guard that dereferences to [`Param::Acc`].
+/// Guard that dereferences to [`CoreParam::Acc`].
 pub struct AccGuardG<'a, P>
 where
     P: CoreParam + CtrlStateParam,
@@ -144,8 +198,8 @@ where
     }
 }
 
-/// Controls the collection and accumulation of thread-local values linked to it.
-/// Such values, of type [`Param::Dat`], must be held in thread-locals of type [`HolderG`]`<P>`.
+/// Controls the collection and accumulation of thread-local values linked to this object.
+/// Such values, of type [`CoreParam::Dat`], must be held in thread-locals of type [`HolderG`]`<P>`.
 pub struct ControlG<P>
 where
     P: CoreParam + CtrlStateParam,
@@ -162,7 +216,7 @@ where
     P: CoreParam + CtrlStateParam,
     P::CtrlState: CtrlStateCore<P>,
 {
-    /// Instantiates a [`Control`] object for this module.
+    /// Instantiates a *control* object.
     pub fn new(
         acc_base: P::Acc,
         op: impl Fn(P::Dat, &mut P::Acc, &ThreadId) + 'static + Send + Sync,
@@ -179,19 +233,19 @@ where
         self.state.lock().unwrap()
     }
 
-    /// Returns a guard object that dereferences to `self`'s accumulated value. A lock held is during the guard's
+    /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
     pub fn acc(&self) -> AccGuardG<'_, P> {
         AccGuardG::new(self.lock())
     }
 
-    /// Provides access to [`self`]'s accumulated value.
+    /// Provides access to `self`'s accumulated value.
     pub fn with_acc<V>(&self, f: impl FnOnce(&P::Acc) -> V) -> V {
         let acc = self.acc();
         f(&acc)
     }
 
-    /// Returns a clone of [`self`]'s accumulated value.
+    /// Returns a clone of `self`'s accumulated value.
     pub fn clone_acc(&self) -> P::Acc
     where
         P::Acc: Clone,
@@ -199,7 +253,7 @@ where
         self.acc().clone()
     }
 
-    /// Returns [`self`]'s accumulated value, using a value of the same type to replace
+    /// Returns `self`'s accumulated value, using a value of the same type to replace
     /// the existing accumulated value.
     pub fn take_acc(&self, replacement: P::Acc) -> P::Acc {
         let mut lock = self.lock();
@@ -313,7 +367,8 @@ where
     P::GData: GuardedData<Option<P::Dat>, Arg = ()> + 'static,
     P::CtrlState: CtrlStateCore<P>,
 {
-    /// Instantiates a [`HolderG`] object.
+    /// Instantiates a holder object. The `make_data` function produces the value used to initialize the
+    /// held data.
     pub fn new(make_data: fn() -> P::Dat) -> Self {
         Self {
             data: P::GData::new(()),
@@ -376,7 +431,7 @@ where
     P::GData: GuardedData<Option<P::Dat>, Arg = ()> + 'static,
     P::CtrlState: CtrlStateCore<P>,
 {
-    /// Function to be used as a field in [`HolderG`].
+    /// Initializes the `control` field in [`HolderG`].
     pub(crate) fn init_control(&self, control: &ControlG<P>) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
@@ -401,14 +456,15 @@ where
     P::GData: GuardedData<Option<P::Dat>, Arg = ()> + 'static,
     P::CtrlState: CtrlStateWithNode<P>,
 {
-    /// Function to be used as a field in [`HolderG`].
+    /// Initializes the `control` field in [`HolderG`] when a node type is used.
     pub(crate) fn init_control_node(&self, control: &ControlG<P>, node: P::Node) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
         control.register_node(node, &thread::current().id())
     }
 
-    /// Ensures `self` is initialized, both the held data and the `control` smart pointer.
+    /// Ensures `self` is initialized, both the held data and the `control` smart pointer,
+    /// when a node type is used.
     pub(crate) fn ensure_initialized_node(&self, control: &ControlG<P>, node: P::Node) {
         if self.control().as_ref().is_none() {
             self.init_control_node(control, node);
@@ -465,11 +521,11 @@ where
 }
 
 //=================
-// Control sub-state structs.
+// Control sub-state struct with a thread map.
 
 #[doc(hidden)]
 /// Type used to hold the thread map used by the [`ControlG`] specializations for module [`crate::probed`].
-/// Used also for module [`crate::joined_bad`] which shows a previous incorrect implementation of module
+/// Used also for module [`crate::joined_old`] which shows a previous more complex implementation of module
 /// [`crate::joined`].
 /// Also used to partially discriminate common [`ControlG`] functionality used by those modules.
 #[derive(Debug)]
@@ -541,13 +597,6 @@ where
         CtrlStateG::acc_mut(self)
     }
 
-    /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
-    ///
-    /// The `data` argument is not strictly necessary to support the implementation as the data can be
-    /// recovered from the `tmap`. However, the `data` argument makes
-    /// the generic implementation simpler and uniform across all modules. Without the `data`
-    /// argument, the implementations of this method for [`crate::joined`] and [`crate::probed`] would be
-    /// different from each other and a bit more complex.
     fn tl_data_dropped(
         &mut self,
         op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
@@ -568,41 +617,5 @@ where
 {
     fn register_node(&mut self, node: <P as NodeParam>::Node, tid: &ThreadId) {
         self.s.tmap.insert(tid.clone(), node);
-    }
-}
-
-#[doc(hidden)]
-/// Unit type used to discriminate substate from [`TmapD`].
-pub struct NoTmapD;
-
-impl<P> CtrlStateCore<P> for CtrlStateG<P>
-where
-    P: CoreParam + SubStateParam + UseCtrlStateDefault,
-{
-    fn acc(&self) -> &P::Acc {
-        CtrlStateG::acc(&self)
-    }
-
-    fn acc_mut(&mut self) -> &mut P::Acc {
-        CtrlStateG::acc_mut(self)
-    }
-
-    /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
-    ///
-    /// The `data` argument is not strictly necessary to support the implementation as the data can be
-    /// recovered from the `tmap`. However, the `data` argument makes
-    /// the generic implementation simpler and uniform across all modules. Without the `data`
-    /// argument, the implementations of this method for [`crate::joined`] and [`crate::probed`] would be
-    /// different from each other and a bit more complex.
-    fn tl_data_dropped(
-        &mut self,
-        op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
-        data: Option<P::Dat>,
-        tid: &ThreadId,
-    ) {
-        if let Some(data) = data {
-            let acc = self.acc_mut();
-            op(data, acc, tid);
-        }
     }
 }

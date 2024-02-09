@@ -4,10 +4,7 @@ use std::{
     ops::Deref,
     thread::{self, ThreadId},
 };
-use thread_local_collect::{
-    joined::{Control, Holder},
-    HolderLocalKey,
-};
+use thread_local_collect::joined::{Control, Holder, HolderLocalKey};
 
 // Define your data type, e.g.:
 type Data = i32;

@@ -9,10 +9,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::{
-    joined::{Control, Holder},
-    HolderLocalKey,
-};
+use thread_local_collect::joined::{Control, Holder, HolderLocalKey};
 
 #[derive(Debug, Clone)]
 struct Foo(String);

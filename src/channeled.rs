@@ -115,10 +115,6 @@ impl<T, U> Control<T, U> {
     }
 
     /// Provides access to the accumulated value in the [Control] struct.
-    ///
-    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn with_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
         let acc = self.acc();
         f(&acc)
@@ -126,10 +122,6 @@ impl<T, U> Control<T, U> {
 
     /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
     /// the existing accumulated value.
-    ///
-    /// The [`lock`](Self::lock) method can be used to obtain the `lock` argument.
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
     pub fn take_acc(&self, replacement: U) -> U {
         let mut lock = self.lock();
         let acc = lock.acc_mut();

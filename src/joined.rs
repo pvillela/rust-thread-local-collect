@@ -19,8 +19,7 @@
 //!     thread::{self, ThreadId},
 //! };
 //! use thread_local_collect::{
-//!     joined::{Control, Holder},
-//!     HolderLocalKey,
+//!     joined::{Control, Holder, HolderLocalKey},
 //! };
 //!
 //! // Define your data type, e.g.:
@@ -76,10 +75,10 @@
 //!
 //! See another example at [`examples/joined_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/joined_map_accumulator.rs).
 
-use crate::{
-    common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
-    CtrlStateParam, CtrlStateWithNode, GDataParam, New, NodeParam, SubStateParam,
-    UseCtrlStateDefault,
+pub use crate::common::HolderLocalKey;
+use crate::common::{
+    ControlG, CoreParam, CtrlStateG, CtrlStateParam, CtrlStateWithNode, GDataParam, HolderG, New,
+    NodeParam, SubStateParam, UseCtrlStateGDefault,
 };
 use std::{
     cell::RefCell,
@@ -114,7 +113,7 @@ impl<T, U> SubStateParam for P<T, U> {
     type SubState = Self;
 }
 
-impl<T, U> UseCtrlStateDefault for P<T, U> {}
+impl<T, U> UseCtrlStateGDefault for P<T, U> {}
 
 impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
@@ -157,6 +156,8 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
 }
 
 /// Specialization of [`ControlG`] for this module.
+/// Controls the collection and accumulation of thread-local values linked to this object.
+/// Such values, of type `T`, must be held in thread-locals of type [`Holder`]`<T, U>`.
 pub type Control<T, U> = ControlG<P<T, U>>;
 
 impl<T, U> Control<T, U>
@@ -204,6 +205,8 @@ where
 }
 
 /// Specialization of [`HolderG`] for this module.
+/// Holds thead-local data and a smart pointer to a [`Control`], enabling the linkage of the held data
+/// with the control object.
 pub type Holder<T, U> = HolderG<P<T, U>>;
 
 //=================

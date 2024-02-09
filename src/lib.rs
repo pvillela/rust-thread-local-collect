@@ -20,9 +20,8 @@
 //! See the different modules ([`joined`], [`simple_joined`], [`probed`], and [`channeled`]) for module-specific usage examples.
 
 pub mod channeled;
-mod common;
+pub mod common;
 pub mod joined;
+mod joined_old;
 pub mod probed;
 pub mod simple_joined;
-pub use common::*;
-mod joined_old;

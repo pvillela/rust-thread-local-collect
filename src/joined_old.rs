@@ -1,3 +1,6 @@
+//! This is an older version of [`crate::joined`] that unnecessarily registers all thread-local variables
+//! on a map in the control state.
+//!
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
 //! across threads. The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
@@ -9,9 +12,8 @@
 //! terminated and joined directly or indirectly into the thread respnosible for collection. Implicit joins by
 //! scoped threads are correctly handled.
 
-use crate::{
-    common::{ControlG, CoreParam, HolderG, HolderLocalKey},
-    GDataParam, NodeParam, SubStateParam, TmapD,
+use crate::common::{
+    ControlG, CoreParam, GDataParam, HolderG, HolderLocalKey, NodeParam, SubStateParam, TmapD,
 };
 use std::{cell::RefCell, marker::PhantomData, ops::DerefMut, thread, thread::LocalKey};
 

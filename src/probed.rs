@@ -12,9 +12,9 @@
 //! collection/aggregation function will result in the final aggregated value. Implicit joins by
 //! scoped threads are correctly handled.
 
-use crate::{
-    common::{ControlG, CoreParam, HolderG, HolderLocalKey},
-    GDataParam, NodeParam, SubStateParam, TmapD, UseCtrlStateDefault,
+use crate::common::{
+    ControlG, CoreParam, GDataParam, HolderG, HolderLocalKey, NodeParam, SubStateParam, TmapD,
+    UseCtrlStateGDefault,
 };
 use std::{
     marker::PhantomData,
@@ -46,7 +46,7 @@ impl<T, U> SubStateParam for P<T, U> {
     type SubState = TmapD<Self>;
 }
 
-impl<T, U> UseCtrlStateDefault for P<T, U> {}
+impl<T, U> UseCtrlStateGDefault for P<T, U> {}
 
 impl<T, U> GDataParam for P<T, U> {
     type GData = Arc<Mutex<Option<T>>>;

@@ -13,9 +13,9 @@
 //! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
 //! implicit join of a scoped thread.
 
-use crate::{
-    common::{ControlG, CoreParam, CtrlStateG, HolderG, HolderLocalKey},
-    CtrlStateParam, GDataParam, New, SubStateParam, UseCtrlStateDefault,
+use crate::common::{
+    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, HolderLocalKey, New,
+    SubStateParam, UseCtrlStateGDefault,
 };
 use std::{cell::RefCell, marker::PhantomData, thread::LocalKey};
 
@@ -38,7 +38,7 @@ impl<T, U> SubStateParam for P<T, U> {
     type SubState = Self;
 }
 
-impl<T, U> UseCtrlStateDefault for P<T, U> {}
+impl<T, U> UseCtrlStateGDefault for P<T, U> {}
 
 impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<Option<T>>;
