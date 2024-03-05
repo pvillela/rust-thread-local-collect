@@ -78,6 +78,7 @@ fn main() {
     println!("After spawned thread join: control={:?}", control);
 
     {
+        // Take and accumulate the thread-local values.
         control.take_tls();
 
         println!("After call to `take_tls`: control={:?}", control);

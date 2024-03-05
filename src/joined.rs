@@ -56,6 +56,7 @@
 //!     });
 //!
 //!     {
+//!         // Take and accumulate the thread-local values.
 //!         // SAFETY: Call this after all other threads registered with `control` have been joined.
 //!         unsafe { control.take_tls() };
 //!

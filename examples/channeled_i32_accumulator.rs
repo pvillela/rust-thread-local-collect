@@ -22,8 +22,8 @@ fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
     *acc += data;
 }
 
-// Create a function to update the thread-local value:
-fn update_tl(value: Data, control: &Control<Data, AccValue>) {
+// Create a function to send the thread-local value:
+fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
     MY_TL.ensure_initialized(control);
     MY_TL.send_data(value);
 }
@@ -31,11 +31,11 @@ fn update_tl(value: Data, control: &Control<Data, AccValue>) {
 fn main() {
     let control = Control::new(0, op);
 
-    update_tl(1, &control);
+    send_tl_data(1, &control);
 
     thread::scope(|s| {
         let h = s.spawn(|| {
-            update_tl(10, &control);
+            send_tl_data(10, &control);
         });
         h.join().unwrap();
     });

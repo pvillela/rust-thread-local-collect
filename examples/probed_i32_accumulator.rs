@@ -43,6 +43,7 @@ fn main() {
     });
 
     {
+        // Take and accumulate the thread-local values.
         control.take_tls();
 
         // Print the accumulated value.

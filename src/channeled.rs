@@ -1,5 +1,73 @@
-//! Support for ensuring that destructors are run on thread-local variables after the threads terminate,
-//! as well as support for accumulating the thread-local values using a binary operation.
+//! This module supports the collection and aggregation of the values from a designated thread-local variable
+//! across threads. The following features and constraints apply ...
+//! - The designated thread-local variable may be defined and used in the thread responsible for
+//! collection/aggregation.
+//! - The linked thread-local variables hold a [`Sender`] that sends values to be aggregated into the
+//! [Control] object's accumulated value.
+//! - The [`Control`] object provides functions to receive thread-local values on a background thread,
+//! stop receiving on a background thread, drain the [`Receiver`], and retrieve the accumulated value.
+//! - After all participating threads other than the thread responsible for collection/aggregation have
+//! stopped sending values, a call to [`Control::receive_tls`] followed by a call to one of the accumulated
+//! value retrieval functions will result in the final aggregated value.
+//!
+//! ## Usage pattern
+//!
+//! Here's an outline of how this little framework can be used:
+//!
+//! ```rust
+//! use std::{
+//!     ops::Deref,
+//!     thread::{self, ThreadId},
+//! };
+//! use thread_local_collect::channeled::{Control, Holder, HolderLocalKey};
+//!
+//! // Define your data type, e.g.:
+//! type Data = i32;
+//!
+//! // Define your accumulated value type.
+//! type AccValue = i32;
+//!
+//! // Define your thread-local:
+//! thread_local! {
+//!     static MY_TL: Holder<Data> = Holder::new();
+//! }
+//!
+//! // Define your accumulation operation.
+//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+//!     *acc += data;
+//! }
+//!
+//! // Create a function to send the thread-local value:
+//! fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
+//!     MY_TL.ensure_initialized(control);
+//!     MY_TL.send_data(value);
+//! }
+//!
+//! fn main() {
+//!     let control = Control::new(0, op);
+//!
+//!     send_tl_data(1, &control);
+//!
+//!     thread::scope(|s| {
+//!         let h = s.spawn(|| {
+//!             send_tl_data(10, &control);
+//!         });
+//!         h.join().unwrap();
+//!     });
+//!
+//!     {
+//!         // Drain channel.
+//!         control.receive_tls();
+//!
+//!         // Print the accumulated value.
+//!         control.with_acc(|acc| println!("accumulated={}", acc));
+//!
+//!         // Another way to print the accumulated value.
+//!         let acc = control.acc();
+//!         println!("accumulated={}", acc.deref());
+//!     }
+//! }
+//! ````
 
 use std::{
     cell::RefCell,
@@ -100,18 +168,15 @@ impl<T, U> Control<T, U> {
         }
     }
 
+    /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
+    fn lock<'a>(&'a self) -> MutexGuard<'a, ChanneledState<T, U>> {
+        self.state.lock().unwrap()
+    }
+
     /// Returns a guard of the object's `acc` field. This guard holds a lock on `self` which is only released
     /// when the guard object is dropped.
     pub fn acc(&self) -> AccGuard<'_, T, U> {
         AccGuard(self.lock())
-    }
-
-    /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
-    ///
-    /// An cquired lock can be used with multiple method calls and droped after the last call.
-    /// As with any lock, the caller should ensure the lock is dropped as soon as it is no longer needed.
-    fn lock<'a>(&'a self) -> MutexGuard<'a, ChanneledState<T, U>> {
-        self.state.lock().unwrap()
     }
 
     /// Provides access to the accumulated value in the [Control] struct.
@@ -126,6 +191,14 @@ impl<T, U> Control<T, U> {
         let mut lock = self.lock();
         let acc = lock.acc_mut();
         replace(acc, replacement)
+    }
+
+    /// Returns a clone of the accumulated value in the [Control] struct.
+    pub fn clone_acc(&self) -> U
+    where
+        U: Clone,
+    {
+        self.acc().clone()
     }
 
     pub fn start_receiving_tls(&self)

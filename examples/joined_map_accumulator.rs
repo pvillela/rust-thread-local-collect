@@ -78,6 +78,7 @@ fn main() {
     println!("After spawned thread join: control={:?}", control);
 
     {
+        // Take and accumulate the thread-local values.
         // SAFETY: OK to call function below after all other threads have joined.
         unsafe { control.take_tls() };
 

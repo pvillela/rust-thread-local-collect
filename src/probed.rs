@@ -4,13 +4,77 @@
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
 //! accumulated value when the thread-local variables are dropped following thread termination.
-//! - The [`Control`] object's collection/aggregation function may be executed at any time as it ensures
-//! synchronization with the participating threads, However, thread-local values need to be initialized again
-//! if used after such a call.
+//! - The [`Control`] object's collection/aggregation functions may be executed at any time as it ensures
+//! synchronization with the participating threads. Thread-local values need to be initialized again
+//! if used after a call to [`Control::take_tls`], but not after a call to [`Control::probe_tls`].
 //! - After all participating threads other than the thread responsible for collection/aggregation have
-//! terminated and joined directly or indirectly into the thread respnosible for collection, a call to the
-//! collection/aggregation function will result in the final aggregated value. Implicit joins by
-//! scoped threads are correctly handled.
+//! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection,
+//! a call to one of the collection/aggregation functions will result in the final aggregated value.
+//!
+//! ## Usage pattern
+//!
+//! Here's an outline of how this little framework can be used:
+//!
+//! ```rust
+//! use std::{
+//!     ops::Deref,
+//!     thread::{self, ThreadId},
+//! };
+//! use thread_local_collect::probed::{Control, Holder, HolderLocalKey};
+//!
+//! // Define your data type, e.g.:
+//! type Data = i32;
+//!
+//! // Define your accumulated value type.
+//! type AccValue = i32;
+//!
+//! // Define your thread-local:
+//! thread_local! {
+//!     static MY_TL: Holder<Data, AccValue> = Holder::new(|| 0);
+//! }
+//!
+//! // Define your accumulation operation.
+//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+//!     *acc += data;
+//! }
+//!
+//! // Create a function to update the thread-local value:
+//! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
+//!     MY_TL.ensure_initialized(control);
+//!     MY_TL.with_data_mut(|data| {
+//!         *data = value;
+//!     });
+//! }
+//!
+//! fn main() {
+//!     let control = Control::new(0, op);
+//!
+//!     update_tl(1, &control);
+//!
+//!     thread::scope(|s| {
+//!         let h = s.spawn(|| {
+//!             update_tl(10, &control);
+//!         });
+//!         h.join().unwrap();
+//!     });
+//!
+//!     {
+//!         // Take and accumulate the thread-local values.
+//!         control.take_tls();
+//!
+//!         // Print the accumulated value.
+//!         control.with_acc(|acc| println!("accumulated={}", acc));
+//!
+//!         // Another way to print the accumulated value.
+//!         let acc = control.acc();
+//!         println!("accumulated={}", acc.deref());
+//!     }
+//! }
+//! ````
+//!
+//! ## Other examples
+//!
+//! See another example at [`examples/probed_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/probed_map_accumulator.rs).
 
 pub use crate::common::HolderLocalKey;
 use crate::common::{
