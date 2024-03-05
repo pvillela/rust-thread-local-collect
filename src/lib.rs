@@ -22,6 +22,8 @@
 pub mod channeled;
 pub mod common;
 pub mod joined;
-mod joined_old;
 pub mod probed;
 pub mod simple_joined;
+
+#[doc(hidden)]
+pub mod joined_old;

@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::joined`].
+//! Example usage of [`thread_local_collect::simple_joined`].
 
 use env_logger;
 use std::{
@@ -9,7 +9,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::joined::{Control, Holder, HolderLocalKey};
+use thread_local_collect::simple_joined::{Control, Holder, HolderLocalKey};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -78,11 +78,6 @@ fn main() {
     println!("After spawned thread join: control={:?}", control);
 
     {
-        // SAFETY: OK to call function below after all other threads have joined.
-        unsafe { control.take_tls() };
-
-        println!("After call to `take_tls`: control={:?}", control);
-
         // Print the accumulated value.
         control.with_acc(|acc| println!("accumulated={:?}", acc));
 

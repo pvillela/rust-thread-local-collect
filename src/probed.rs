@@ -12,9 +12,9 @@
 //! collection/aggregation function will result in the final aggregated value. Implicit joins by
 //! scoped threads are correctly handled.
 
+pub use crate::common::HolderLocalKey;
 use crate::common::{
-    ControlG, CoreParam, GDataParam, HolderG, HolderLocalKey, NodeParam, SubStateParam, TmapD,
-    UseCtrlStateGDefault,
+    ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD, UseCtrlStateGDefault,
 };
 use std::{
     marker::PhantomData,

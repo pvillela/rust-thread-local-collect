@@ -12,10 +12,73 @@
 //! - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
 //! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
 //! implicit join of a scoped thread.
+//!
+//! ## Usage pattern
+//!
+//! Here's an outline of how this little framework can be used:
+//!
+//! ```rust
+//! use std::{
+//!     ops::Deref,
+//!     thread::{self, ThreadId},
+//! };
+//! use thread_local_collect::simple_joined::{Control, Holder, HolderLocalKey};
+//!
+//! // Define your data type, e.g.:
+//! type Data = i32;
+//!
+//! // Define your accumulated value type.
+//! type AccValue = i32;
+//!
+//! // Define your thread-local:
+//! thread_local! {
+//!     static MY_TL: Holder<Data, AccValue> = Holder::new(|| 0);
+//! }
+//!
+//! // Define your accumulation operation.
+//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+//!     *acc += data;
+//! }
+//!
+//! // Create a function to update the thread-local value:
+//! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
+//!     MY_TL.ensure_initialized(control);
+//!     MY_TL.with_data_mut(|data| {
+//!         *data = value;
+//!     });
+//! }
+//!
+//! fn main() {
+//!     let control = Control::new(0, op);
+//!
+//!     update_tl(1, &control);
+//!
+//!     thread::scope(|s| {
+//!         let h = s.spawn(|| {
+//!             update_tl(10, &control);
+//!         });
+//!         h.join().unwrap();
+//!     });
+//!
+//!     {
+//!         // Print the accumulated value.
+//!         control.with_acc(|acc| println!("accumulated={}", acc));
+//!
+//!         // Another way to print the accumulated value.
+//!         let acc = control.acc();
+//!         println!("accumulated={}", acc.deref());
+//!     }
+//! }
+//! ```
+//!
+//! ## Other examples
+//!
+//! See another example at [`examples/simple_joined_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/simple_joined_map_accumulator.rs).
 
+pub use crate::common::HolderLocalKey;
 use crate::common::{
-    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, HolderLocalKey, New,
-    SubStateParam, UseCtrlStateGDefault,
+    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, New, SubStateParam,
+    UseCtrlStateGDefault,
 };
 use std::{cell::RefCell, marker::PhantomData, thread::LocalKey};
 

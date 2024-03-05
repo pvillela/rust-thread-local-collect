@@ -1,10 +1,10 @@
-//! Simple example usage of [`thread_local_collect::joined`].
+//! Simple example usage of [`thread_local_collect::probed`].
 
 use std::{
     ops::Deref,
     thread::{self, ThreadId},
 };
-use thread_local_collect::joined::{Control, Holder, HolderLocalKey};
+use thread_local_collect::probed::{Control, Holder, HolderLocalKey};
 
 // Define your data type, e.g.:
 type Data = i32;
@@ -43,8 +43,7 @@ fn main() {
     });
 
     {
-        // SAFETY: Call this after all other threads registered with `control` have been joined.
-        unsafe { control.take_tls() };
+        control.take_tls();
 
         // Print the accumulated value.
         control.with_acc(|acc| println!("accumulated={}", acc));

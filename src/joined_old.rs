@@ -7,14 +7,12 @@
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
 //! accumulated value when the thread-local variables are dropped following thread termination.
-//! - The [`Control`] object's collection/aggregation function is unsafe unless executed after all participating
+//! - The [`Control`] object's collection/aggregation function is UNSAFE unless executed after all participating
 //! threads, other than the thread responsible for collection/aggregation, have
-//! terminated and joined directly or indirectly into the thread respnosible for collection. Implicit joins by
-//! scoped threads are correctly handled.
+//! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection.
 
-use crate::common::{
-    ControlG, CoreParam, GDataParam, HolderG, HolderLocalKey, NodeParam, SubStateParam, TmapD,
-};
+pub use crate::common::HolderLocalKey;
+use crate::common::{ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD};
 use std::{cell::RefCell, marker::PhantomData, ops::DerefMut, thread, thread::LocalKey};
 
 //=================
@@ -244,7 +242,7 @@ mod tests {
         }
     }
 
-    #[test] // uncomment to enable test that demonstrates race condition in Control::take_tls
+    #[test]
     #[allow(unused)]
     fn own_thread_and_explicit_joins() {
         let control = Control::new(HashMap::new(), op);
@@ -256,7 +254,6 @@ mod tests {
         {
             insert_tl_entry(1, Foo("a".to_owned()), &control);
             insert_tl_entry(2, Foo("b".to_owned()), &control);
-            // println!("after main thread inserts: {:?}", control);
 
             let other = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
             assert_tl(&other, "After main thread inserts");
@@ -273,8 +270,6 @@ mod tests {
             let value1 = Foo("a".to_owned() + &i.to_string());
             let value2 = Foo("a".to_owned() + &i.to_string());
             let map_i = &HashMap::from([(1, value1.clone()), (2, value2.clone())]);
-
-            // thread::sleep(Duration::from_millis(50));
 
             thread::scope(|s| {
                 let h = s.spawn(move || {
@@ -285,16 +280,11 @@ mod tests {
 
                     insert_tl_entry(1, value1.clone(), &control);
                     let other = HashMap::from([(1, value1)]);
-                    assert_tl(&other, "Before spawned thread sleep");
-
-                    // thread::sleep(Duration::from_millis(50));
+                    assert_tl(&other, "Before 1st insert");
 
                     insert_tl_entry(2, value2, &control);
-                    assert_tl(&map_i, "After spawned thread sleep");
+                    assert_tl(&map_i, "Before 2nd insert");
                 });
-
-                // thread::sleep(Duration::from_millis(50));
-                // println!("spawned_tid={:?}", spawned_tids.try_read().unwrap());
                 h.join().unwrap();
             });
 
@@ -303,77 +293,8 @@ mod tests {
                 let spawned_tid = lock.last().unwrap();
                 map.insert(spawned_tid.clone(), map_i.clone());
 
-                // Safety: called after all other threads implicitly joined.
+                // Safety: called after all other threads explicitly joined.
                 unsafe { control.take_tls() };
-                // println!("after iteration {} implicit join: {:?}", i, control);
-
-                let acc = control.acc();
-                assert_eq!(acc.deref(), &map, "Accumulator check on iteration {}", i);
-            }
-        }
-    }
-
-    // #[test] // uncomment to enable test that demonstrates race condition in Control::take_tls
-    #[allow(unused)]
-    fn own_thread_and_implicit_joins() {
-        let control = Control::new(HashMap::new(), op);
-
-        let own_tid = thread::current().id();
-        println!("main_tid={:?}", own_tid);
-        let spawned_tids = RwLock::new(Vec::<ThreadId>::new());
-
-        {
-            insert_tl_entry(1, Foo("a".to_owned()), &control);
-            insert_tl_entry(2, Foo("b".to_owned()), &control);
-            // println!("after main thread inserts: {:?}", control);
-
-            let other = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-            assert_tl(&other, "After main thread inserts");
-        }
-
-        thread::sleep(Duration::from_millis(100));
-
-        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-        let mut map = HashMap::from([(own_tid.clone(), map_own)]);
-
-        for i in 0..100 {
-            let spawned_tids = &spawned_tids;
-            let control = &control;
-            let value1 = Foo("a".to_owned() + &i.to_string());
-            let value2 = Foo("a".to_owned() + &i.to_string());
-            let map_i = &HashMap::from([(1, value1.clone()), (2, value2.clone())]);
-
-            // thread::sleep(Duration::from_millis(50));
-
-            thread::scope(|s| {
-                s.spawn(move || {
-                    let spawned_tid = thread::current().id();
-                    let mut lock = spawned_tids.write().unwrap();
-                    lock.push(spawned_tid);
-                    drop(lock);
-
-                    insert_tl_entry(1, value1.clone(), &control);
-                    let other = HashMap::from([(1, value1)]);
-                    assert_tl(&other, "Before spawned thread sleep");
-
-                    // thread::sleep(Duration::from_millis(50));
-
-                    insert_tl_entry(2, value2, &control);
-                    assert_tl(&map_i, "After spawned thread sleep");
-                });
-
-                // thread::sleep(Duration::from_millis(50));
-                // println!("spawned_tid={:?}", spawned_tids.try_read().unwrap());
-            });
-
-            {
-                let lock = spawned_tids.read().unwrap();
-                let spawned_tid = lock.last().unwrap();
-                map.insert(spawned_tid.clone(), map_i.clone());
-
-                // Safety: called after all other threads implicitly joined.
-                unsafe { control.take_tls() };
-                // println!("after iteration {} implicit join: {:?}", i, control);
 
                 let acc = control.acc();
                 assert_eq!(acc.deref(), &map, "Accumulator check on iteration {}", i);

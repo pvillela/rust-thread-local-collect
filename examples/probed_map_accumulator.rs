@@ -1,14 +1,15 @@
-//! Example usage of inappropriate usage of [`thread_local_collect`].
+//! Example usage of [`thread_local_collect::probed`].
 
 use env_logger;
 use std::{
     collections::HashMap,
     env::set_var,
     fmt::Debug,
+    ops::Deref,
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::joined::{Control, Holder, HolderLocalKey};
+use thread_local_collect::probed::{Control, Holder, HolderLocalKey};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -39,7 +40,7 @@ fn print_tl(prefix: &str) {
     });
 }
 
-fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: &ThreadId) {
+fn op(data: Data, acc: &mut AccumulatorMap, tid: &ThreadId) {
     println!(
         "`op` called from {:?} with data {:?}",
         thread::current().id(),
@@ -68,42 +69,24 @@ fn main() {
             insert_tl_entry(1, Foo("aa".to_owned()), &control);
             print_tl("Spawned thread before sleep");
             thread::sleep(Duration::from_millis(200));
-
-            // At this point, the control tmap is empty due to the timoing of the call to take_tls
-            // below and the data has been set to None. The call below updates the data to Some of a
-            // HashMap with the entry (2, "bb").
             insert_tl_entry(2, Foo("bb".to_owned()), &control);
-
             print_tl("Spawned thread after sleep and additional insert");
         });
-
-        thread::sleep(Duration::from_millis(50));
-        println!("Main thread after sleep: control={:?}", control);
-
-        // Don't do this in production code. For demonstration purposes only.
-        // Making this call before joining with `h` is dangerous because there is a data race.
-        unsafe { control.take_tls() };
-
-        println!("After premature call to `take_tls`: control={:?}", control);
-
-        // Explicit join at end of scope.
         h.join().unwrap();
     });
 
     println!("After spawned thread join: control={:?}", control);
 
     {
-        // SAFETY: Due to the explicit join above, there is no data race here.
-        unsafe { control.take_tls() };
+        control.take_tls();
 
-        println!("After 2nd call to `take_tls`: control={:?}", control);
+        println!("After call to `take_tls`: control={:?}", control);
 
-        // Due to the above-mentioned data race, if the address in question points to a valid memory chunk and
-        // a segmentation fault doesn't occur above, then there can be 2 possibilities:
-        // 1. The destructor of the Holder for the spawned thread is not holding control's Mutex lock and it has not
-        //    completed execution, so the accumulated value does not reflect the second insert in the spawned thread.
-        // 2. The destructor of the Holder for the spawned thread has already completed execution and the accumulated
-        //    value reflects the second insert in the spawned thread.
+        // Print the accumulated value.
         control.with_acc(|acc| println!("accumulated={:?}", acc));
+
+        // Another way to print the accumulated value.
+        let acc = control.acc();
+        println!("accumulated={:?}", acc.deref());
     }
 }

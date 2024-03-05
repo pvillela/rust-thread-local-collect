@@ -1,0 +1,67 @@
+[02:21:45]pvillela@i16-5620:~/DEV/Rust/thread-local-collect(main)$ cargo nextest run
+Compiling thread-local-collect v0.1.0 (/home/pvillela/DEV/Rust/thread-local-collect)
+warning: unused variable: `hs`
+--> src/joined_old.rs:406:17
+|
+406 | let hs = (0..N_THREADS)
+| ^^ help: if this is intentional, prefix it with an underscore: `_hs`
+|
+= note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `h`
+--> src/joined_old.rs:424:17
+|
+424 | let h = s.spawn(f);
+| ^ help: if this is intentional, prefix it with an underscore: `_h`
+
+warning: `thread-local-collect` (lib test) generated 2 warnings (run `cargo fix --lib -p thread-local-collect --tests` to apply 2 suggestions)
+Finished test [unoptimized + debuginfo] target(s) in 1.69s
+Starting 12 tests across 1 binaries
+PASS [ 0.053s] thread-local-collect channeled::tests::test_1
+PASS [ 0.054s] thread-local-collect joined_old::tests::explicit_joins_no_take_tls
+PASS [ 0.054s] thread-local-collect probed::tests::test_1
+PASS [ 0.056s] thread-local-collect joined::tests::explicit_joins_no_take_tls
+PASS [ 0.054s] thread-local-collect simple_joined::tests::test_all
+PASS [ 0.139s] thread-local-collect joined::tests::own_thread_and_explicit_joins
+PASS [ 0.146s] thread-local-collect joined_old::tests::own_thread_and_explicit_joins
+PASS [ 0.304s] thread-local-collect channeled::tests::test_2
+FAIL [ 0.304s] thread-local-collect channeled::tests::test_3
+
+--- STDOUT: thread-local-collect channeled::tests::test_3 ---
+
+running 1 test
+main_tid=ThreadId(2)
+after main thread inserts: AccGuard(ChanneledState { acc: {}, sender: Sender { .. }, receiver: Receiver { .. } })
+`op` called from ThreadId(3) with data (1, Foo("a"))
+`op` called from ThreadId(3) with data (2, Foo("b"))
+`op` called from ThreadId(3) with data (1, Foo("aa"))
+spawned_tid=ThreadId(4)
+after h.join(): AccGuard(ChanneledState { acc: {ThreadId(4): {1: Foo("aa")}, ThreadId(2): {1: Foo("a"), 2: Foo("b")}}, sender: Sender { .. }, receiver: Receiver { .. } })
+test channeled::tests::test_3 ... FAILED
+
+failures:
+
+failures:
+channeled::tests::test_3
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.30s
+
+--- STDERR: thread-local-collect channeled::tests::test_3 ---
+thread 'channeled::tests::test_3' panicked at src/channeled.rs:419:17:
+assertion `left == right` failed: Accumulator check
+left: {ThreadId(4): {1: Foo("aa")}, ThreadId(2): {1: Foo("a"), 2: Foo("b")}}
+right: {ThreadId(4): {2: Foo("bb"), 1: Foo("aa")}, ThreadId(2): {2: Foo("b"), 1: Foo("a")}}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+Canceling due to test failure: 3 tests still running
+PASS [ 0.305s] thread-local-collect probed::tests::test_2
+PASS [ 0.308s] thread-local-collect probed::tests::test_3
+PASS [ 16.726s] thread-local-collect joined_old::tests::tx
+
+---
+
+     Summary [  16.728s] 12 tests run: 11 passed, 1 failed, 0 skipped
+        FAIL [   0.304s] thread-local-collect channeled::tests::test_3
+
+error: test run failed
+[02:22:43]pvillela@i16-5620:~/DEV/Rust/thread-local-collect(main)$

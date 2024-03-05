@@ -415,6 +415,9 @@ mod tests {
             let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
 
             {
+                // Drain channel.
+                control.receive_tls();
+
                 let acc = control.acc();
                 assert_eq!(acc.deref(), &map, "Accumulator check");
             }
