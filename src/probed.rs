@@ -126,6 +126,8 @@ impl<T, U> GDataParam for P<T, U> {
 }
 
 /// Specialization of [`ControlG`] for this module.
+/// Controls the collection and accumulation of thread-local values linked to this object.
+/// Such values, of type `T`, must be held in thread-locals of type [`Holder<T, U>`].
 pub type Control<T, U> = ControlG<TmapD<P<T, U>>>;
 
 impl<T, U> Control<T, U>
@@ -133,21 +135,8 @@ where
     T: 'static,
     U: 'static,
 {
-    /// This method takes the values of any remaining linked thread-local-variables and aggregates those values
+    /// Takes the values of any remaining linked thread-local-variables and aggregates those values
     /// with this object's accumulator, replacing those values with [`None`].
-    ///
-    /// This function can be called safely provided that:
-    /// - All threads other than the one where this method is called have terminaged and been joined directly or
-    ///   indirectly, explicitly or implicitly.
-    ///
-    /// The above condition establishes a proper "happens-before" relationship for all explicitly joined threads.
-    ///
-    /// When called safely, as indicated above, all linked thread-local variables corresponding to explicitly
-    /// joined threads will have been dropped (and their values will have been accumulated) at the time this method
-    /// is called. At that point, the only possible remaining linked thread-local variables would be associated with
-    /// implicitly joined scoped threads or the thread where this method was called, The only only possible
-    /// concurrent activity would be [`HolderG`] drop method execution on the implicitly joined scoped threads,
-    /// but that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
     pub fn take_tls(&self) {
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
@@ -163,6 +152,8 @@ where
         }
     }
 
+    /// Collects the values of any remaining linked thread-local-variables, without changing those values,
+    /// and aggregates those values with this object's accumulator.
     pub fn probe_tls(&self) -> U
     where
         T: Clone,
@@ -184,6 +175,8 @@ where
 }
 
 /// Specialization of [`HolderG`] for this module.
+/// Holds thead-local data and a smart pointer to a [`Control`], enabling the linkage of the held data
+/// with the control object.
 pub type Holder<T, U> = HolderG<TmapD<P<T, U>>>;
 
 //=================
@@ -216,29 +209,24 @@ impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
         self.with(|h| h.with_data(f))
     }
 
-    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
+    /// Invokes `f` mutably on [`Holder`] data. Panics if data is [`None`].
     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V {
         self.with(|h| h.with_data_mut(f))
     }
 }
 
-//=================
-// Core implementation based on common module
-
-//=================
-// Implementation of HolderLocalKey.
-
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TrafficSignal;
+
     use super::{Control, Holder, HolderLocalKey};
 
     use std::{
         collections::HashMap,
         fmt::Debug,
         ops::Deref,
-        sync::RwLock,
+        sync::{Mutex, RwLock},
         thread::{self, ThreadId},
-        time::Duration,
     };
 
     #[derive(Debug, Clone, PartialEq)]
@@ -277,203 +265,200 @@ mod tests {
     }
 
     #[test]
-    fn test_1() {
-        let control = Control::new(HashMap::new(), op);
-        let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
-
-        thread::scope(|s| {
-            let hs = (0..2)
-                .map(|i| {
-                    s.spawn({
-                        // These are to prevent the move closure from moving `control` and `spawned_tids`.
-                        // The closure has to be `move` because it needs to own `i`.
-                        let control = &control;
-                        let spawned_tids = &spawned_tids;
-
-                        move || {
-                            let si = i.to_string();
-
-                            let mut lock = spawned_tids.write().unwrap();
-                            lock[i] = thread::current().id();
-                            drop(lock);
-
-                            insert_tl_entry(1, Foo("a".to_owned() + &si), control);
-
-                            let other = HashMap::from([(1, Foo("a".to_owned() + &si))]);
-                            assert_tl(&other, "After 1st insert");
-
-                            insert_tl_entry(2, Foo("b".to_owned() + &si), control);
-
-                            let other = HashMap::from([
-                                (1, Foo("a".to_owned() + &si)),
-                                (2, Foo("b".to_owned() + &si)),
-                            ]);
-                            assert_tl(&other, "After 2nd insert");
-                        }
-                    })
-                })
-                .collect::<Vec<_>>();
-
-            thread::sleep(Duration::from_millis(50));
-
-            let spawned_tids = spawned_tids.try_read().unwrap();
-            println!("spawned_tid={:?}", spawned_tids);
-
-            hs.into_iter().for_each(|h| h.join().unwrap());
-
-            println!("after hs join: {:?}", control);
-        });
-
-        {
-            let spawned_tids = spawned_tids.try_read().unwrap();
-            let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
-            let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
-            let map = HashMap::from([
-                (spawned_tids[0].clone(), map_0),
-                (spawned_tids[1].clone(), map_1),
-            ]);
-
-            {
-                let guard = control.acc();
-                let acc = guard.deref();
-                assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn test_2() {
+    fn own_thread_and_explicit_join() {
         let control = Control::new(HashMap::new(), op);
 
-        let main_tid = thread::current().id();
-        println!("main_tid={:?}", main_tid);
-        let spawned_tid = RwLock::new(thread::current().id());
+        let own_tid = thread::current().id();
+        println!("main_tid={:?}", own_tid);
+        let spawned_tid_wrapper = RwLock::new(thread::current().id());
+
+        let traffic_signal_main_0 = TrafficSignal::new();
+        let traffic_signal_main_1 = TrafficSignal::new();
+        let traffic_signal_main_2 = TrafficSignal::new();
+        let traffic_signal_main_3 = TrafficSignal::new();
+        let traffic_signal_spawned_1 = TrafficSignal::new();
+        let traffic_signal_spawned_2 = TrafficSignal::new();
+        let traffic_signal_spawned_3 = TrafficSignal::new();
+        let traffic_signal_spawned_4 = TrafficSignal::new();
+
+        let expected_acc_mutex = Mutex::new(HashMap::new());
 
         {
-            insert_tl_entry(1, Foo("a".to_owned()), &control);
-            insert_tl_entry(2, Foo("b".to_owned()), &control);
-            println!("after main thread inserts: {:?}", control);
+            let spawned_tid_wrapper = &spawned_tid_wrapper;
+            let control = &control;
+            let value1 = Foo("aa".to_owned());
+            let value2 = Foo("bb".to_owned());
+            let value3 = Foo("cc".to_owned());
+            let value4 = Foo("dd".to_owned());
 
-            let other = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-            assert_tl(&other, "After main thread inserts");
-        }
+            thread::scope(|s| {
+                let h = s.spawn(|| {
+                    let spawned_tid = thread::current().id();
+                    let mut lock = spawned_tid_wrapper.write().unwrap();
+                    *lock = spawned_tid;
+                    drop(lock);
 
-        thread::sleep(Duration::from_millis(100));
+                    traffic_signal_main_0.continue_if_green();
+                    insert_tl_entry(1, value1.clone(), &control);
+                    let mut other = HashMap::from([(1, value1)]);
+                    assert_tl(&other, "After 1st insert");
+                    expected_acc_mutex
+                        .try_lock()
+                        .unwrap()
+                        .insert(spawned_tid, other.clone());
+                    traffic_signal_spawned_1.set_green();
 
-        thread::scope(|s| {
-            let h = s.spawn(|| {
-                let mut lock = spawned_tid.write().unwrap();
-                *lock = thread::current().id();
-                drop(lock);
+                    traffic_signal_main_1.continue_if_green();
+                    insert_tl_entry(2, value2.clone(), &control);
+                    other.insert(2, value2);
+                    assert_tl(&other, "After 2nd insert");
+                    expected_acc_mutex
+                        .try_lock()
+                        .unwrap()
+                        .insert(spawned_tid, other.clone());
+                    traffic_signal_spawned_2.set_green();
 
-                insert_tl_entry(1, Foo("aa".to_owned()), &control);
+                    traffic_signal_main_2.continue_if_green();
+                    insert_tl_entry(3, value3.clone(), &control);
+                    let mut other = HashMap::from([(3, value3)]);
+                    assert_tl(&other, "After take_tls and 3rd insert");
+                    {
+                        let mut map = expected_acc_mutex.try_lock().unwrap();
+                        op(other.clone(), &mut map, &spawned_tid);
+                    }
+                    traffic_signal_spawned_3.set_green();
 
-                let other = HashMap::from([(1, Foo("aa".to_owned()))]);
-                assert_tl(&other, "Before spawned thread sleep");
+                    traffic_signal_main_3.continue_if_green();
+                    insert_tl_entry(4, value4.clone(), &control);
+                    other.insert(4, value4);
+                    assert_tl(&other, "After 4th insert");
+                    {
+                        let mut map = expected_acc_mutex.try_lock().unwrap();
+                        op(other.clone(), &mut map, &spawned_tid);
+                    }
+                    traffic_signal_spawned_4.set_green();
+                });
 
-                thread::sleep(Duration::from_millis(200));
+                {
+                    insert_tl_entry(1, Foo("a".to_owned()), &control);
+                    insert_tl_entry(2, Foo("b".to_owned()), &control);
+                    let map_own =
+                        HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
+                    assert_tl(&map_own, "After main thread inserts");
 
-                insert_tl_entry(2, Foo("bb".to_owned()), &control);
+                    let mut map = expected_acc_mutex.try_lock().unwrap();
+                    map.insert(own_tid, map_own);
+                    let acc = control.probe_tls();
+                    assert_eq!(
+                        &acc,
+                        map.deref(),
+                        "Accumulator after main thread inserts and probe_tls"
+                    );
+                    traffic_signal_main_0.set_green();
+                }
 
-                let other = HashMap::from([(1, Foo("aa".to_owned())), (2, Foo("bb".to_owned()))]);
-                assert_tl(&other, "After spawned thread sleep");
+                {
+                    traffic_signal_spawned_1.continue_if_green();
+                    let map = expected_acc_mutex.try_lock().unwrap();
+                    let acc = control.probe_tls();
+                    assert_eq!(
+                        &acc,
+                        map.deref(),
+                        "Accumulator after 1st spawned thread insert and probe_tls"
+                    );
+                    traffic_signal_main_1.set_green();
+                }
+
+                {
+                    traffic_signal_spawned_2.continue_if_green();
+                    let map = expected_acc_mutex.try_lock().unwrap();
+                    control.take_tls();
+                    let acc = control.acc();
+                    assert_eq!(
+                        acc.deref(),
+                        map.deref(),
+                        "Accumulator after 2nd spawned thread insert and take_tls"
+                    );
+                    traffic_signal_main_2.set_green();
+                }
+
+                {
+                    traffic_signal_spawned_3.continue_if_green();
+                    let map = expected_acc_mutex.try_lock().unwrap();
+                    let acc = control.probe_tls();
+                    assert_eq!(
+                        &acc,
+                        map.deref(),
+                        "Accumulator after 3rd spawned thread insert and probe_tls"
+                    );
+                    traffic_signal_main_3.set_green();
+                }
+
+                {
+                    // done with traffic signals
+                    h.join().unwrap();
+
+                    let map = expected_acc_mutex.try_lock().unwrap();
+
+                    {
+                        control.take_tls();
+                        let acc = control.acc();
+                        assert_eq!(
+                            acc.deref(),
+                            map.deref(),
+                            "Accumulator after 4th spawned thread insert and take_tls"
+                        );
+                    }
+
+                    {
+                        control.take_tls();
+                        let acc = control.acc();
+                        assert_eq!(
+                            acc.deref(),
+                            map.deref(),
+                            "Idempotency of control.take_tls()"
+                        );
+                    }
+
+                    {
+                        control.with_acc(|acc| {
+                            assert_eq!(
+                                acc,
+                                map.deref(),
+                                "Accumulator after 4th spawned thread, using control.with_acc()"
+                            );
+                        });
+                    }
+
+                    {
+                        let acc = control.clone_acc();
+                        assert_eq!(
+                            &acc,
+                            map.deref(),
+                            "Accumulator after 4th spawned thread, using control.clone_acc()"
+                        );
+                    }
+
+                    {
+                        let acc = control.take_acc(HashMap::new());
+                        assert_eq!(
+                            &acc,
+                            map.deref(),
+                            "Accumulator after 4th spawned thread, using control.take_acc()"
+                        );
+                    }
+
+                    {
+                        control.with_acc(|acc| {
+                            assert_eq!(
+                                acc,
+                                &HashMap::new(),
+                                "Accumulator after control.take_acc()"
+                            );
+                        });
+                    }
+                }
             });
-
-            thread::sleep(Duration::from_millis(50));
-
-            let spawned_tid = spawned_tid.try_read().unwrap();
-            println!("spawned_tid={:?}", spawned_tid);
-
-            // let keys = [main_tid.clone(), spawned_tid.clone()];
-            // assert_control_map(&control, &keys, "Before joining spawned thread");
-
-            h.join().unwrap();
-
-            println!("after h.join(): {:?}", control);
-
-            control.take_tls();
-            // let keys = [];
-            // assert_control_map(&control, &keys, "After call to `take_tls`");
-        });
-
-        {
-            let spawned_tid = spawned_tid.try_read().unwrap();
-            let map1 = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-            let map2 = HashMap::from([(1, Foo("aa".to_owned())), (2, Foo("bb".to_owned()))]);
-            let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
-
-            {
-                let acc = control.acc();
-                assert_eq!(acc.deref(), &map, "Accumulator check");
-            }
-        }
-    }
-
-    #[test]
-    fn test_3() {
-        let control = Control::new(HashMap::new(), op);
-
-        let main_tid = thread::current().id();
-        println!("main_tid={:?}", main_tid);
-        let spawned_tid = RwLock::new(thread::current().id());
-
-        {
-            insert_tl_entry(1, Foo("a".to_owned()), &control);
-            insert_tl_entry(2, Foo("b".to_owned()), &control);
-            println!("after main thread inserts: {:?}", control);
-
-            let _other = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-            // assert_tl(&other, "After main thread inserts");
-        }
-
-        thread::sleep(Duration::from_millis(100));
-
-        thread::scope(|s| {
-            let h = s.spawn(|| {
-                let mut lock = spawned_tid.write().unwrap();
-                *lock = thread::current().id();
-                drop(lock);
-
-                insert_tl_entry(1, Foo("aa".to_owned()), &control);
-
-                let _other = HashMap::from([(1, Foo("aa".to_owned()))]);
-                // assert_tl(&other, "Before spawned thread sleep");
-
-                thread::sleep(Duration::from_millis(200));
-
-                insert_tl_entry(2, Foo("bb".to_owned()), &control);
-
-                let _other = HashMap::from([(1, Foo("aa".to_owned())), (2, Foo("bb".to_owned()))]);
-                // assert_tl(&other, "After spawned thread sleep");
-            });
-
-            thread::sleep(Duration::from_millis(50));
-
-            let spawned_tid = spawned_tid.try_read().unwrap();
-            println!("spawned_tid={:?}", spawned_tid);
-
-            let _keys = [main_tid.clone(), spawned_tid.clone()];
-            // assert_control_map(&control, &keys, "Before joining spawned thread");
-
-            h.join().unwrap();
-
-            println!("after h.join(): {:?}", control);
-
-            control.take_tls();
-            // let keys = [];
-            // assert_control_map(&control, &keys, "After call to `take_tls`");
-        });
-
-        {
-            let spawned_tid = spawned_tid.try_read().unwrap();
-            let map1 = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-            let map2 = HashMap::from([(1, Foo("aa".to_owned())), (2, Foo("bb".to_owned()))]);
-            let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
-
-            {
-                let acc = control.acc();
-                assert_eq!(acc.deref(), &map, "Accumulator check");
-            }
         }
     }
 }

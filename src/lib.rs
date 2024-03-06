@@ -27,3 +27,6 @@ pub mod simple_joined;
 
 #[doc(hidden)]
 pub mod joined_old;
+
+#[cfg(test)]
+pub(crate) mod test_support;

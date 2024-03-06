@@ -165,7 +165,7 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
 
 /// Specialization of [`ControlG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
-/// Such values, of type `T`, must be held in thread-locals of type [`Holder`]`<T, U>`.
+/// Such values, of type `T`, must be held in thread-locals of type [`Holder<T, U>`].
 pub type Control<T, U> = ControlG<P<T, U>>;
 
 impl<T, U> Control<T, U>
