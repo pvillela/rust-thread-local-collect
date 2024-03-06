@@ -80,20 +80,24 @@ fn main() {
     });
 
     {
-        let spawned_tid = spawned_tid.try_read().unwrap();
-        let map1 = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-        let map2 = HashMap::from([(1, Foo("aa".to_owned())), (2, Foo("bb".to_owned()))]);
-        let map = HashMap::from([(main_tid.clone(), map1), (spawned_tid.clone(), map2)]);
+        println!("before control.receive_tls(): {:?}", control.acc());
 
-        {
-            println!("before control.receive_tls(): {:?}", control.acc());
+        // Drain channel.
+        control.receive_tls();
+        println!("after control.receive_tls(): {:?}", control.acc());
 
-            // Drain channel.
-            control.receive_tls();
-            println!("after control.receive_tls(): {:?}", control.acc());
+        // Different ways to print the accumulated value
 
-            let acc = control.acc();
-            assert_eq!(acc.deref(), &map, "Accumulator check");
-        }
+        let acc = control.acc();
+        println!("accumulated={:?}", acc.deref());
+        drop(acc);
+
+        control.with_acc(|acc| println!("accumulated={:?}", acc));
+
+        let acc = control.clone_acc();
+        println!("accumulated={:?}", acc);
+
+        let acc = control.take_acc(HashMap::new());
+        println!("accumulated={:?}", acc);
     }
 }

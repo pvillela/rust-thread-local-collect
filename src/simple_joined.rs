@@ -13,6 +13,8 @@
 //! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
 //! implicit join of a scoped thread.
 //!
+//! See also [Core Concepts](super#core-concepts).
+//!
 //! ## Usage pattern
 //!
 //! Here's an outline of how this little framework can be used:
@@ -61,12 +63,19 @@
 //!     });
 //!
 //!     {
-//!         // Print the accumulated value.
-//!         control.with_acc(|acc| println!("accumulated={}", acc));
+//!         // Different ways to print the accumulated value
 //!
-//!         // Another way to print the accumulated value.
 //!         let acc = control.acc();
 //!         println!("accumulated={}", acc.deref());
+//!         drop(acc);
+//!
+//!         control.with_acc(|acc| println!("accumulated={}", acc));
+//!
+//!         let acc = control.clone_acc();
+//!         println!("accumulated={}", acc);
+//!
+//!         let acc = control.take_acc(0);
+//!         println!("accumulated={}", acc);
 //!     }
 //! }
 //! ```

@@ -47,11 +47,18 @@ fn main() {
         // SAFETY: Call this after all other threads registered with `control` have been joined.
         unsafe { control.take_tls() };
 
-        // Print the accumulated value.
-        control.with_acc(|acc| println!("accumulated={}", acc));
+        // Different ways to print the accumulated value
 
-        // Another way to print the accumulated value.
         let acc = control.acc();
         println!("accumulated={}", acc.deref());
+        drop(acc);
+
+        control.with_acc(|acc| println!("accumulated={}", acc));
+
+        let acc = control.clone_acc();
+        println!("accumulated={}", acc);
+
+        let acc = control.take_acc(0);
+        println!("accumulated={}", acc);
     }
 }

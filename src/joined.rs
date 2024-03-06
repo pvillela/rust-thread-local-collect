@@ -8,6 +8,8 @@
 //! threads, other than the thread responsible for collection/aggregation, have
 //! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection.
 //!
+//! See also [Core Concepts](super#core-concepts).
+//!
 //! ## Usage pattern
 //!
 //! Here's an outline of how this little framework can be used:
@@ -60,12 +62,19 @@
 //!         // SAFETY: Call this after all other threads registered with `control` have been joined.
 //!         unsafe { control.take_tls() };
 //!
-//!         // Print the accumulated value.
-//!         control.with_acc(|acc| println!("accumulated={}", acc));
+//!         // Different ways to print the accumulated value
 //!
-//!         // Another way to print the accumulated value.
 //!         let acc = control.acc();
 //!         println!("accumulated={}", acc.deref());
+//!         drop(acc);
+//!
+//!         control.with_acc(|acc| println!("accumulated={}", acc));
+//!
+//!         let acc = control.clone_acc();
+//!         println!("accumulated={}", acc);
+//!
+//!         let acc = control.take_acc(0);
+//!         println!("accumulated={}", acc);
 //!     }
 //! }
 //! ```
@@ -384,10 +393,10 @@ mod tests {
 
                     insert_tl_entry(1, value1.clone(), &control);
                     let other = HashMap::from([(1, value1)]);
-                    assert_tl(&other, "Before 1st insert");
+                    assert_tl(&other, "After 1st insert");
 
                     insert_tl_entry(2, value2, &control);
-                    assert_tl(&map_i, "Before 2nd insert");
+                    assert_tl(&map_i, "After 2nd insert");
                 });
                 h.join().unwrap();
             });

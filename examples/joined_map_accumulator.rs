@@ -84,11 +84,18 @@ fn main() {
 
         println!("After call to `take_tls`: control={:?}", control);
 
-        // Print the accumulated value.
-        control.with_acc(|acc| println!("accumulated={:?}", acc));
+        // Different ways to print the accumulated value
 
-        // Another way to print the accumulated value.
         let acc = control.acc();
         println!("accumulated={:?}", acc.deref());
+        drop(acc);
+
+        control.with_acc(|acc| println!("accumulated={:?}", acc));
+
+        let acc = control.clone_acc();
+        println!("accumulated={:?}", acc);
+
+        let acc = control.take_acc(HashMap::new());
+        println!("accumulated={:?}", acc);
     }
 }

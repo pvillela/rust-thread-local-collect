@@ -10,6 +10,8 @@
 //! - The [`Control`] object's collection/aggregation function is UNSAFE unless executed after all participating
 //! threads, other than the thread responsible for collection/aggregation, have
 //! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection.
+//!
+//! See also [Core Concepts](super#core-concepts).
 
 pub use crate::common::HolderLocalKey;
 use crate::common::{ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD};

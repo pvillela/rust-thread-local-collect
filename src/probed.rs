@@ -11,6 +11,8 @@
 //! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection,
 //! a call to one of the collection/aggregation functions will result in the final aggregated value.
 //!
+//! See also [Core Concepts](super#core-concepts).
+//!
 //! ## Usage pattern
 //!
 //! Here's an outline of how this little framework can be used:
@@ -62,12 +64,19 @@
 //!         // Take and accumulate the thread-local values.
 //!         control.take_tls();
 //!
-//!         // Print the accumulated value.
-//!         control.with_acc(|acc| println!("accumulated={}", acc));
+//!         // Different ways to print the accumulated value
 //!
-//!         // Another way to print the accumulated value.
 //!         let acc = control.acc();
 //!         println!("accumulated={}", acc.deref());
+//!         drop(acc);
+//!
+//!         control.with_acc(|acc| println!("accumulated={}", acc));
+//!
+//!         let acc = control.clone_acc();
+//!         println!("accumulated={}", acc);
+//!
+//!         let acc = control.take_acc(0);
+//!         println!("accumulated={}", acc);
 //!     }
 //! }
 //! ````
