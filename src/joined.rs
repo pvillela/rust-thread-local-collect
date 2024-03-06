@@ -173,28 +173,27 @@ where
     T: 'static,
     U: 'static,
 {
-    /// This method takes the values of any remaining linked thread-local-variables and aggregates those values
-    /// with this object's accumulator, replacing those values with [`None`].
+    /// This method takes the value of the designated thread-local variable in the thread responsible for
+    /// collection/aggregation, if that variable is used, and aggregates that value
+    /// with this object's accumulator, replacing that value with [`None`].
     ///
     /// This function can be called safely provided that:
-    /// - All threads other than the one where this method is called have terminaged and been joined directly or
-    ///   indirectly, explicitly or implicitly.
+    /// - All threads other than the one where this method is called have terminaged and been EXPLICITLY joined,
+    /// directly or indirectly.
     ///
     /// The above condition establishes a proper "happens-before" relationship for all explicitly joined threads.
     ///
     /// When called safely, as indicated above, all linked thread-local variables corresponding to explicitly
     /// joined threads will have been dropped (and their values will have been accumulated) at the time this method
-    /// is called. At that point, the only possible remaining linked thread-local variables would be associated with
-    /// implicitly joined scoped threads or the thread where this method was called, The only only possible
-    /// concurrent activity would be [`HolderG`] drop method execution on the implicitly joined scoped threads,
-    /// but that drop method uses this object's Mutex to prevent race conditions, so safety is ensured.
+    /// is called. At that point, the only possible remaining linked thread-local variable would be associated with
+    /// the thread where this method was called, so there can be no race condition.
     pub unsafe fn take_tls(&self) {
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
         let state = guard.deref_mut();
         if let Some(addr) = state.s.own_tl_addr {
             // Safety: provided that:
-            // - All other threads have terminaged and been explicitly joined directly or indirectly.
+            // - All other threads have terminaged and been explicitly joined, directly or indirectly.
             //
             // The above condition establishes a proper "happens-before" relationship for all explicitly joined threads,
             // and the only possible remaining activity would be [`HolderG`] drop method execution on the thread that
@@ -356,7 +355,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(unused)]
     fn own_thread_and_explicit_joins() {
         let control = Control::new(HashMap::new(), op);
 
