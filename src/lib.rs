@@ -24,9 +24,7 @@ pub mod common;
 pub mod joined;
 pub mod probed;
 pub mod simple_joined;
+pub mod test_support;
 
 #[doc(hidden)]
 pub mod joined_old;
-
-#[cfg(test)]
-pub(crate) mod test_support;

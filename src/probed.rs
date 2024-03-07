@@ -217,7 +217,7 @@ impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::TrafficSignal;
+    use crate::test_support::ThreadGater;
 
     use super::{Control, Holder, HolderLocalKey};
 
@@ -225,7 +225,7 @@ mod tests {
         collections::HashMap,
         fmt::Debug,
         ops::Deref,
-        sync::{Mutex, RwLock},
+        sync::Mutex,
         thread::{self, ThreadId},
     };
 
@@ -270,21 +270,13 @@ mod tests {
 
         let own_tid = thread::current().id();
         println!("main_tid={:?}", own_tid);
-        let spawned_tid_wrapper = RwLock::new(thread::current().id());
 
-        let traffic_signal_main_0 = TrafficSignal::new();
-        let traffic_signal_main_1 = TrafficSignal::new();
-        let traffic_signal_main_2 = TrafficSignal::new();
-        let traffic_signal_main_3 = TrafficSignal::new();
-        let traffic_signal_spawned_1 = TrafficSignal::new();
-        let traffic_signal_spawned_2 = TrafficSignal::new();
-        let traffic_signal_spawned_3 = TrafficSignal::new();
-        let traffic_signal_spawned_4 = TrafficSignal::new();
+        let main_thread_gater = ThreadGater::new();
+        let spawned_thread_gater = ThreadGater::new();
 
         let expected_acc_mutex = Mutex::new(HashMap::new());
 
         {
-            let spawned_tid_wrapper = &spawned_tid_wrapper;
             let control = &control;
             let value1 = Foo("aa".to_owned());
             let value2 = Foo("bb".to_owned());
@@ -294,11 +286,8 @@ mod tests {
             thread::scope(|s| {
                 let h = s.spawn(|| {
                     let spawned_tid = thread::current().id();
-                    let mut lock = spawned_tid_wrapper.write().unwrap();
-                    *lock = spawned_tid;
-                    drop(lock);
 
-                    traffic_signal_main_0.continue_if_green();
+                    main_thread_gater.wait_for(0);
                     insert_tl_entry(1, value1.clone(), &control);
                     let mut other = HashMap::from([(1, value1)]);
                     assert_tl(&other, "After 1st insert");
@@ -306,9 +295,9 @@ mod tests {
                         .try_lock()
                         .unwrap()
                         .insert(spawned_tid, other.clone());
-                    traffic_signal_spawned_1.set_green();
+                    spawned_thread_gater.open(0);
 
-                    traffic_signal_main_1.continue_if_green();
+                    main_thread_gater.wait_for(1);
                     insert_tl_entry(2, value2.clone(), &control);
                     other.insert(2, value2);
                     assert_tl(&other, "After 2nd insert");
@@ -316,9 +305,9 @@ mod tests {
                         .try_lock()
                         .unwrap()
                         .insert(spawned_tid, other.clone());
-                    traffic_signal_spawned_2.set_green();
+                    spawned_thread_gater.open(1);
 
-                    traffic_signal_main_2.continue_if_green();
+                    main_thread_gater.wait_for(2);
                     insert_tl_entry(3, value3.clone(), &control);
                     let mut other = HashMap::from([(3, value3)]);
                     assert_tl(&other, "After take_tls and 3rd insert");
@@ -326,9 +315,9 @@ mod tests {
                         let mut map = expected_acc_mutex.try_lock().unwrap();
                         op(other.clone(), &mut map, &spawned_tid);
                     }
-                    traffic_signal_spawned_3.set_green();
+                    spawned_thread_gater.open(2);
 
-                    traffic_signal_main_3.continue_if_green();
+                    main_thread_gater.wait_for(3);
                     insert_tl_entry(4, value4.clone(), &control);
                     other.insert(4, value4);
                     assert_tl(&other, "After 4th insert");
@@ -336,7 +325,7 @@ mod tests {
                         let mut map = expected_acc_mutex.try_lock().unwrap();
                         op(other.clone(), &mut map, &spawned_tid);
                     }
-                    traffic_signal_spawned_4.set_green();
+                    // spawned_thread_gater.open(3);
                 });
 
                 {
@@ -354,11 +343,11 @@ mod tests {
                         map.deref(),
                         "Accumulator after main thread inserts and probe_tls"
                     );
-                    traffic_signal_main_0.set_green();
+                    main_thread_gater.open(0);
                 }
 
                 {
-                    traffic_signal_spawned_1.continue_if_green();
+                    spawned_thread_gater.wait_for(0);
                     let map = expected_acc_mutex.try_lock().unwrap();
                     let acc = control.probe_tls();
                     assert_eq!(
@@ -366,11 +355,11 @@ mod tests {
                         map.deref(),
                         "Accumulator after 1st spawned thread insert and probe_tls"
                     );
-                    traffic_signal_main_1.set_green();
+                    main_thread_gater.open(1);
                 }
 
                 {
-                    traffic_signal_spawned_2.continue_if_green();
+                    spawned_thread_gater.wait_for(1);
                     let map = expected_acc_mutex.try_lock().unwrap();
                     control.take_tls();
                     let acc = control.acc();
@@ -379,11 +368,11 @@ mod tests {
                         map.deref(),
                         "Accumulator after 2nd spawned thread insert and take_tls"
                     );
-                    traffic_signal_main_2.set_green();
+                    main_thread_gater.open(2);
                 }
 
                 {
-                    traffic_signal_spawned_3.continue_if_green();
+                    spawned_thread_gater.wait_for(2);
                     let map = expected_acc_mutex.try_lock().unwrap();
                     let acc = control.probe_tls();
                     assert_eq!(
@@ -391,11 +380,11 @@ mod tests {
                         map.deref(),
                         "Accumulator after 3rd spawned thread insert and probe_tls"
                     );
-                    traffic_signal_main_3.set_green();
+                    main_thread_gater.open(3);
                 }
 
                 {
-                    // done with traffic signals
+                    // done with thread gaters
                     h.join().unwrap();
 
                     let map = expected_acc_mutex.try_lock().unwrap();
