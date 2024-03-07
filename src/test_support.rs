@@ -1,31 +1,49 @@
 //! This module supports the creation of tests and examples.
 
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::{
+    backtrace::Backtrace,
+    process::abort,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 /// Supports the coordination between threads through the waiting for gates to be opened.
-/// At any point in time, all gates up to a `highest_open_gate` are open and all gates
-/// above it are closed. A thread blocks and waits iff the gate it waits on is not open.
+/// A thread blocks and waits iff the gate it waits on is not open. Gate numbers may range
+/// from 0 to 63.
 pub struct ThreadGater {
-    highest_open_gate: AtomicI32,
+    open_gates: AtomicU64,
+}
+
+fn validate_gate(gate: u8) {
+    if gate > 63 {
+        println!("FATAL: gate number {gate} must be between 0 and 63");
+        let trace = Backtrace::force_capture();
+        println!("backtrace:\n{trace}");
+        abort();
+    }
 }
 
 impl ThreadGater {
     pub fn new() -> Self {
         Self {
-            highest_open_gate: AtomicI32::new(-1),
+            open_gates: AtomicU64::new(0),
         }
     }
 
     /// Wait until `gate` is open.
-    pub fn wait_for(&self, gate: u32) {
-        while self.highest_open_gate.load(Ordering::Relaxed) < gate as i32 {
+    pub fn wait_for(&self, gate: u8) {
+        validate_gate(gate);
+        let gate_mask = 1u64 << gate;
+
+        while self.open_gates.load(Ordering::Relaxed) & gate_mask == 0 {
             std::hint::spin_loop();
         }
     }
 
-    /// Set the highest open gate to `gate`.
-    pub fn open(&self, gate: u32) {
-        self.highest_open_gate
-            .fetch_max(gate as i32, Ordering::Relaxed);
+    /// Open `gate`.
+    pub fn open(&self, gate: u8) {
+        validate_gate(gate);
+        let gate_mask = 1u64 << gate;
+
+        self.open_gates.fetch_or(gate_mask, Ordering::Relaxed);
     }
 }
