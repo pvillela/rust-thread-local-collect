@@ -51,8 +51,8 @@ fn main() {
     let own_tid = thread::current().id();
     println!("main_tid={:?}", own_tid);
 
-    let main_thread_gater = ThreadGater::new();
-    let spawned_thread_gater = ThreadGater::new();
+    let main_thread_gater = ThreadGater::new("main");
+    let spawned_thread_gater = ThreadGater::new("spawned");
 
     let expected_acc_mutex = Mutex::new(HashMap::new());
 
