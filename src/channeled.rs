@@ -80,6 +80,8 @@
 
 use std::{
     cell::RefCell,
+    error::Error,
+    fmt::Display,
     mem::replace,
     ops::Deref,
     sync::{
@@ -89,21 +91,43 @@ use std::{
     thread::{self, LocalKey, ThreadId},
 };
 
+/// Data structure transmitted on channel.
 enum ChannelItem<T> {
     StopReceiving,
     Payload(ThreadId, T),
 }
 
+/// Status of background thread receiving on channel. from thread-locals.
 enum ReceiveStatus {
     Stopped,
     CycleCompleted,
 }
 
+/// Modes of receiving thread-local values on channel.
+enum ReceiveMode {
+    Drain,
+    Background,
+}
+
+/// Indicates attempt to have multiple concurrent background receiving threads.
 #[derive(Debug)]
-pub struct ChanneledState<T, U> {
+pub struct MultipleThreadError;
+
+impl Display for MultipleThreadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{MultipleThreadError:?}: Illegal call to start_receiving_tls as active background thread already exists.")
+    }
+}
+
+impl Error for MultipleThreadError {}
+
+/// State of [`Control`].
+#[derive(Debug)]
+struct ChanneledState<T, U> {
     acc: U,
     sender: Sender<ChannelItem<T>>,
     receiver: Receiver<ChannelItem<T>>,
+    bkgd_recv_exists: bool,
 }
 
 impl<T, U> ChanneledState<T, U> {
@@ -113,6 +137,7 @@ impl<T, U> ChanneledState<T, U> {
             acc,
             sender,
             receiver,
+            bkgd_recv_exists: false,
         }
     }
 
@@ -124,11 +149,18 @@ impl<T, U> ChanneledState<T, U> {
         &mut self.acc
     }
 
-    fn receive_tls(&mut self, op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync)) -> ReceiveStatus {
+    fn receive_tls(
+        &mut self,
+        mode: ReceiveMode,
+        op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync),
+    ) -> ReceiveStatus {
         while let Ok(payload) = self.receiver.try_recv() {
             match payload {
                 ChannelItem::Payload(tid, data) => op(data, &mut self.acc, &tid),
-                ChannelItem::StopReceiving => return ReceiveStatus::Stopped,
+                ChannelItem::StopReceiving => match mode {
+                    ReceiveMode::Background => return ReceiveStatus::Stopped,
+                    ReceiveMode::Drain => continue,
+                },
             }
         }
         ReceiveStatus::CycleCompleted
@@ -147,11 +179,8 @@ impl<'a, T, U> Deref for AccGuard<'a, T, U> {
     }
 }
 
-/// Controls the destruction of thread-local values registered with it.
-/// Such values of type `T` must be held in thread-locals of type [`Holder<T>`].
-/// `U` is the type of the accumulated value resulting from an initial base value and
-/// the application of an operation to each thread-local value and the current accumulated
-/// value upon dropping of each thread-local value. (See [`new`](Control::new) method.)
+/// Controls the collection and accumulation of thread-local variables linked to this object.
+/// Such thread-locals must be of type [`Holder<T>`].
 pub struct Control<T, U> {
     /// Keeps track of registered threads and accumulated value.
     state: Arc<Mutex<ChanneledState<T, U>>>,
@@ -170,6 +199,7 @@ impl<T, U> Clone for Control<T, U> {
 }
 
 impl<T, U> Control<T, U> {
+    /// Instantiates a [`Control`] object.
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
         Control {
             state: Arc::new(Mutex::new(ChanneledState::new(acc_base))),
@@ -177,32 +207,24 @@ impl<T, U> Control<T, U> {
         }
     }
 
-    /// Acquires a lock for use by public `Control` methods that require its internal Mutex to be locked.
+    /// Acquires a lock on [`Control`]'s internal Mutex.
     fn lock<'a>(&'a self) -> MutexGuard<'a, ChanneledState<T, U>> {
         self.state.lock().unwrap()
     }
 
-    /// Returns a guard of the object's `acc` field. This guard holds a lock on `self` which is only released
-    /// when the guard object is dropped.
+    /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
+    /// lifetime.
     pub fn acc(&self) -> AccGuard<'_, T, U> {
         AccGuard(self.lock())
     }
 
-    /// Provides access to the accumulated value in the [Control] struct.
+    /// Provides access to `self`'s accumulated value.
     pub fn with_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
         let acc = self.acc();
         f(&acc)
     }
 
-    /// Returns the accumulated value in the [Control] struct, using a value of the same type to replace
-    /// the existing accumulated value.
-    pub fn take_acc(&self, replacement: U) -> U {
-        let mut lock = self.lock();
-        let acc = lock.acc_mut();
-        replace(acc, replacement)
-    }
-
-    /// Returns a clone of the accumulated value in the [Control] struct.
+    /// Returns a clone of `self`'s accumulated value.
     pub fn clone_acc(&self) -> U
     where
         U: Clone,
@@ -210,53 +232,79 @@ impl<T, U> Control<T, U> {
         self.acc().clone()
     }
 
-    pub fn start_receiving_tls(&self)
+    /// Returns `self`'s accumulated value, using a value of the same type to replace
+    /// the existing accumulated value.
+    pub fn take_acc(&self, replacement: U) -> U {
+        let mut lock = self.lock();
+        let acc = lock.acc_mut();
+        replace(acc, replacement)
+    }
+
+    /// Spawns a background thread to receive thread-local values if there is no such active thread,
+    /// panics otherwise.
+    pub fn start_receiving_tls(&self) -> Result<(), MultipleThreadError>
     where
         T: 'static + Send,
         U: 'static + Send,
     {
+        // Ensure a single instance of the background thread can be active.
+        let mut state = self.lock();
+        if state.bkgd_recv_exists {
+            return Err(MultipleThreadError);
+        }
+        state.bkgd_recv_exists = true;
+        drop(state);
+
         let control = self.clone();
         thread::spawn(move || {
             loop {
                 let mut state = control.lock();
-                let res = state.receive_tls(control.op.as_ref());
+                let res = state.receive_tls(ReceiveMode::Background, control.op.as_ref());
                 if let ReceiveStatus::Stopped = res {
-                    return;
+                    // Restore background thread status.
+                    state.bkgd_recv_exists = false;
+                    break;
                 }
+                drop(state); // release lock before yielding!
                 thread::yield_now(); // this is unnecessary if Mutex is fair
             }
         });
+        return Ok(());
     }
 
+    /// Stop background thread receiving thread-local values.
     pub fn stop_receiving_tls(&self) {
         self.lock().sender.send(ChannelItem::StopReceiving).unwrap();
     }
 
-    pub fn receive_tls(&self) {
-        self.lock().receive_tls(self.op.as_ref());
+    /// Receive all pending messages in channel, stopping the background thread if it exists.
+    pub fn drain_tls(&self) {
+        self.stop_receiving_tls();
+        self.lock()
+            .receive_tls(ReceiveMode::Drain, self.op.as_ref());
     }
 }
 
+/// Inner state of [`Holder`].
 struct HolderInner<T> {
     tid: ThreadId,
     sender: Sender<ChannelItem<T>>,
 }
 
-/// Holds thead-local data to enable registering it with [`Control`].
+/// Holds a thread-local [`Sender`] and a smart pointer to a [`Control`], enabling the linkage of the thread-local
+/// with the control object.
 pub struct Holder<T>(RefCell<Option<HolderInner<T>>>)
 where
     T: 'static;
 
 impl<T> Holder<T> {
-    /// Creates a new `Holder` instance with a function to initialize the data.
-    ///
-    /// The `make_data` function will be called lazily when data is first accessed to initialize
-    /// the inner data value.
+    /// Instantiates a holder object.
     pub fn new() -> Self {
         Self(RefCell::new(None))
     }
 
-    pub fn ensure_initialized<U>(&self, control: &Control<T, U>) {
+    /// Ensures `self` is initialized, both the [`Sender`] and the `control` smart pointer.
+    fn ensure_initialized<U>(&self, control: &Control<T, U>) {
         let mut inner = self.0.borrow_mut();
         if inner.is_none() {
             let state = control.lock();
@@ -268,7 +316,8 @@ impl<T> Holder<T> {
         }
     }
 
-    pub fn send_data(&self, data: T) {
+    /// Send data to be aggregated in the `control` object.
+    fn send_data(&self, data: T) {
         let inner_opt = self.0.borrow();
         let inner = inner_opt.as_ref().unwrap();
         inner
@@ -278,9 +327,12 @@ impl<T> Holder<T> {
     }
 }
 
+/// Provides access to the thread-local variable.
 pub trait HolderLocalKey<T> {
+    /// Ensures the [`Holder`] is initialized, both the [`Sender`] and the `control` smart pointer.
     fn ensure_initialized<U>(&'static self, control: &Control<T, U>);
 
+    /// Send data to be aggregated in the `control` object.
     fn send_data(&'static self, data: T);
 }
 
@@ -372,7 +424,7 @@ mod tests {
 
             hs.into_iter().for_each(|h| h.join().unwrap());
 
-            control.receive_tls();
+            control.drain_tls();
 
             println!("after hs join: {:?}", control.acc());
         });
@@ -429,7 +481,7 @@ mod tests {
 
             h.join().unwrap();
 
-            control.receive_tls();
+            control.drain_tls();
 
             println!("after h.join(): {:?}", control.acc());
         });
@@ -463,7 +515,7 @@ mod tests {
 
         thread::sleep(Duration::from_millis(100));
 
-        control.start_receiving_tls();
+        control.start_receiving_tls().unwrap();
 
         thread::scope(|s| {
             let h = s.spawn(|| {
@@ -498,7 +550,7 @@ mod tests {
 
             {
                 // Drain channel.
-                control.receive_tls();
+                control.drain_tls();
 
                 let acc = control.acc();
                 assert_eq!(acc.deref(), &map, "Accumulator check");

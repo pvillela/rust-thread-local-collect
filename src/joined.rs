@@ -212,7 +212,7 @@ where
 }
 
 /// Specialization of [`HolderG`] for this module.
-/// Holds thead-local data and a smart pointer to a [`Control`], enabling the linkage of the held data
+/// Holds thread-local data and a smart pointer to a [`Control`], enabling the linkage of the held data
 /// with the control object.
 pub type Holder<T, U> = HolderG<P<T, U>>;
 

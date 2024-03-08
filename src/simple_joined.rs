@@ -7,7 +7,7 @@
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
 //! accumulated value when the thread-local variables are dropped following thread termination.
 //! - The aggregated value is reflective of all participating threads if and only if it is accessed after
-//! all participating theads have
+//! all participating threads have
 //! terminated and EXPLICITLY joined directly or indirectly into the thread respnosible for collection.
 //! - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
 //! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the

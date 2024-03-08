@@ -42,7 +42,7 @@ fn main() {
 
     {
         // Drain channel.
-        control.receive_tls();
+        control.drain_tls();
 
         // Different ways to print the accumulated value
 

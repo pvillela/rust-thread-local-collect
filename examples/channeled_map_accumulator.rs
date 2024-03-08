@@ -53,7 +53,7 @@ fn main() {
 
     thread::sleep(Duration::from_millis(100));
 
-    control.start_receiving_tls();
+    control.start_receiving_tls().unwrap();
 
     thread::scope(|s| {
         let h = s.spawn(|| {
@@ -83,7 +83,7 @@ fn main() {
         println!("before control.receive_tls(): {:?}", control.acc());
 
         // Drain channel.
-        control.receive_tls();
+        control.drain_tls();
         println!("after control.receive_tls(): {:?}", control.acc());
 
         // Different ways to print the accumulated value

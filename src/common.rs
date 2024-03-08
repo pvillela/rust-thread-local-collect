@@ -347,7 +347,7 @@ impl<T: 'static> GuardedData<Option<T>> for Arc<Mutex<Option<T>>> {
     }
 }
 
-/// Holds thead-local data and a smart pointer to a [`ControlG`], enabling the linkage of the held data
+/// Holds thread-local data and a smart pointer to a [`ControlG`], enabling the linkage of the held data
 /// with the control object.
 pub struct HolderG<P>
 where
