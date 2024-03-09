@@ -7,7 +7,7 @@
 //! - The [`Control`] object provides functions to receive thread-local values on a background thread,
 //! stop receiving on a background thread, drain the [`Receiver`], and retrieve the accumulated value.
 //! - After all participating threads other than the thread responsible for collection/aggregation have
-//! stopped sending values, a call to [`Control::receive_tls`] followed by a call to one of the accumulated
+//! stopped sending values, a call to [`Control::drain_tls`] followed by a call to one of the accumulated
 //! value retrieval functions will result in the final aggregated value.
 //!
 //! See also [Core Concepts](super#core-concepts).
@@ -20,6 +20,7 @@
 //! use std::{
 //!     ops::Deref,
 //!     thread::{self, ThreadId},
+//!     time::Duration,
 //! };
 //! use thread_local_collect::channeled::{Control, Holder, HolderLocalKey};
 //!
@@ -48,35 +49,60 @@
 //! fn main() {
 //!     let control = Control::new(0, op);
 //!
-//!     send_tl_data(1, &control);
-//!
 //!     thread::scope(|s| {
 //!         let h = s.spawn(|| {
-//!             send_tl_data(10, &control);
+//!             for _i in 0..10 {
+//!                 send_tl_data(10, &control);
+//!                 thread::sleep(Duration::from_millis(10));
+//!             }
 //!         });
-//!         h.join().unwrap();
+//!
+//!         {
+//!             send_tl_data(1, &control);
+//!
+//!             control.start_receiving_tls().unwrap();
+//!
+//!             // Print current accumulated value.
+//!             thread::sleep(Duration::from_millis(30));
+//!             println!("accumulated={}", control.acc().deref());
+//!
+//!             send_tl_data(1, &control);
+//!
+//!             thread::sleep(Duration::from_millis(20));
+//!             control.stop_receiving_tls();
+//!
+//!             // Print current accumulated value.
+//!             println!("accumulated={}", control.acc().deref());
+//!             thread::sleep(Duration::from_millis(20));
+//!
+//!             h.join().unwrap();
+//!
+//!             // Drain channel.
+//!             control.drain_tls();
+//!
+//!             // Different ways to print the accumulated value
+//!
+//!             println!("accumulated={}", control.acc().deref());
+//!
+//!             let acc = control.acc();
+//!             println!("accumulated={}", acc.deref());
+//!             drop(acc);
+//!
+//!             control.with_acc(|acc| println!("accumulated={}", acc));
+//!
+//!             let acc = control.clone_acc();
+//!             println!("accumulated={}", acc);
+//!
+//!             let acc = control.take_acc(0);
+//!             println!("accumulated={}", acc);
+//!         }
 //!     });
-//!
-//!     {
-//!         // Drain channel.
-//!         control.receive_tls();
-//!
-//!         // Different ways to print the accumulated value
-//!
-//!         let acc = control.acc();
-//!         println!("accumulated={}", acc.deref());
-//!         drop(acc);
-//!
-//!         control.with_acc(|acc| println!("accumulated={}", acc));
-//!
-//!         let acc = control.clone_acc();
-//!         println!("accumulated={}", acc);
-//!
-//!         let acc = control.take_acc(0);
-//!         println!("accumulated={}", acc);
-//!     }
 //! }
 //! ````
+//!
+//! ## Other examples
+//!
+//! See another example at [`examples/channeled_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/channeled_map_accumulator.rs).
 
 use std::{
     cell::RefCell,

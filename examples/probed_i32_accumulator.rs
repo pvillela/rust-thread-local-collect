@@ -64,6 +64,8 @@ fn main() {
 
             // Different ways to print the accumulated value in `control`.
 
+            println!("final accumulated={}", control.acc().deref());
+
             let acc = control.acc();
             println!("final accumulated: {}", acc.deref());
             drop(acc);

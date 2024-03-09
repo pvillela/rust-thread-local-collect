@@ -64,6 +64,8 @@
 //!
 //!         // Different ways to print the accumulated value
 //!
+//!         println!("accumulated={}", control.acc().deref());
+//!
 //!         let acc = control.acc();
 //!         println!("accumulated={}", acc.deref());
 //!         drop(acc);

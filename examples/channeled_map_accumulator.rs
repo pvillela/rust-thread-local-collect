@@ -41,6 +41,11 @@ fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
     MY_TL.send_data((k, v));
 }
 
+#[test]
+fn test() {
+    main();
+}
+
 fn main() {
     let control = Control::new(HashMap::new(), op);
 

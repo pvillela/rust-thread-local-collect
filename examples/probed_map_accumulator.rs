@@ -48,6 +48,11 @@ fn assert_tl(other: &Data, msg: &str) {
     });
 }
 
+#[test]
+fn test() {
+    main();
+}
+
 fn main() {
     let control = Control::new(HashMap::new(), op);
 
