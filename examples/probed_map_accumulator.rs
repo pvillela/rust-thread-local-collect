@@ -10,7 +10,7 @@ use std::{
 use thread_local_collect::test_support::ThreadGater;
 use thread_local_collect::{
     probed::{Control, Holder, HolderLocalKey},
-    test_support,
+    test_support::assert_eq_and_println,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -47,10 +47,6 @@ fn assert_tl(other: &Data, msg: &str) {
         println!(">>> tl={map:?}; other={other:?} - {msg}");
         assert_eq!(map, other, "{msg}");
     });
-}
-
-fn assert_eq_and_println<T: PartialEq + Debug>(left: T, right: T, msg: &str) {
-    test_support::assert_eq_and_println(left, right, msg, ">>> ");
 }
 
 fn main() {

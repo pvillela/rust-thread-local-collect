@@ -238,7 +238,7 @@ impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
 #[cfg(test)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
-    use crate::test_support::{self, ThreadGater};
+    use crate::test_support::{assert_eq_and_println, ThreadGater};
     use std::{
         collections::HashMap,
         fmt::Debug,
@@ -281,10 +281,6 @@ mod tests {
             println!(">>> tl={map:?}; other={other:?} - {msg}");
             assert_eq!(map, other, "{msg}");
         });
-    }
-
-    fn assert_eq_and_println<T: PartialEq + Debug>(left: T, right: T, msg: &str) {
-        test_support::assert_eq_and_println(left, right, msg, ">>> ");
     }
 
     #[test]

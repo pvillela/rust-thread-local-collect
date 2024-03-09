@@ -351,7 +351,7 @@ impl<T> HolderLocalKey<T> for LocalKey<Holder<T>> {
 #[cfg(test)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
-    use crate::test_support::{self, ThreadGater};
+    use crate::test_support::{assert_eq_and_println, ThreadGater};
     use std::{
         collections::HashMap,
         fmt::Debug,
@@ -389,10 +389,6 @@ mod tests {
         MY_TL.send_data((k, v));
     }
 
-    fn assert_eq_and_println<T: PartialEq + Debug>(left: T, right: T, msg: &str) {
-        test_support::assert_eq_and_println(left, right, msg, ">>> ");
-    }
-
     #[test]
     fn own_thread_and_explicit_join() {
         let control = Control::new(HashMap::new(), op);
@@ -405,20 +401,12 @@ mod tests {
 
         let expected_acc_mutex = Mutex::new(HashMap::new());
 
-        let assert_acc = |msg: &str| {
+        let assert_acc = |acc: &AccValue, msg: &str| {
             let exp_guard = expected_acc_mutex.try_lock().unwrap();
             let exp = exp_guard.deref();
-            let acc_guard = control.acc();
-            let acc = acc_guard.deref();
 
-            println!(">>> acc={acc:?}; expected={exp:?} - {msg}");
-            assert_eq!(acc, exp, "{msg}");
+            assert_eq_and_println(acc, exp, msg);
         };
-
-        let value1 = Foo("aa".to_owned());
-        let value2 = Foo("bb".to_owned());
-        let value3 = Foo("cc".to_owned());
-        let value4 = Foo("dd".to_owned());
 
         thread::scope(|s| {
             let h = s.spawn(|| {
@@ -440,10 +428,10 @@ mod tests {
                     spawned_thread_gater.open(gate);
                 };
 
-                process_value(0, 1, value1);
-                process_value(1, 2, value2);
-                process_value(2, 3, value3);
-                process_value(3, 4, value4);
+                process_value(0, 1, Foo("aa".to_owned()));
+                process_value(1, 2, Foo("bb".to_owned()));
+                process_value(2, 3, Foo("cc".to_owned()));
+                process_value(3, 4, Foo("dd".to_owned()));
             });
 
             {
@@ -462,13 +450,16 @@ mod tests {
                     .try_lock()
                     .unwrap()
                     .insert(main_tid, my_map);
-                assert_acc("Accumulator after main thread inserts");
+                assert_acc(control.acc().deref(), "Accumulator after main thread sends");
                 main_thread_gater.open(0);
             }
 
             {
                 spawned_thread_gater.wait_for(0);
-                assert_acc("Accumulator after 1st spawned thread insert");
+                assert_acc(
+                    control.acc().deref(),
+                    "Accumulator after 1st spawned thread send",
+                );
 
                 {
                     control.stop_receiving_tls();
@@ -487,7 +478,7 @@ mod tests {
                     assert_ne!(
                         acc.deref(),
                         exp.deref(),
-                        "Accumulator should not reflect 2nd spawned thread insert",
+                        "Accumulator should not reflect 2nd spawned thread send",
                     );
                 }
                 main_thread_gater.open(2);
@@ -501,7 +492,10 @@ mod tests {
 
             {
                 spawned_thread_gater.wait_for(2);
-                assert_acc("Accumulator should reflect 2nd and 3rd spawned thread inserts");
+                assert_acc(
+                    control.acc().deref(),
+                    "Accumulator should reflect 2nd and 3rd spawned thread sends",
+                );
 
                 {
                     control.stop_receiving_tls();
@@ -517,58 +511,46 @@ mod tests {
                 h.join().unwrap();
 
                 {
-                    let map = expected_acc_mutex.try_lock().unwrap();
+                    let exp = expected_acc_mutex.try_lock().unwrap();
                     let acc = control.acc();
                     assert_ne!(
                         acc.deref(),
-                        map.deref(),
-                        "Accumulator should not reflect 4th spawned thread insert",
+                        exp.deref(),
+                        "Accumulator should not reflect 4th spawned thread send",
                     );
                 }
 
                 control.drain_tls();
 
-                assert_acc("Accumulator should reflect 4th spawned thread insert");
+                assert_acc(
+                    control.acc().deref(),
+                    "Accumulator should reflect 4th spawned thread send",
+                );
             }
 
             {
-                let exp_guard = expected_acc_mutex.try_lock().unwrap();
-                let exp = exp_guard.deref();
-
                 {
                     control.with_acc(|acc| {
-                        assert_eq_and_println(
+                        assert_acc(
                             acc,
-                            exp,
-                            "Accumulator after 4th spawned thread, using control.with_acc()",
+                            "Accumulator after spawned thread join, using control.with_acc()",
                         );
                     });
                 }
 
                 {
                     let acc = control.clone_acc();
-                    assert_eq_and_println(
+                    assert_acc(
                         &acc,
-                        exp,
-                        "Accumulator after 4th spawned thread, using control.clone_acc()",
-                    );
-                }
-
-                {
-                    let acc = control.clone_acc();
-                    assert_eq_and_println(
-                        &acc,
-                        exp,
-                        "Accumulator after 4th spawned thread, using control.clone_acc()",
+                        "Accumulator after spawned thread join, using control.clone_acc()",
                     );
                 }
 
                 {
                     let acc = control.take_acc(HashMap::new());
-                    assert_eq_and_println(
+                    assert_acc(
                         &acc,
-                        exp,
-                        "Accumulator after 4th spawned thread, using control.take_acc()",
+                        "Accumulator after spawned thread join, using control.take_acc()",
                     );
                 }
 
