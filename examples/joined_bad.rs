@@ -65,14 +65,12 @@ fn own_thread_and_implicit_joins() {
     let mut map = HashMap::from([(own_tid.clone(), map_own)]);
 
     for i in 0..100 {
-        let spawned_tids = &spawned_tids;
-        let control = &control;
         let value1 = Foo("a".to_owned() + &i.to_string());
         let value2 = Foo("a".to_owned() + &i.to_string());
         let map_i = &HashMap::from([(1, value1.clone()), (2, value2.clone())]);
 
         thread::scope(|s| {
-            let _h = s.spawn(move || {
+            let _h = s.spawn(|| {
                 let spawned_tid = thread::current().id();
                 let mut lock = spawned_tids.write().unwrap();
                 lock.push(spawned_tid);

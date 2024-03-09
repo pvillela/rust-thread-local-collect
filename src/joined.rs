@@ -290,18 +290,15 @@ mod tests {
 
     #[test]
     fn explicit_joins_no_take_tls() {
-        let control = Control::new(HashMap::new(), op);
-        let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
+        // These are directly defined as references to prevent the move closure below from moving
+        // `control` and `spawned_tids`values. The closure has to be `move` because it needs to own `i`.
+        let control = &Control::new(HashMap::new(), op);
+        let spawned_tids = &RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
         thread::scope(|s| {
             let hs = (0..2)
                 .map(|i| {
                     s.spawn({
-                        // These are to prevent the move closure from moving `control` and `spawned_tids`.
-                        // The closure has to be `move` because it needs to own `i`.
-                        let control = &control;
-                        let spawned_tids = &spawned_tids;
-
                         move || {
                             let si = i.to_string();
 
@@ -383,7 +380,7 @@ mod tests {
             let map_i = &HashMap::from([(1, value1.clone()), (2, value2.clone())]);
 
             thread::scope(|s| {
-                let h = s.spawn(move || {
+                let h = s.spawn(|| {
                     let spawned_tid = thread::current().id();
                     let mut lock = spawned_tids.write().unwrap();
                     lock.push(spawned_tid);
