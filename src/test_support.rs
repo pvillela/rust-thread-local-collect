@@ -2,6 +2,7 @@
 
 use std::{
     backtrace::Backtrace,
+    fmt::Debug,
     process::abort,
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
@@ -80,4 +81,11 @@ impl ThreadGater {
         let millis = millis.max(1);
         self.timeout.store(millis, Ordering::Relaxed);
     }
+}
+
+/// Prints `left`, `right`, and `msg`, prefixed by `prefix`, and then
+/// asserts equality of `left` and `right` with`msg` as the assert message.
+pub fn assert_eq_and_println<T: PartialEq + Debug>(left: T, right: T, msg: &str, prefix: &str) {
+    println!("{prefix}left={left:?}; right={right:?} - {msg}");
+    assert_eq!(left, right, "{msg}");
 }

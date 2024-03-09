@@ -7,8 +7,11 @@ use std::{
     sync::Mutex,
     thread::{self, ThreadId},
 };
-use thread_local_collect::probed::{Control, Holder, HolderLocalKey};
 use thread_local_collect::test_support::ThreadGater;
+use thread_local_collect::{
+    probed::{Control, Holder, HolderLocalKey},
+    test_support,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
@@ -47,15 +50,14 @@ fn assert_tl(other: &Data, msg: &str) {
 }
 
 fn assert_eq_and_println<T: PartialEq + Debug>(left: T, right: T, msg: &str) {
-    println!(">>> left={left:?}; right={right:?} - {msg}");
-    assert_eq!(left, right, "{msg}");
+    test_support::assert_eq_and_println(left, right, msg, ">>> ");
 }
 
 fn main() {
     let control = Control::new(HashMap::new(), op);
 
-    let own_tid = thread::current().id();
-    println!("main_tid={:?}", own_tid);
+    let main_tid = thread::current().id();
+    println!("main_tid={:?}", main_tid);
 
     let main_thread_gater = ThreadGater::new("main");
     let spawned_thread_gater = ThreadGater::new("spawned");
@@ -63,7 +65,6 @@ fn main() {
     let expected_acc_mutex = Mutex::new(HashMap::new());
 
     {
-        let control = &control;
         let value1 = Foo("aa".to_owned());
         let value2 = Foo("bb".to_owned());
         let value3 = Foo("cc".to_owned());
@@ -122,7 +123,7 @@ fn main() {
                 assert_tl(&map_own, "After main thread inserts");
 
                 let mut map = expected_acc_mutex.try_lock().unwrap();
-                map.insert(own_tid, map_own);
+                map.insert(main_tid, map_own);
                 let acc = control.probe_tls();
                 assert_eq_and_println(
                     &acc,

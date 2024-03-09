@@ -238,7 +238,7 @@ impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
 #[cfg(test)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
-    use crate::test_support::ThreadGater;
+    use crate::test_support::{self, ThreadGater};
     use std::{
         collections::HashMap,
         fmt::Debug,
@@ -284,195 +284,190 @@ mod tests {
     }
 
     fn assert_eq_and_println<T: PartialEq + Debug>(left: T, right: T, msg: &str) {
-        println!(">>> left={left:?}; right={right:?} - {msg}");
-        assert_eq!(left, right, "{msg}");
+        test_support::assert_eq_and_println(left, right, msg, ">>> ");
     }
 
     #[test]
     fn own_thread_and_explicit_join() {
         let control = Control::new(HashMap::new(), op);
 
-        let own_tid = thread::current().id();
-        println!("main_tid={:?}", own_tid);
+        let main_tid = thread::current().id();
+        println!("main_tid={:?}", main_tid);
 
         let main_thread_gater = ThreadGater::new("main");
         let spawned_thread_gater = ThreadGater::new("spawned");
 
         let expected_acc_mutex = Mutex::new(HashMap::new());
 
-        {
-            let control = &control;
-            let value1 = Foo("aa".to_owned());
-            let value2 = Foo("bb".to_owned());
-            let value3 = Foo("cc".to_owned());
-            let value4 = Foo("dd".to_owned());
+        let value1 = Foo("aa".to_owned());
+        let value2 = Foo("bb".to_owned());
+        let value3 = Foo("cc".to_owned());
+        let value4 = Foo("dd".to_owned());
 
-            thread::scope(|s| {
-                let h = s.spawn(|| {
-                    let spawned_tid = thread::current().id();
-                    println!("spawned tid={:?}", spawned_tid);
+        thread::scope(|s| {
+            let h = s.spawn(|| {
+                let spawned_tid = thread::current().id();
+                println!("spawned tid={:?}", spawned_tid);
 
-                    main_thread_gater.wait_for(0);
-                    insert_tl_entry(1, value1.clone(), &control);
-                    let mut other = HashMap::from([(1, value1)]);
-                    assert_tl(&other, "After 1st insert");
-                    expected_acc_mutex
-                        .try_lock()
-                        .unwrap()
-                        .insert(spawned_tid, other.clone());
-                    spawned_thread_gater.open(0);
+                main_thread_gater.wait_for(0);
+                insert_tl_entry(1, value1.clone(), &control);
+                let mut other = HashMap::from([(1, value1)]);
+                assert_tl(&other, "After 1st insert");
+                expected_acc_mutex
+                    .try_lock()
+                    .unwrap()
+                    .insert(spawned_tid, other.clone());
+                spawned_thread_gater.open(0);
 
-                    main_thread_gater.wait_for(1);
-                    insert_tl_entry(2, value2.clone(), &control);
-                    other.insert(2, value2);
-                    assert_tl(&other, "After 2nd insert");
-                    expected_acc_mutex
-                        .try_lock()
-                        .unwrap()
-                        .insert(spawned_tid, other.clone());
-                    spawned_thread_gater.open(1);
+                main_thread_gater.wait_for(1);
+                insert_tl_entry(2, value2.clone(), &control);
+                other.insert(2, value2);
+                assert_tl(&other, "After 2nd insert");
+                expected_acc_mutex
+                    .try_lock()
+                    .unwrap()
+                    .insert(spawned_tid, other.clone());
+                spawned_thread_gater.open(1);
 
-                    main_thread_gater.wait_for(2);
-                    insert_tl_entry(3, value3.clone(), &control);
-                    let mut other = HashMap::from([(3, value3)]);
-                    assert_tl(&other, "After take_tls and 3rd insert");
-                    {
-                        let mut map = expected_acc_mutex.try_lock().unwrap();
-                        op(other.clone(), &mut map, &spawned_tid);
-                    }
-                    spawned_thread_gater.open(2);
-
-                    main_thread_gater.wait_for(3);
-                    insert_tl_entry(4, value4.clone(), &control);
-                    other.insert(4, value4);
-                    assert_tl(&other, "After 4th insert");
-                    {
-                        let mut map = expected_acc_mutex.try_lock().unwrap();
-                        op(other.clone(), &mut map, &spawned_tid);
-                    }
-                    // spawned_thread_gater.open(3);
-                });
-
+                main_thread_gater.wait_for(2);
+                insert_tl_entry(3, value3.clone(), &control);
+                let mut other = HashMap::from([(3, value3)]);
+                assert_tl(&other, "After take_tls and 3rd insert");
                 {
-                    insert_tl_entry(1, Foo("a".to_owned()), &control);
-                    insert_tl_entry(2, Foo("b".to_owned()), &control);
-                    let map_own =
-                        HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-                    assert_tl(&map_own, "After main thread inserts");
-
                     let mut map = expected_acc_mutex.try_lock().unwrap();
-                    map.insert(own_tid, map_own);
-                    let acc = control.probe_tls();
-                    assert_eq_and_println(
-                        &acc,
-                        map.deref(),
-                        "Accumulator after main thread inserts and probe_tls",
-                    );
-                    main_thread_gater.open(0);
+                    op(other.clone(), &mut map, &spawned_tid);
                 }
+                spawned_thread_gater.open(2);
+
+                main_thread_gater.wait_for(3);
+                insert_tl_entry(4, value4.clone(), &control);
+                other.insert(4, value4);
+                assert_tl(&other, "After 4th insert");
+                {
+                    let mut map = expected_acc_mutex.try_lock().unwrap();
+                    op(other.clone(), &mut map, &spawned_tid);
+                }
+                // spawned_thread_gater.open(3);
+            });
+
+            {
+                insert_tl_entry(1, Foo("a".to_owned()), &control);
+                insert_tl_entry(2, Foo("b".to_owned()), &control);
+                let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
+                assert_tl(&map_own, "After main thread inserts");
+
+                let mut map = expected_acc_mutex.try_lock().unwrap();
+                map.insert(main_tid, map_own);
+                let acc = control.probe_tls();
+                assert_eq_and_println(
+                    &acc,
+                    map.deref(),
+                    "Accumulator after main thread inserts and probe_tls",
+                );
+                main_thread_gater.open(0);
+            }
+
+            {
+                spawned_thread_gater.wait_for(0);
+                let map = expected_acc_mutex.try_lock().unwrap();
+                let acc = control.probe_tls();
+                assert_eq_and_println(
+                    &acc,
+                    map.deref(),
+                    "Accumulator after 1st spawned thread insert and probe_tls",
+                );
+                main_thread_gater.open(1);
+            }
+
+            {
+                spawned_thread_gater.wait_for(1);
+                let map = expected_acc_mutex.try_lock().unwrap();
+                control.take_tls();
+                let acc = control.acc();
+                assert_eq_and_println(
+                    acc.deref(),
+                    map.deref(),
+                    "Accumulator after 2nd spawned thread insert and take_tls",
+                );
+                main_thread_gater.open(2);
+            }
+
+            {
+                spawned_thread_gater.wait_for(2);
+                let map = expected_acc_mutex.try_lock().unwrap();
+                let acc = control.probe_tls();
+                assert_eq_and_println(
+                    &acc,
+                    map.deref(),
+                    "Accumulator after 3rd spawned thread insert and probe_tls",
+                );
+                main_thread_gater.open(3);
+            }
+
+            {
+                // done with thread gaters
+                h.join().unwrap();
+
+                let map = expected_acc_mutex.try_lock().unwrap();
 
                 {
-                    spawned_thread_gater.wait_for(0);
-                    let map = expected_acc_mutex.try_lock().unwrap();
-                    let acc = control.probe_tls();
-                    assert_eq_and_println(
-                        &acc,
-                        map.deref(),
-                        "Accumulator after 1st spawned thread insert and probe_tls",
-                    );
-                    main_thread_gater.open(1);
-                }
-
-                {
-                    spawned_thread_gater.wait_for(1);
-                    let map = expected_acc_mutex.try_lock().unwrap();
                     control.take_tls();
                     let acc = control.acc();
                     assert_eq_and_println(
                         acc.deref(),
                         map.deref(),
-                        "Accumulator after 2nd spawned thread insert and take_tls",
+                        "Accumulator after 4th spawned thread insert and take_tls",
                     );
-                    main_thread_gater.open(2);
                 }
 
                 {
-                    spawned_thread_gater.wait_for(2);
-                    let map = expected_acc_mutex.try_lock().unwrap();
-                    let acc = control.probe_tls();
+                    control.take_tls();
+                    let acc = control.acc();
+                    assert_eq_and_println(
+                        acc.deref(),
+                        map.deref(),
+                        "Idempotency of control.take_tls()",
+                    );
+                }
+
+                {
+                    control.with_acc(|acc| {
+                        assert_eq_and_println(
+                            acc,
+                            map.deref(),
+                            "Accumulator after 4th spawned thread, using control.with_acc()",
+                        );
+                    });
+                }
+
+                {
+                    let acc = control.clone_acc();
                     assert_eq_and_println(
                         &acc,
                         map.deref(),
-                        "Accumulator after 3rd spawned thread insert and probe_tls",
+                        "Accumulator after 4th spawned thread, using control.clone_acc()",
                     );
-                    main_thread_gater.open(3);
                 }
 
                 {
-                    // done with thread gaters
-                    h.join().unwrap();
-
-                    let map = expected_acc_mutex.try_lock().unwrap();
-
-                    {
-                        control.take_tls();
-                        let acc = control.acc();
-                        assert_eq_and_println(
-                            acc.deref(),
-                            map.deref(),
-                            "Accumulator after 4th spawned thread insert and take_tls",
-                        );
-                    }
-
-                    {
-                        control.take_tls();
-                        let acc = control.acc();
-                        assert_eq_and_println(
-                            acc.deref(),
-                            map.deref(),
-                            "Idempotency of control.take_tls()",
-                        );
-                    }
-
-                    {
-                        control.with_acc(|acc| {
-                            assert_eq_and_println(
-                                acc,
-                                map.deref(),
-                                "Accumulator after 4th spawned thread, using control.with_acc()",
-                            );
-                        });
-                    }
-
-                    {
-                        let acc = control.clone_acc();
-                        assert_eq_and_println(
-                            &acc,
-                            map.deref(),
-                            "Accumulator after 4th spawned thread, using control.clone_acc()",
-                        );
-                    }
-
-                    {
-                        let acc = control.take_acc(HashMap::new());
-                        assert_eq_and_println(
-                            &acc,
-                            map.deref(),
-                            "Accumulator after 4th spawned thread, using control.take_acc()",
-                        );
-                    }
-
-                    {
-                        control.with_acc(|acc| {
-                            assert_eq_and_println(
-                                acc,
-                                &HashMap::new(),
-                                "Accumulator after control.take_acc()",
-                            );
-                        });
-                    }
+                    let acc = control.take_acc(HashMap::new());
+                    assert_eq_and_println(
+                        &acc,
+                        map.deref(),
+                        "Accumulator after 4th spawned thread, using control.take_acc()",
+                    );
                 }
-            });
-        }
+
+                {
+                    control.with_acc(|acc| {
+                        assert_eq_and_println(
+                            acc,
+                            &HashMap::new(),
+                            "Accumulator after control.take_acc()",
+                        );
+                    });
+                }
+            }
+        });
     }
 }
