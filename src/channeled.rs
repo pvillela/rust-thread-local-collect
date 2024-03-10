@@ -1,5 +1,5 @@
 //! This module supports the collection and aggregation of the values from a designated thread-local variable
-//! across threads. The following features and constraints apply ...
+//! across threads (see package [overfiew and core concepts](super)). The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
 //! collection/aggregation.
 //! - The linked thread-local variables hold a [`Sender`] that sends values to be aggregated into the
@@ -9,8 +9,6 @@
 //! - After all participating threads other than the thread responsible for collection/aggregation have
 //! stopped sending values, a call to [`Control::drain_tls`] followed by a call to one of the accumulated
 //! value retrieval functions will result in the final aggregated value.
-//!
-//! See also [Core Concepts](super#core-concepts).
 //!
 //! ## Usage pattern
 //!
@@ -135,17 +133,17 @@ enum ReceiveMode {
     Background,
 }
 
-/// Indicates attempt to have multiple concurrent background receiving threads.
+/// Indicates the illegal attempt to spawn multiple concurrent background receiving threads.
 #[derive(Debug)]
-pub struct MultipleThreadError;
+pub struct MultipleReceiverThreadsError;
 
-impl Display for MultipleThreadError {
+impl Display for MultipleReceiverThreadsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{MultipleThreadError:?}: Illegal call to start_receiving_tls as active background thread already exists.")
+        write!(f, "{MultipleReceiverThreadsError:?}: Illegal call to start_receiving_tls as background receiver thread already exists.")
     }
 }
 
-impl Error for MultipleThreadError {}
+impl Error for MultipleReceiverThreadsError {}
 
 /// State of [`Control`].
 #[derive(Debug)]
@@ -193,7 +191,7 @@ impl<T, U> ChanneledState<T, U> {
     }
 }
 
-/// Guard object of a [`Control`]'s `acc` field.
+/// Guard object of a [`Control`]'s `acc` field. A lock is held during the guard's lifetime.
 #[derive(Debug)]
 pub struct AccGuard<'a, T, U>(MutexGuard<'a, ChanneledState<T, U>>);
 
@@ -206,7 +204,9 @@ impl<'a, T, U> Deref for AccGuard<'a, T, U> {
 }
 
 /// Controls the collection and accumulation of thread-local variables linked to this object.
-/// Such thread-locals must be of type [`Holder<T>`].
+///
+/// `T` is the type of the values sent on the channel to this object and `U` is the type of the accumulated value.
+/// The thread-locals must be of type [`Holder<T>`].
 pub struct Control<T, U> {
     /// Keeps track of registered threads and accumulated value.
     state: Arc<Mutex<ChanneledState<T, U>>>,
@@ -266,9 +266,9 @@ impl<T, U> Control<T, U> {
         replace(acc, replacement)
     }
 
-    /// Spawns a background thread to receive thread-local values if there is no such active thread,
-    /// panics otherwise.
-    pub fn start_receiving_tls(&self) -> Result<(), MultipleThreadError>
+    /// Spawns a background thread to receive thread-local values and aggregate them with this object's
+    /// accumulated value. Returns an error if there is already an active background receiver thread.
+    pub fn start_receiving_tls(&self) -> Result<(), MultipleReceiverThreadsError>
     where
         T: 'static + Send,
         U: 'static + Send,
@@ -276,7 +276,7 @@ impl<T, U> Control<T, U> {
         // Ensure a single instance of the background thread can be active.
         let mut state = self.lock();
         if state.bkgd_recv_exists {
-            return Err(MultipleThreadError);
+            return Err(MultipleReceiverThreadsError);
         }
         state.bkgd_recv_exists = true;
         drop(state);
@@ -319,6 +319,8 @@ struct HolderInner<T> {
 
 /// Holds a thread-local [`Sender`] and a smart pointer to a [`Control`], enabling the linkage of the thread-local
 /// with the control object.
+///
+/// `T` is the type of data sent on the channel.
 pub struct Holder<T>(RefCell<Option<HolderInner<T>>>)
 where
     T: 'static;
@@ -358,7 +360,7 @@ pub trait HolderLocalKey<T> {
     /// Ensures the [`Holder`] is initialized, both the [`Sender`] and the `control` smart pointer.
     fn ensure_initialized<U>(&'static self, control: &Control<T, U>);
 
-    /// Send data to be aggregated in the `control` object.
+    /// Send data to be aggregated by the `control` object.
     fn send_data(&'static self, data: T);
 }
 

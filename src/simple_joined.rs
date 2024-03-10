@@ -1,5 +1,5 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads. It is a simplified version of the [`crate::joined`] module which does not rely on
+//! across threads (see package [overfiew and core concepts](super)). It is a simplified version of the [`crate::joined`] module which does not rely on
 //! unsafe code. The following constraints apply ...
 //! - The designated thread-local variable should NOT be used in the thread responsible for
 //! collection/aggregation. If this condition is violated, the thread-local value on that thread will NOT
@@ -12,8 +12,6 @@
 //! - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
 //! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
 //! implicit join of a scoped thread.
-//!
-//! See also [Core Concepts](super#core-concepts).
 //!
 //! ## Usage pattern
 //!
@@ -136,9 +134,15 @@ impl<T, U> CtrlStateParam for P<T, U> {
 }
 
 /// Specialization of [`ControlG`] for this module.
+/// Controls the collection and accumulation of thread-local values linked to this object.
+///
+/// `T` is the type of the thread-local values and `U` is the type of the accumulated value.
+/// The data values are held in thread-locals of type [`Holder<T, U>`].
 pub type Control<T, U> = ControlG<P<T, U>>;
 
 /// Specialization of [`HolderG`] for this module.
+/// Holds thread-local data of type `T` and a smart pointer to a [`Control<T, U>`], enabling the linkage of
+/// the held data with the control object.
 pub type Holder<T, U> = HolderG<P<T, U>>;
 
 //=================

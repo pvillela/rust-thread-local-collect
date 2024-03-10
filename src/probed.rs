@@ -1,5 +1,5 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads. The following features and constraints apply ...
+//! across threads (see package [overfiew and core concepts](super)). The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
@@ -10,8 +10,6 @@
 //! - After all participating threads other than the thread responsible for collection/aggregation have
 //! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection,
 //! a call to one of the collection/aggregation functions will result in the final aggregated value.
-//!
-//! See also [Core Concepts](super#core-concepts).
 //!
 //! ## Usage pattern
 //!
@@ -149,7 +147,9 @@ impl<T, U> GDataParam for P<T, U> {
 
 /// Specialization of [`ControlG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
-/// Such values, of type `T`, must be held in thread-locals of type [`Holder<T, U>`].
+///
+/// `T` is the type of the thread-local values and `U` is the type of the accumulated value.
+/// The data values are held in thread-locals of type [`Holder<T, U>`].
 pub type Control<T, U> = ControlG<TmapD<P<T, U>>>;
 
 impl<T, U> Control<T, U>
@@ -175,7 +175,8 @@ where
     }
 
     /// Collects the values of any remaining linked thread-local-variables, without changing those values,
-    /// and aggregates those values with this object's accumulator.
+    /// aggregates those values with a clone of this object's accumulator, and returns the aggregate
+    /// value. This object's accumulator remains unchanged.
     pub fn probe_tls(&self) -> U
     where
         T: Clone,
@@ -197,8 +198,8 @@ where
 }
 
 /// Specialization of [`HolderG`] for this module.
-/// Holds thread-local data and a smart pointer to a [`Control`], enabling the linkage of the held data
-/// with the control object.
+/// Holds thread-local data of type `T` and a smart pointer to a [`Control<T, U>`], enabling the linkage of
+/// the held data with the control object.
 pub type Holder<T, U> = HolderG<TmapD<P<T, U>>>;
 
 //=================

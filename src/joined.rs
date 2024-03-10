@@ -1,5 +1,5 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads. The following features and constraints apply ...
+//! across threads (see package [overfiew and core concepts](super)). The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
@@ -7,8 +7,9 @@
 //! - The [`Control`] object's collection/aggregation function is UNSAFE unless executed after all participating
 //! threads, other than the thread responsible for collection/aggregation, have
 //! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection.
-//!
-//! See also [Core Concepts](super#core-concepts).
+//! - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
+//! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
+//! implicit join of a scoped thread.
 //!
 //! ## Usage pattern
 //!
@@ -167,7 +168,9 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
 
 /// Specialization of [`ControlG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
-/// Such values, of type `T`, must be held in thread-locals of type [`Holder<T, U>`].
+///
+/// `T` is the type of the thread-local values and `U` is the type of the accumulated value.
+/// The data values are held in thread-locals of type [`Holder<T, U>`].
 pub type Control<T, U> = ControlG<P<T, U>>;
 
 impl<T, U> Control<T, U>
@@ -214,8 +217,8 @@ where
 }
 
 /// Specialization of [`HolderG`] for this module.
-/// Holds thread-local data and a smart pointer to a [`Control`], enabling the linkage of the held data
-/// with the control object.
+/// Holds thread-local data of type `T` and a smart pointer to a [`Control<T, U>`], enabling the linkage of
+/// the held data with the control object.
 pub type Holder<T, U> = HolderG<P<T, U>>;
 
 //=================

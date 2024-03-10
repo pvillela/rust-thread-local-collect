@@ -169,7 +169,7 @@ where
     }
 }
 
-/// Guard that dereferences to [`CoreParam::Acc`].
+/// Guard that dereferences to [`CoreParam::Acc`]. A lock is held during the guard's lifetime.
 pub struct AccGuardG<'a, P>
 where
     P: CoreParam + CtrlStateParam,
@@ -199,7 +199,7 @@ where
 }
 
 /// Controls the collection and accumulation of thread-local values linked to this object.
-/// Such values, of type [`CoreParam::Dat`], must be held in thread-locals of type [`HolderG`]`<P>`.
+/// Such values, of type [`CoreParam::Dat`], must be held in thread-locals of type [`HolderG<P>`].
 pub struct ControlG<P>
 where
     P: CoreParam + CtrlStateParam,
@@ -523,11 +523,11 @@ where
 //=================
 // Control sub-state struct with a thread map.
 
-#[doc(hidden)]
-/// Type used to hold the thread map used by the [`ControlG`] specializations for module [`crate::probed`].
-/// Used also for module [`crate::joined_old`] which shows a previous more complex implementation of module
-/// [`crate::joined`].
-/// Also used to partially discriminate common [`ControlG`] functionality used by those modules.
+/// Type used by the specialization of [`ControlG`] for module [`crate::probed`].
+//  Holds the thread map used by the [`ControlG`] specializations for module [`crate::probed`].
+//  Used also for module [`crate::joined_old`] which shows a previous more complex implementation of module
+//  [`crate::joined`].
+//  Also used to partially discriminate common [`ControlG`] functionality used by those modules.
 #[derive(Debug)]
 pub struct TmapD<P>
 where
