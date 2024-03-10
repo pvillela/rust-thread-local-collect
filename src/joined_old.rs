@@ -18,6 +18,7 @@ use std::{cell::RefCell, marker::PhantomData, ops::DerefMut, thread, thread::Loc
 //=================
 // Core implementation based on common module
 
+#[doc(hidden)] // not needed here
 /// Parameter bundle that enables specialization of the common generic structs for this module.
 #[derive(Debug)]
 pub struct P<T, U> {
@@ -58,6 +59,7 @@ unsafe fn tl_from_addr<H>(addr: usize) -> &'static LocalKey<H> {
 /// The data values are held in thread-locals of type [`Holder<T, U>`].
 pub type Control<T, U> = ControlG<TmapD<P<T, U>>>;
 
+#[doc(hidden)] // needed here in addition to module overall
 impl<T, U> Control<T, U>
 where
     T: 'static,
@@ -111,6 +113,7 @@ pub type Holder<T, U> = HolderG<TmapD<P<T, U>>>;
 //=================
 // Implementation of HolderLocalKey.
 
+#[doc(hidden)] // needed here in addition to module overall
 impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
     /// Establishes link with control.
     fn init_control(&'static self, control: &Control<T, U>) {
