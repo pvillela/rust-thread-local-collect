@@ -49,7 +49,7 @@
 //!
 //!     thread::scope(|s| {
 //!         let h = s.spawn(|| {
-//!             for _i in 0..10 {
+//!             for _ in 0..10 {
 //!                 send_tl_data(10, &control);
 //!                 thread::sleep(Duration::from_millis(10));
 //!             }
