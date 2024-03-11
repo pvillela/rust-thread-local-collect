@@ -1,3 +1,5 @@
+#![cfg(feature = "old")]
+
 //! This is an older version of [`crate::joined`] that unnecessarily registers all thread-local variables
 //! on a map in the control state.
 //!
