@@ -261,15 +261,18 @@ mod tests {
         MY_TL.send_data((k, v)).unwrap();
     }
 
+    const NTHREADS: usize = 5;
+
     #[test]
-    fn explicit_joins_no_take_tls() {
-        // These are directly defined as references to prevent the move closure below from moving
-        // `control` and `spawned_tids`values. The closure has to be `move` because it needs to own `i`.
+    fn test() {
         let mut control = Control::new(|| HashMap::new(), op, op_r);
-        let spawned_tids = &RwLock::new(vec![thread::current().id(), thread::current().id()]);
+
+        // This is directly defined as a reference to prevent the move closure below from moving the
+        // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
+        let spawned_tids = &RwLock::new(vec![thread::current().id(); NTHREADS]);
 
         thread::scope(|s| {
-            let hs = (0..2)
+            let hs = (0..NTHREADS)
                 .map(|i| {
                     let control = control.clone();
                     s.spawn({
@@ -281,7 +284,6 @@ mod tests {
                             drop(lock);
 
                             send_tl_data(1, Foo("a".to_owned() + &si), &control);
-
                             send_tl_data(2, Foo("b".to_owned() + &si), &control);
                         }
                     })
@@ -301,12 +303,17 @@ mod tests {
 
         {
             let spawned_tids = spawned_tids.try_read().unwrap();
-            let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
-            let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
-            let map = HashMap::from([
-                (spawned_tids[0].clone(), map_0),
-                (spawned_tids[1].clone(), map_1),
-            ]);
+            let maps = (0..NTHREADS)
+                .map(|i| {
+                    let map_i = HashMap::from([
+                        (1, Foo("a".to_owned() + &i.to_string())),
+                        (2, Foo("b".to_owned() + &i.to_string())),
+                    ]);
+                    let tid_i = spawned_tids[i].clone();
+                    (tid_i, map_i)
+                })
+                .collect::<Vec<_>>();
+            let map = maps.into_iter().collect::<HashMap<_, _>>();
 
             {
                 let acc = control.drain_tls().unwrap();
