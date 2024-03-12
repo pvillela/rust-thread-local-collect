@@ -221,12 +221,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
+    use crate::test_support::assert_eq_and_println;
     use std::{
         collections::HashMap,
         fmt::Debug,
         sync::RwLock,
         thread::{self, ThreadId},
-        time::Duration,
     };
 
     #[derive(Debug, Clone, PartialEq)]
@@ -301,12 +301,6 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
 
-            {
-                thread::sleep(Duration::from_millis(50));
-                let spawned_tids = spawned_tids.try_read().unwrap();
-                println!("spawned_tid={:?}", spawned_tids);
-            }
-
             hs.into_iter().for_each(|h| h.join().unwrap());
 
             println!("after hs join: {:?}", control);
@@ -328,7 +322,7 @@ mod tests {
 
             {
                 let acc = control.drain_tls().unwrap();
-                assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
+                assert_eq_and_println(acc, map, "Accumulator check: acc={acc:?}, map={map:?}");
             }
         }
     }
