@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used, clippy::expect_used)]
+
 //! This library supports the ***collection*** and ***aggregation*** of the values of a designated thread-local variable across threads.
 //!
 //! An aggregation operation is applied to the values collected from the the thread-local variables and the resulting accumulated value is made available to the library's caller.
@@ -27,6 +29,8 @@ pub mod simple_joined;
 pub mod test_support;
 
 #[doc(hidden)]
+#[cfg(feature = "old")]
 pub mod joined_old;
 
+#[cfg(feature = "tlcr")]
 pub mod tlcr;
