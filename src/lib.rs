@@ -4,7 +4,7 @@
 //!
 //! An aggregation operation is applied to the values collected from the the thread-local variables and the resulting accumulated value is made available to the library's caller.
 //!
-//! This library contains multiple modules ([`joined`], [`simple_joined`], [`probed`], and [`channeled`]), with varying features and constraints, that support thread-local variable *collection* and *aggregation*.
+//! This library contains multiple modules ([`joined`], [`simple_joined`], [`probed`], [`channeled`], and [`tlcr`]), with varying features and constraints, that support thread-local variable *collection* and *aggregation*.
 //!
 //! ## Core concepts
 //!
@@ -19,7 +19,7 @@
 //!
 //! ## Usage examples
 //!
-//! See the different modules ([`joined`], [`simple_joined`], [`probed`], and [`channeled`]) for module-specific usage examples.
+//! See the different modules for usage examples.
 
 pub mod channeled;
 pub mod common;

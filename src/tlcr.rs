@@ -51,16 +51,24 @@ impl Error for UninitializedHolderError {}
 ///
 /// `T` is the type of the values *sent* to this object and `U` is the type of the accumulated value.
 /// The thread-locals must be of type [`Holder<T>`].
+///
+/// This type holds the following:
+/// - A state object based on [`ThreadLocal`].
+/// - A nullary closure that produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
+/// - An operation that combines data sent from thread-locals with accumulated value.
+/// - A binary operation that reduces two accumulated values into one.
 pub struct Control<T, U>
 where
     U: Send,
 {
     /// Keeps track of registered threads and accumulated value.
     state: Arc<ThreadLocal<RefCell<U>>>,
+    /// Produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
     acc_zero: Arc<dyn Fn() -> U + Send + Sync>,
-    /// Binary operation that combines data from thread-locals with accumulated value.
+    /// Operation that combines data sent from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>,
+    /// Binary operation that reduces two accumulated values into one.
     op_r: Arc<dyn Fn(U, U) -> U + Send + Sync>,
 }
 
@@ -92,6 +100,10 @@ where
     U: Send,
 {
     /// Instantiates a [`Control`] object.
+    ///
+    /// - `acc_zero` - produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
+    /// - `op` - operation that combines data sent from thread-locals with accumulated value.
+    /// - `op_r` - binary operation that reduces two accumulated values into one.
     pub fn new(
         acc_zero: impl Fn() -> U + 'static + Send + Sync,
         op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync,
@@ -135,14 +147,13 @@ where
     control: Control<T, U>,
 }
 
-/// Holds a thread-local [`Sender`] and a smart pointer to a [`Control`], enabling the linkage of the thread-local
-/// with the control object.
+/// Holds a thread-local [`Sender`] and a clone of the control object (see [`Control`]), enabling the linkage
+/// of the thread-local with the control object.
 ///
-/// `T` is the type of data sent on the channel.
+/// `T` is the type of data sent for aggregation and `U` is the aggregate value type.
 pub struct Holder<T, U>(RefCell<Option<HolderInner<T, U>>>)
 where
     U: Send;
-// T: 'static;
 
 impl<T, U> Holder<T, U>
 where
@@ -164,7 +175,7 @@ where
         }
     }
 
-    /// Send data to be aggregated in the `control` object.
+    /// Sends data to be aggregated in the `control` object.
     fn send_data(&self, data: T) -> Result<(), UninitializedHolderError> {
         let inner_opt = self.0.borrow();
         match inner_opt.deref() {
@@ -185,7 +196,7 @@ pub trait HolderLocalKey<T, U>
 where
     U: Send,
 {
-    /// Ensures the [`Holder`] is initialized, both the [`Sender`] and the `control` smart pointer.
+    /// Ensures the [`Holder`] is initialized.
     fn ensure_initialized(&'static self, control: &Control<T, U>);
 
     /// Send data to be aggregated by the `control` object.
