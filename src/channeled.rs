@@ -149,17 +149,14 @@ impl Error for MultipleReceiverThreadsError {}
 #[derive(Debug)]
 struct ChanneledState<T, U> {
     acc: U,
-    sender: Sender<ChannelItem<T>>,
     receiver: Receiver<ChannelItem<T>>,
     bkgd_recv_exists: bool,
 }
 
 impl<T, U> ChanneledState<T, U> {
-    fn new(acc: U) -> Self {
-        let (sender, receiver) = channel();
+    fn new(acc: U, receiver: Receiver<ChannelItem<T>>) -> Self {
         Self {
             acc,
-            sender,
             receiver,
             bkgd_recv_exists: false,
         }
@@ -210,6 +207,8 @@ impl<'a, T, U> Deref for AccGuard<'a, T, U> {
 pub struct Control<T, U> {
     /// Keeps track of registered threads and accumulated value.
     state: Arc<Mutex<ChanneledState<T, U>>>,
+    /// Sender on channel that is received by control.
+    sender: Sender<ChannelItem<T>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>,
@@ -219,6 +218,7 @@ impl<T, U> Clone for Control<T, U> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
+            sender: self.sender.clone(),
             op: self.op.clone(),
         }
     }
@@ -227,8 +227,10 @@ impl<T, U> Clone for Control<T, U> {
 impl<T, U> Control<T, U> {
     /// Instantiates a [`Control`] object.
     pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
+        let (sender, receiver) = channel();
         Control {
-            state: Arc::new(Mutex::new(ChanneledState::new(acc_base))),
+            state: Arc::new(Mutex::new(ChanneledState::new(acc_base, receiver))),
+            sender,
             op: Arc::new(op),
         }
     }
@@ -300,7 +302,7 @@ impl<T, U> Control<T, U> {
 
     /// Stop background thread receiving thread-local values.
     pub fn stop_receiving_tls(&self) {
-        self.lock().sender.send(ChannelItem::StopReceiving).unwrap();
+        self.sender.send(ChannelItem::StopReceiving).unwrap();
     }
 
     /// Receive all pending messages in channel, stopping the background thread if it exists.
@@ -335,8 +337,7 @@ impl<T> Holder<T> {
     fn ensure_initialized<U>(&self, control: &Control<T, U>) {
         let mut inner = self.0.borrow_mut();
         if inner.is_none() {
-            let state = control.lock();
-            let sender = state.sender.clone();
+            let sender = control.sender.clone();
             *inner = Some(HolderInner {
                 tid: thread::current().id(),
                 sender,
