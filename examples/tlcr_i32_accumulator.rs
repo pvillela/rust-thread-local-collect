@@ -26,7 +26,7 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
 
 // Create a function to send the thread-local value:
 fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
-    MY_TL.ensure_initialized(control);
+    MY_TL.ensure_linked(control);
     MY_TL.send_data(value).unwrap();
 }
 

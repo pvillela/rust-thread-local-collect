@@ -40,7 +40,7 @@
 //!
 //! // Create a function to update the thread-local value:
 //! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     MY_TL.ensure_initialized(control);
+//!     MY_TL.ensure_linked(control);
 //!     MY_TL.with_data_mut(|data| {
 //!         *data = value;
 //!     });
@@ -94,9 +94,9 @@ use crate::common::{
 use std::{
     cell::RefCell,
     marker::PhantomData,
+    mem::replace,
     ops::DerefMut,
-    thread,
-    thread::{LocalKey, ThreadId},
+    thread::{self, LocalKey, ThreadId},
 };
 
 //=================
@@ -127,7 +127,7 @@ impl<T, U> SubStateParam for P<T, U> {
 impl<T, U> UseCtrlStateGDefault for P<T, U> {}
 
 impl<T, U> GDataParam for P<T, U> {
-    type GData = RefCell<Option<T>>;
+    type GData = RefCell<T>;
 }
 
 impl<T, U> New<P<T, U>> for P<T, U> {
@@ -205,12 +205,10 @@ where
             // calls this method. But that drop method can't be executed concurrently with this one.
             let tl: &LocalKey<Holder<T, U>> = tl_from_addr(addr);
             tl.with(|h| {
-                let data = h.data.borrow_mut().take();
-                log::trace!("`take_tls`: executing data take");
-                if let Some(data) = data {
-                    log::trace!("`take_tls`: executing `op`");
-                    (self.op)(data, &mut state.acc, &thread::current().id());
-                }
+                let mut data_guard = h.data_guard();
+                let data = replace(data_guard.deref_mut(), (h.make_data)());
+                log::trace!("`take_tls`: executing `op`");
+                (self.op)(data, &mut state.acc, &thread::current().id());
             });
         }
     }
@@ -225,19 +223,9 @@ pub type Holder<T, U> = HolderG<P<T, U>>;
 // Implementation of HolderLocalKey.
 
 impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
-    /// Establishes link with control.
-    fn init_control(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.init_control_node(&control, addr_of_tl(self)))
-    }
-
-    /// Initializes [`Holder`] data.
-    fn init_data(&'static self) {
-        self.with(|h| h.init_data())
-    }
-
     /// Ensures [`Holder`] is properly initialized by initializing it if not.
-    fn ensure_initialized(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.ensure_initialized_node(&control, addr_of_tl(self)))
+    fn ensure_linked(&'static self, control: &Control<T, U>) {
+        self.with(|h| h.ensure_linked_node(&control, addr_of_tl(self)))
     }
 
     /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
@@ -276,7 +264,7 @@ mod tests {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-        MY_FOO_MAP.ensure_initialized(control);
+        MY_FOO_MAP.ensure_linked(control);
         MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
     }
 

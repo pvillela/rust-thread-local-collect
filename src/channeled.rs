@@ -40,7 +40,7 @@
 //!
 //! // Create a function to send the thread-local value:
 //! fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
-//!     MY_TL.ensure_initialized(control);
+//!     MY_TL.ensure_linked(control);
 //!     MY_TL.send_data(value);
 //! }
 //!
@@ -333,8 +333,8 @@ impl<T> Holder<T> {
         Self(RefCell::new(None))
     }
 
-    /// Ensures `self` is initialized, both the [`Sender`] and the `control` smart pointer.
-    fn ensure_initialized<U>(&self, control: &Control<T, U>) {
+    /// Ensures `self` is linked to control.
+    fn ensure_linked<U>(&self, control: &Control<T, U>) {
         let mut inner = self.0.borrow_mut();
         if inner.is_none() {
             let sender = control.sender.clone();
@@ -359,16 +359,16 @@ impl<T> Holder<T> {
 /// Provides access to the thread-local variable.
 pub trait HolderLocalKey<T> {
     /// Ensures the [`Holder`] is initialized, both the [`Sender`] and the `control` smart pointer.
-    fn ensure_initialized<U>(&'static self, control: &Control<T, U>);
+    fn ensure_linked<U>(&'static self, control: &Control<T, U>);
 
     /// Send data to be aggregated by the `control` object.
     fn send_data(&'static self, data: T);
 }
 
 impl<T> HolderLocalKey<T> for LocalKey<Holder<T>> {
-    fn ensure_initialized<U>(&'static self, control: &Control<T, U>) {
+    fn ensure_linked<U>(&'static self, control: &Control<T, U>) {
         self.with(|h| {
-            h.ensure_initialized(&control);
+            h.ensure_linked(&control);
         })
     }
 
@@ -414,7 +414,7 @@ mod tests {
     }
 
     fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        MY_TL.ensure_initialized(control);
+        MY_TL.ensure_linked(control);
         MY_TL.send_data((k, v));
     }
 

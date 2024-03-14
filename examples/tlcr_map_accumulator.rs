@@ -48,7 +48,7 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
 }
 
 fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-    MY_TL.ensure_initialized(control);
+    MY_TL.ensure_linked(control);
     MY_TL.send_data((k, v)).unwrap();
 }
 

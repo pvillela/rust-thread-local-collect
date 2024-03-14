@@ -42,7 +42,7 @@
 //!
 //! // Create a function to update the thread-local value:
 //! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     MY_TL.ensure_initialized(control);
+//!     MY_TL.ensure_linked(control);
 //!     MY_TL.with_data_mut(|data| {
 //!         *data = value;
 //!     });
@@ -113,7 +113,7 @@ impl<T, U> SubStateParam for P<T, U> {
 impl<T, U> UseCtrlStateGDefault for P<T, U> {}
 
 impl<T, U> GDataParam for P<T, U> {
-    type GData = RefCell<Option<T>>;
+    type GData = RefCell<T>;
 }
 
 impl<T, U> New<P<T, U>> for P<T, U> {
@@ -149,19 +149,9 @@ pub type Holder<T, U> = HolderG<P<T, U>>;
 // Implementation of HolderLocalKey.
 
 impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
-    /// Establishes link with control.
-    fn init_control(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.init_control(&control))
-    }
-
-    /// Initializes [`Holder`] data.
-    fn init_data(&'static self) {
-        self.with(|h| h.init_data())
-    }
-
     /// Ensures [`Holder`] is properly initialized by initializing it if not.
-    fn ensure_initialized(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.ensure_initialized(&control))
+    fn ensure_linked(&'static self, control: &Control<T, U>) {
+        self.with(|h| h.ensure_linked(&control))
     }
 
     /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
@@ -200,7 +190,7 @@ mod tests {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-        MY_FOO_MAP.ensure_initialized(control);
+        MY_FOO_MAP.ensure_linked(control);
         MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
     }
 

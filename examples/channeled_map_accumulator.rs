@@ -37,7 +37,7 @@ fn op(data: Data, acc: &mut AccValue, tid: &ThreadId) {
 }
 
 fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-    MY_TL.ensure_initialized(control);
+    MY_TL.ensure_linked(control);
     MY_TL.send_data((k, v));
 }
 

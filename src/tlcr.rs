@@ -40,7 +40,7 @@
 //!
 //! // Create a function to send the thread-local value:
 //! fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
-//!     MY_TL.ensure_initialized(control);
+//!     MY_TL.ensure_linked(control);
 //!     MY_TL.send_data(value).unwrap();
 //! }
 //!
@@ -221,7 +221,7 @@ where
     }
 
     /// Ensures `self` is initialized.
-    fn ensure_initialized(&self, control: &Control<T, U>) {
+    fn ensure_linked(&self, control: &Control<T, U>) {
         let mut inner = self.0.borrow_mut();
         if inner.is_none() {
             *inner = Some(HolderInner {
@@ -253,7 +253,7 @@ where
     U: Send,
 {
     /// Ensures the [`Holder`] is initialized.
-    fn ensure_initialized(&'static self, control: &Control<T, U>);
+    fn ensure_linked(&'static self, control: &Control<T, U>);
 
     /// Send data to be aggregated by the `control` object.
     fn send_data(&'static self, data: T) -> Result<(), UninitializedHolderError>;
@@ -263,9 +263,9 @@ impl<T, U> HolderLocalKey<T, U> for LocalKey<Holder<T, U>>
 where
     U: Send,
 {
-    fn ensure_initialized(&'static self, control: &Control<T, U>) {
+    fn ensure_linked(&'static self, control: &Control<T, U>) {
         self.with(|h| {
-            h.ensure_initialized(&control);
+            h.ensure_linked(&control);
         })
     }
 
@@ -324,7 +324,7 @@ mod tests {
     }
 
     fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        MY_TL.ensure_initialized(control);
+        MY_TL.ensure_linked(control);
         MY_TL.send_data((k, v)).unwrap();
     }
 

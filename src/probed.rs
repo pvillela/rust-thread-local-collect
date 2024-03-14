@@ -41,7 +41,7 @@
 //!
 //! // Create a function to update the thread-local value:
 //! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     MY_TL.ensure_initialized(control);
+//!     MY_TL.ensure_linked(control);
 //!     MY_TL.with_data_mut(|data| {
 //!         *data = value;
 //!     });
@@ -111,6 +111,7 @@ use crate::common::{
 };
 use std::{
     marker::PhantomData,
+    mem::replace,
     ops::DerefMut,
     sync::{Arc, Mutex},
     thread::LocalKey,
@@ -131,8 +132,14 @@ impl<T, U> CoreParam for P<T, U> {
     type Acc = U;
 }
 
+#[doc(hidden)]
+pub struct Node<T> {
+    data: Arc<Mutex<T>>,
+    make_data: fn() -> T,
+}
+
 impl<T, U> NodeParam for P<T, U> {
-    type Node = Arc<Mutex<Option<T>>>;
+    type Node = Node<T>;
 }
 
 impl<T, U> SubStateParam for P<T, U> {
@@ -142,7 +149,7 @@ impl<T, U> SubStateParam for P<T, U> {
 impl<T, U> UseCtrlStateGDefault for P<T, U> {}
 
 impl<T, U> GDataParam for P<T, U> {
-    type GData = Arc<Mutex<Option<T>>>;
+    type GData = Arc<Mutex<T>>;
 }
 
 /// Specialization of [`ControlG`] for this module.
@@ -165,12 +172,11 @@ where
         let state = guard.deref_mut();
         for (tid, node) in state.s.tmap.iter() {
             log::trace!("executing `take_tls` for key={:?}", tid);
-            let data = node.lock().unwrap().take();
+            let mut data_guard = node.data.lock().unwrap();
+            let data = replace(data_guard.deref_mut(), (node.make_data)());
             log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
-            if let Some(data) = data {
-                log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
-                (self.op)(data, &mut state.acc, tid);
-            }
+            log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
+            (self.op)(data, &mut state.acc, tid);
         }
     }
 
@@ -186,12 +192,10 @@ where
         let mut acc_clone = state.acc.clone();
         for (tid, node) in state.s.tmap.iter() {
             log::trace!("executing `probe_tls` for key={:?}", tid);
-            let data = node.lock().unwrap().clone();
+            let data = node.data.lock().unwrap().clone();
             log::trace!("executed `clone` -- `probe_tls` for key={:?}", tid);
-            if let Some(data) = data {
-                log::trace!("executing `op` -- `probe_tls` for key={:?}", tid);
-                (self.op)(data, &mut acc_clone, tid);
-            }
+            log::trace!("executing `op` -- `probe_tls` for key={:?}", tid);
+            (self.op)(data, &mut acc_clone, tid);
         }
         acc_clone
     }
@@ -206,24 +210,14 @@ pub type Holder<T, U> = HolderG<TmapD<P<T, U>>>;
 // Implementation of HolderLocalKey.
 
 impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
-    /// Establishes link with control.
-    fn init_control(&'static self, control: &Control<T, U>) {
-        self.with(|h| {
-            let node = h.data.clone();
-            h.init_control_node(&control, node);
-        })
-    }
-
-    /// Initializes [`Holder`] data.
-    fn init_data(&'static self) {
-        self.with(|h| h.init_data())
-    }
-
     /// Ensures [`Holder`] is properly initialized by initializing it if not.
-    fn ensure_initialized(&'static self, control: &Control<T, U>) {
+    fn ensure_linked(&'static self, control: &Control<T, U>) {
         self.with(|h| {
-            let node = h.data.clone();
-            h.ensure_initialized_node(&control, node);
+            let node = Node {
+                data: h.data.clone(),
+                make_data: h.make_data,
+            };
+            h.ensure_linked_node(&control, node);
         })
     }
 
@@ -262,7 +256,7 @@ mod tests {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        MY_FOO_MAP.ensure_initialized(control);
+        MY_FOO_MAP.ensure_linked(control);
         MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
     }
 
