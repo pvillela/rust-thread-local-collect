@@ -182,6 +182,7 @@ where
     /// collection/aggregation, if that variable is used, and aggregates that value
     /// with this object's accumulator, replacing that value with [`None`].
     ///
+    /// # Safety
     /// This function can be called safely provided that:
     /// - All threads other than the one where this method is called have terminaged and been EXPLICITLY joined,
     /// directly or indirectly.
@@ -225,7 +226,7 @@ pub type Holder<T, U> = HolderG<P<T, U>>;
 impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
     /// Ensures [`Holder`] is properly initialized by initializing it if not.
     fn ensure_linked(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.ensure_linked_node(&control, addr_of_tl(self)))
+        self.with(|h| h.ensure_linked_node(control, addr_of_tl(self)))
     }
 
     /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].

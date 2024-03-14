@@ -217,7 +217,7 @@ impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
                 data: h.data.clone(),
                 make_data: h.make_data,
             };
-            h.ensure_linked_node(&control, node);
+            h.ensure_linked_node(control, node);
         })
     }
 

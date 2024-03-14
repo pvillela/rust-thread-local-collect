@@ -151,7 +151,7 @@ pub type Holder<T, U> = HolderG<P<T, U>>;
 impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
     /// Ensures [`Holder`] is properly initialized by initializing it if not.
     fn ensure_linked(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.ensure_linked(&control))
+        self.with(|h| h.ensure_linked(control))
     }
 
     /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].

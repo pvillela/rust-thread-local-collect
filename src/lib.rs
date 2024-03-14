@@ -1,4 +1,5 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::type_complexity)]
 
 //! This library supports the ***collection*** and ***aggregation*** of the values of a designated thread-local variable across threads.
 //!

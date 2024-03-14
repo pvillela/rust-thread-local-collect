@@ -28,6 +28,7 @@ pub trait CoreParam {
 pub trait New<S> {
     type Arg;
 
+    #[allow(clippy::new_ret_no_self)]
     fn new(arg: Self::Arg) -> S;
 }
 
@@ -143,7 +144,7 @@ where
     P: CoreParam + SubStateParam + UseCtrlStateGDefault,
 {
     fn acc(&self) -> &P::Acc {
-        CtrlStateG::acc(&self)
+        CtrlStateG::acc(self)
     }
 
     fn acc_mut(&mut self) -> &mut P::Acc {
@@ -311,7 +312,7 @@ where
     where
         Self: 'a;
 
-    fn guard<'a>(&'a self) -> Self::Guard<'a>;
+    fn guard(&self) -> Self::Guard<'_>;
 }
 
 impl<T> New<Self> for RefCell<T> {
@@ -325,7 +326,7 @@ impl<T> New<Self> for RefCell<T> {
 impl<T: 'static> GuardedData<T> for RefCell<T> {
     type Guard<'a> = RefMut<'a, T>;
 
-    fn guard<'a>(&'a self) -> Self::Guard<'a> {
+    fn guard(&self) -> Self::Guard<'_> {
         self.borrow_mut()
     }
 }
@@ -341,7 +342,7 @@ impl<T> New<Self> for Arc<Mutex<T>> {
 impl<T: 'static> GuardedData<T> for Arc<Mutex<T>> {
     type Guard<'a> = MutexGuard<'a, T>;
 
-    fn guard<'a>(&'a self) -> Self::Guard<'a> {
+    fn guard(&self) -> Self::Guard<'_> {
         self.lock().unwrap()
     }
 }
@@ -401,7 +402,7 @@ where
     /// Used by [`Drop`] trait impl.
     fn drop_data(&self) {
         match self.control.borrow().deref() {
-            None => return,
+            None => (),
             Some(control) => {
                 let mut data_guard = self.data_guard();
                 let data = replace(data_guard.borrow_mut().deref_mut(), (self.make_data)());
@@ -562,7 +563,7 @@ where
     P: CoreParam + NodeParam,
 {
     fn acc(&self) -> &P::Acc {
-        CtrlStateG::acc(&self)
+        CtrlStateG::acc(self)
     }
 
     fn acc_mut(&mut self) -> &mut P::Acc {
@@ -586,6 +587,6 @@ where
     P: CoreParam + NodeParam,
 {
     fn register_node(&mut self, node: <P as NodeParam>::Node, tid: &ThreadId) {
-        self.s.tmap.insert(tid.clone(), node);
+        self.s.tmap.insert(*tid, node);
     }
 }

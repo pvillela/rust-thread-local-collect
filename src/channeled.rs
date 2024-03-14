@@ -236,7 +236,7 @@ impl<T, U> Control<T, U> {
     }
 
     /// Acquires a lock on [`Control`]'s internal Mutex.
-    fn lock<'a>(&'a self) -> MutexGuard<'a, ChanneledState<T, U>> {
+    fn lock(&self) -> MutexGuard<'_, ChanneledState<T, U>> {
         self.state.lock().unwrap()
     }
 
@@ -297,7 +297,7 @@ impl<T, U> Control<T, U> {
                 thread::yield_now(); // this is unnecessary if Mutex is fair
             }
         });
-        return Ok(());
+        Ok(())
     }
 
     /// Stop background thread receiving thread-local values.
@@ -329,6 +329,7 @@ where
 
 impl<T> Holder<T> {
     /// Instantiates a holder object.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(RefCell::new(None))
     }
@@ -368,7 +369,7 @@ pub trait HolderLocalKey<T> {
 impl<T> HolderLocalKey<T> for LocalKey<Holder<T>> {
     fn ensure_linked<U>(&'static self, control: &Control<T, U>) {
         self.with(|h| {
-            h.ensure_linked(&control);
+            h.ensure_linked(control);
         })
     }
 

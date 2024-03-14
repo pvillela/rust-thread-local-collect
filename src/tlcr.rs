@@ -216,6 +216,7 @@ where
     U: Send,
 {
     /// Instantiates a holder object.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(RefCell::new(None))
     }
@@ -265,7 +266,7 @@ where
 {
     fn ensure_linked(&'static self, control: &Control<T, U>) {
         self.with(|h| {
-            h.ensure_linked(&control);
+            h.ensure_linked(control);
         })
     }
 
