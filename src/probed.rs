@@ -105,11 +105,11 @@
 //!
 //! See another example at [`examples/probed_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/probed_map_accumulator.rs).
 
-pub use crate::common::{HolderLocalKey, HolderNotLinkedError};
+pub use crate::common::HolderLocalKey;
 
 use crate::common::{
-    ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD,
-    UseCtrlStateGDefault, POISONED_GUARDED_DATA_MUTEX,
+    ControlG, CoreParam, GDataParam, HolderG, HolderNotLinkedError, NodeParam, SubStateParam,
+    TmapD, UseCtrlStateGDefault, POISONED_GUARDED_DATA_MUTEX,
 };
 use std::{
     marker::PhantomData,

@@ -102,9 +102,7 @@
 //!
 //! See another example at [`examples/channeled_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/channeled_map_accumulator.rs).
 
-pub use crate::common::HolderNotLinkedError;
-
-use crate::common::POISONED_CONTROL_MUTEX;
+use crate::common::{HolderNotLinkedError, POISONED_CONTROL_MUTEX};
 use std::{
     cell::RefCell,
     mem::replace,
