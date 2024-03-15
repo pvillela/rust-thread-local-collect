@@ -18,7 +18,7 @@ thread_local! {
 }
 
 // Define your accumulation operation.
-fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
     *acc += data;
 }
 

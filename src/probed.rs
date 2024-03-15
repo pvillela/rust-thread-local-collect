@@ -35,7 +35,7 @@
 //! }
 //!
 //! // Define your accumulation operation.
-//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+//! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 //!     *acc += data;
 //! }
 //!
@@ -107,7 +107,8 @@
 
 pub use crate::common::HolderLocalKey;
 use crate::common::{
-    ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD, UseCtrlStateGDefault,
+    ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD,
+    UseCtrlStateGDefault, POISONED_GUARDED_DATA_MUTEX,
 };
 use std::{
     marker::PhantomData,
@@ -166,23 +167,29 @@ where
 {
     /// Takes the values of any remaining linked thread-local-variables and aggregates those values
     /// with this object's accumulator, replacing those values with [`None`].
+    ///
+    /// Panics if `self`'s mutex is poisoned.
+    /// Panics if [`Holder`] guarded data mutex is poisoned.
     pub fn take_tls(&self) {
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
         let state = guard.deref_mut();
         for (tid, node) in state.s.tmap.iter() {
             log::trace!("executing `take_tls` for key={:?}", tid);
-            let mut data_guard = node.data.lock().unwrap();
+            let mut data_guard = node.data.lock().expect(POISONED_GUARDED_DATA_MUTEX);
             let data = replace(data_guard.deref_mut(), (node.make_data)());
             log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
             log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
-            (self.op)(data, &mut state.acc, tid);
+            (self.op)(data, &mut state.acc, *tid);
         }
     }
 
     /// Collects the values of any remaining linked thread-local-variables, without changing those values,
     /// aggregates those values with a clone of this object's accumulator, and returns the aggregate
     /// value. This object's accumulator remains unchanged.
+    ///
+    /// Panics if `self`'s mutex is poisoned.
+    /// Panics if [`Holder`] guarded data mutex is poisoned.
     pub fn probe_tls(&self) -> U
     where
         T: Clone,
@@ -192,10 +199,10 @@ where
         let mut acc_clone = state.acc.clone();
         for (tid, node) in state.s.tmap.iter() {
             log::trace!("executing `probe_tls` for key={:?}", tid);
-            let data = node.data.lock().unwrap().clone();
+            let data = node.data.lock().expect(POISONED_GUARDED_DATA_MUTEX).clone();
             log::trace!("executed `clone` -- `probe_tls` for key={:?}", tid);
             log::trace!("executing `op` -- `probe_tls` for key={:?}", tid);
-            (self.op)(data, &mut acc_clone, tid);
+            (self.op)(data, &mut acc_clone, *tid);
         }
         acc_clone
     }
@@ -210,7 +217,7 @@ pub type Holder<T, U> = HolderG<TmapD<P<T, U>>>;
 // Implementation of HolderLocalKey.
 
 impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
-    /// Ensures [`Holder`] is properly initialized by initializing it if not.
+    /// Ensures [`Holder`] is linked with [`Control`].
     fn ensure_linked(&'static self, control: &Control<T, U>) {
         self.with(|h| {
             let node = Node {
@@ -221,18 +228,21 @@ impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
         })
     }
 
-    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
+    /// Invokes `f` on [`Holder`] data.
+    /// Panics if [`Holder`] guarded data mutex is poisoned.
     fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> V {
         self.with(|h| h.with_data(f))
     }
 
-    /// Invokes `f` mutably on [`Holder`] data. Panics if data is [`None`].
+    /// Invokes `f` mutably on [`Holder`] data.
+    /// Panics if [`Holder`] guarded data mutex is poisoned.
     fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V {
         self.with(|h| h.with_data_mut(f))
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
     use crate::test_support::{assert_eq_and_println, ThreadGater};
@@ -260,16 +270,16 @@ mod tests {
         MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
     }
 
-    fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: &ThreadId) {
+    fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
         println!(
             "`op` called from {:?} with data {:?}",
             thread::current().id(),
             data
         );
 
-        acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+        acc.entry(tid).or_default();
         for (k, v) in data {
-            acc.get_mut(tid).unwrap().insert(k, v.clone());
+            acc.get_mut(&tid).unwrap().insert(k, v.clone());
         }
     }
 
@@ -316,7 +326,7 @@ mod tests {
                     assert_tl(my_map, assert_tl_msg);
 
                     let mut exp = expected_acc_mutex.try_lock().unwrap();
-                    op(my_map.clone(), &mut exp, &spawned_tid);
+                    op(my_map.clone(), &mut exp, spawned_tid);
 
                     spawned_thread_gater.open(gate);
                 };

@@ -31,7 +31,7 @@ fn update_tl(value: Data, control: &Control<Data, AccValue>) {
     MY_TL.with_data_mut(|data| replace(data, value));
 }
 
-fn op(data: Data, acc: &mut AccValue, _tid: &ThreadId) {
+fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {
     *acc = data;
 }
 

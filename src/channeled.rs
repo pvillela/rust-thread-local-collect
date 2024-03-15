@@ -34,14 +34,14 @@
 //! }
 //!
 //! // Define your accumulation operation.
-//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+//! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 //!     *acc += data;
 //! }
 //!
 //! // Create a function to send the thread-local value:
 //! fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
 //!     MY_TL.ensure_linked(control);
-//!     MY_TL.send_data(value);
+//!     MY_TL.send_data(value).unwrap();
 //! }
 //!
 //! fn main() {
@@ -114,6 +114,16 @@ use std::{
     },
     thread::{self, LocalKey, ThreadId},
 };
+use thiserror::Error;
+
+// Error consts
+const POISONED_CONTROL_MUTEX: &str = "poisoned control mutex";
+const RECEIVER_DISCONNECTED: &str = "receiver disconnected";
+
+/// Attempt to access [`Holder`] before it has been initialized.
+#[derive(Error, Debug)]
+#[error("attempt to access uninitialized Holder")]
+pub struct UninitializedHolderError;
 
 /// Data structure transmitted on channel.
 enum ChannelItem<T> {
@@ -173,11 +183,11 @@ impl<T, U> ChanneledState<T, U> {
     fn receive_tls(
         &mut self,
         mode: ReceiveMode,
-        op: &(dyn Fn(T, &mut U, &ThreadId) + Send + Sync),
+        op: &(dyn Fn(T, &mut U, ThreadId) + Send + Sync),
     ) -> ReceiveStatus {
         while let Ok(payload) = self.receiver.try_recv() {
             match payload {
-                ChannelItem::Payload(tid, data) => op(data, &mut self.acc, &tid),
+                ChannelItem::Payload(tid, data) => op(data, &mut self.acc, tid),
                 ChannelItem::StopReceiving => match mode {
                     ReceiveMode::Background => return ReceiveStatus::Stopped,
                     ReceiveMode::Drain => continue,
@@ -211,7 +221,7 @@ pub struct Control<T, U> {
     sender: Sender<ChannelItem<T>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
-    op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>,
+    op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
 }
 
 impl<T, U> Clone for Control<T, U> {
@@ -226,7 +236,7 @@ impl<T, U> Clone for Control<T, U> {
 
 impl<T, U> Control<T, U> {
     /// Instantiates a [`Control`] object.
-    pub fn new(acc_base: U, op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync) -> Self {
+    pub fn new(acc_base: U, op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync) -> Self {
         let (sender, receiver) = channel();
         Control {
             state: Arc::new(Mutex::new(ChanneledState::new(acc_base, receiver))),
@@ -235,24 +245,28 @@ impl<T, U> Control<T, U> {
         }
     }
 
-    /// Acquires a lock on [`Control`]'s internal Mutex.
+    /// Acquires a lock on [`Control`]'s internal mutex.
+    /// Panics if `self`'s mutex is poisoned.
     fn lock(&self) -> MutexGuard<'_, ChanneledState<T, U>> {
-        self.state.lock().unwrap()
+        self.state.lock().expect(POISONED_CONTROL_MUTEX)
     }
 
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
+    /// Panics if `self`'s mutex is poisoned.
     pub fn acc(&self) -> AccGuard<'_, T, U> {
         AccGuard(self.lock())
     }
 
     /// Provides access to `self`'s accumulated value.
+    /// Panics if `self`'s mutex is poisoned.
     pub fn with_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
         let acc = self.acc();
         f(&acc)
     }
 
     /// Returns a clone of `self`'s accumulated value.
+    /// Panics if `self`'s mutex is poisoned.
     pub fn clone_acc(&self) -> U
     where
         U: Clone,
@@ -262,6 +276,7 @@ impl<T, U> Control<T, U> {
 
     /// Returns `self`'s accumulated value, using a value of the same type to replace
     /// the existing accumulated value.
+    /// Panics if `self`'s mutex is poisoned.
     pub fn take_acc(&self, replacement: U) -> U {
         let mut lock = self.lock();
         let acc = lock.acc_mut();
@@ -269,7 +284,8 @@ impl<T, U> Control<T, U> {
     }
 
     /// Spawns a background thread to receive thread-local values and aggregate them with this object's
-    /// accumulated value. Returns an error if there is already an active background receiver thread.
+    /// accumulated value.
+    /// Returns an error if there is already an active background receiver thread.
     pub fn start_receiving_tls(&self) -> Result<(), MultipleReceiverThreadsError>
     where
         T: 'static + Send,
@@ -302,7 +318,9 @@ impl<T, U> Control<T, U> {
 
     /// Stop background thread receiving thread-local values.
     pub fn stop_receiving_tls(&self) {
-        self.sender.send(ChannelItem::StopReceiving).unwrap();
+        self.sender
+            .send(ChannelItem::StopReceiving)
+            .expect(RECEIVER_DISCONNECTED);
     }
 
     /// Receive all pending messages in channel, stopping the background thread if it exists.
@@ -329,7 +347,6 @@ where
 
 impl<T> Holder<T> {
     /// Instantiates a holder object.
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(RefCell::new(None))
     }
@@ -346,14 +363,16 @@ impl<T> Holder<T> {
         }
     }
 
-    /// Send data to be aggregated in the `control` object.
-    fn send_data(&self, data: T) {
+    /// Send data to be aggregated in the `control` object. Returns an error if [`Holder`] is
+    /// not initialized.
+    fn send_data(&self, data: T) -> Result<(), UninitializedHolderError> {
         let inner_opt = self.0.borrow();
-        let inner = inner_opt.as_ref().unwrap();
+        let inner = inner_opt.as_ref().ok_or(UninitializedHolderError)?;
         inner
             .sender
             .send(ChannelItem::Payload(inner.tid, data))
-            .unwrap();
+            .expect(RECEIVER_DISCONNECTED);
+        Ok(())
     }
 }
 
@@ -362,8 +381,9 @@ pub trait HolderLocalKey<T> {
     /// Ensures the [`Holder`] is initialized, both the [`Sender`] and the `control` smart pointer.
     fn ensure_linked<U>(&'static self, control: &Control<T, U>);
 
-    /// Send data to be aggregated by the `control` object.
-    fn send_data(&'static self, data: T);
+    /// Send data to be aggregated by the `control` object. Returns an error if [`Holder`] is not
+    /// initialized
+    fn send_data(&'static self, data: T) -> Result<(), UninitializedHolderError>;
 }
 
 impl<T> HolderLocalKey<T> for LocalKey<Holder<T>> {
@@ -373,12 +393,13 @@ impl<T> HolderLocalKey<T> for LocalKey<Holder<T>> {
         })
     }
 
-    fn send_data(&'static self, data: T) {
+    fn send_data(&'static self, data: T) -> Result<(), UninitializedHolderError> {
         self.with(|h| h.send_data(data))
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
     use crate::test_support::{assert_eq_and_println, ThreadGater};
@@ -402,21 +423,21 @@ mod tests {
         static MY_TL: Holder<Data> = Holder::new();
     }
 
-    fn op(data: Data, acc: &mut AccValue, tid: &ThreadId) {
+    fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
         println!(
             "`op` called from {:?} with data {:?}",
             thread::current().id(),
             data
         );
 
-        acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+        acc.entry(tid).or_default();
         let (k, v) = data;
-        acc.get_mut(tid).unwrap().insert(k, v.clone());
+        acc.get_mut(&tid).unwrap().insert(k, v.clone());
     }
 
     fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
         MY_TL.ensure_linked(control);
-        MY_TL.send_data((k, v));
+        MY_TL.send_data((k, v)).unwrap();
     }
 
     #[test]

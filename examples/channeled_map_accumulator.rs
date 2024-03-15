@@ -24,21 +24,21 @@ thread_local! {
     static MY_TL: Holder<Data> = Holder::new();
 }
 
-fn op(data: Data, acc: &mut AccValue, tid: &ThreadId) {
+fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
     println!(
         "`op` called from {:?} with data {:?}",
         thread::current().id(),
         data
     );
 
-    acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+    acc.entry(tid).or_default();
     let (k, v) = data;
-    acc.get_mut(tid).unwrap().insert(k, v.clone());
+    acc.get_mut(&tid).unwrap().insert(k, v.clone());
 }
 
 fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
     MY_TL.ensure_linked(control);
-    MY_TL.send_data((k, v));
+    MY_TL.send_data((k, v)).unwrap();
 }
 
 #[test]

@@ -1,6 +1,5 @@
 //! Example usage of [`thread_local_collect::simple_joined`].
 
-use env_logger;
 use std::{
     collections::HashMap,
     env::set_var,
@@ -40,16 +39,16 @@ fn print_tl(prefix: &str) {
     });
 }
 
-fn op(data: Data, acc: &mut AccumulatorMap, tid: &ThreadId) {
+fn op(data: Data, acc: &mut AccumulatorMap, tid: ThreadId) {
     println!(
         "`op` called from {:?} with data {:?}",
         thread::current().id(),
         data
     );
 
-    acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+    acc.entry(tid).or_default();
     for (k, v) in data {
-        acc.get_mut(tid).unwrap().insert(k, v.clone());
+        acc.get_mut(&tid).unwrap().insert(k, v.clone());
     }
 }
 

@@ -26,10 +26,10 @@ fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
     MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
 }
 
-fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: &ThreadId) {
-    acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
+    acc.entry(tid).or_default();
     for (k, v) in data {
-        acc.get_mut(tid).unwrap().insert(k, v.clone());
+        acc.get_mut(&tid).unwrap().insert(k, v.clone());
     }
 }
 
@@ -58,7 +58,7 @@ fn own_thread_and_implicit_joins() {
     thread::sleep(Duration::from_millis(100));
 
     let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-    let mut map = HashMap::from([(own_tid.clone(), map_own)]);
+    let mut map = HashMap::from([(own_tid, map_own)]);
 
     for i in 0..100 {
         let value1 = Foo("a".to_owned() + &i.to_string());
@@ -77,14 +77,14 @@ fn own_thread_and_implicit_joins() {
                 assert_tl(&other, "Before 1st insert");
 
                 insert_tl_entry(2, value2, &control);
-                assert_tl(&map_i, "Before 2nd insert");
+                assert_tl(map_i, "Before 2nd insert");
             });
         });
 
         {
             let lock = spawned_tids.read().unwrap();
             let spawned_tid = lock.last().unwrap();
-            map.insert(spawned_tid.clone(), map_i.clone());
+            map.insert(*spawned_tid, map_i.clone());
 
             // Safety: NOT called after all other threads explicitly joined.
             unsafe { control.take_tls() };

@@ -20,16 +20,16 @@ thread_local! {
     static MY_TL: Holder<Data, AccValue> = Holder::new();
 }
 
-fn op(data: Data, acc: &mut AccValue, tid: &ThreadId) {
+fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
     println!(
         "`op` called from {:?} with data {:?}",
         thread::current().id(),
         data
     );
 
-    acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+    acc.entry(tid).or_default();
     let (k, v) = data;
-    acc.get_mut(tid).unwrap().insert(k, v.clone());
+    acc.get_mut(&tid).unwrap().insert(k, v.clone());
 }
 
 fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
@@ -60,7 +60,7 @@ fn test() {
 }
 
 fn main() {
-    let mut control = Control::new(|| HashMap::new(), op, op_r);
+    let mut control = Control::new(HashMap::new, op, op_r);
 
     // This is directly defined as a reference to prevent the move closure below from moving the
     // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
@@ -98,7 +98,7 @@ fn main() {
                     (1, Foo("a".to_owned() + &i.to_string())),
                     (2, Foo("b".to_owned() + &i.to_string())),
                 ]);
-                let tid_i = spawned_tids[i].clone();
+                let tid_i = spawned_tids[i];
                 (tid_i, map_i)
             })
             .collect::<Vec<_>>();

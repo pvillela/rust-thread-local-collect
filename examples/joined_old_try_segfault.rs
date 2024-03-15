@@ -26,10 +26,10 @@ fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
     MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
 }
 
-fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: &ThreadId) {
-    acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
+    acc.entry(tid).or_default();
     for (k, v) in data {
-        acc.get_mut(tid).unwrap().insert(k, v.clone());
+        acc.get_mut(&tid).unwrap().insert(k, v.clone());
     }
 }
 

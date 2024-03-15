@@ -29,16 +29,16 @@ fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
     MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
 }
 
-fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: &ThreadId) {
+fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
     println!(
         "`op` called from {:?} with data {:?}",
         thread::current().id(),
         data
     );
 
-    acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+    acc.entry(tid).or_default();
     for (k, v) in data {
-        acc.get_mut(tid).unwrap().insert(k, v.clone());
+        acc.get_mut(&tid).unwrap().insert(k, v.clone());
     }
 }
 
@@ -86,7 +86,7 @@ fn main() {
                     assert_tl(my_map, assert_tl_msg);
 
                     let mut exp = expected_acc_mutex.try_lock().unwrap();
-                    op(my_map.clone(), &mut exp, &spawned_tid);
+                    op(my_map.clone(), &mut exp, spawned_tid);
 
                     spawned_thread_gater.open(gate);
                 };

@@ -34,7 +34,7 @@
 //! }
 //!
 //! // Define your accumulation operation.
-//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+//! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 //!     *acc += data;
 //! }
 //!
@@ -150,8 +150,8 @@ impl<T, U> CtrlStateParam for P<T, U> {
 }
 
 impl<T, U> CtrlStateWithNode<P<T, U>> for CtrlState<T, U> {
-    fn register_node(&mut self, node: usize, tid: &ThreadId) {
-        if *tid == self.s.tid {
+    fn register_node(&mut self, node: usize, tid: ThreadId) {
+        if tid == self.s.tid {
             self.s.own_tl_addr = Some(node);
         }
     }
@@ -193,6 +193,8 @@ where
     /// joined threads will have been dropped (and their values will have been accumulated) at the time this method
     /// is called. At that point, the only possible remaining linked thread-local variable would be associated with
     /// the thread where this method was called, so there can be no race condition.
+    ///
+    /// Panics if `self`'s mutex is poisoned.
     pub unsafe fn take_tls(&self) {
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
@@ -209,7 +211,7 @@ where
                 let mut data_guard = h.data_guard();
                 let data = replace(data_guard.deref_mut(), (h.make_data)());
                 log::trace!("`take_tls`: executing `op`");
-                (self.op)(data, &mut state.acc, &thread::current().id());
+                (self.op)(data, &mut state.acc, thread::current().id());
             });
         }
     }
@@ -241,6 +243,7 @@ impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
 
@@ -269,10 +272,10 @@ mod tests {
         MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
     }
 
-    fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: &ThreadId) {
-        acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+    fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
+        acc.entry(tid).or_default();
         for (k, v) in data {
-            acc.get_mut(tid).unwrap().insert(k, v.clone());
+            acc.get_mut(&tid).unwrap().insert(k, v.clone());
         }
     }
 
@@ -332,10 +335,7 @@ mod tests {
             let spawned_tids = spawned_tids.try_read().unwrap();
             let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
             let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
-            let map = HashMap::from([
-                (spawned_tids[0].clone(), map_0),
-                (spawned_tids[1].clone(), map_1),
-            ]);
+            let map = HashMap::from([(spawned_tids[0], map_0), (spawned_tids[1], map_1)]);
 
             {
                 let guard = control.acc();
@@ -364,7 +364,7 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
 
         let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-        let mut map = HashMap::from([(own_tid.clone(), map_own)]);
+        let mut map = HashMap::from([(own_tid, map_own)]);
 
         for i in 0..100 {
             let spawned_tids = &spawned_tids;
@@ -380,12 +380,12 @@ mod tests {
                     lock.push(spawned_tid);
                     drop(lock);
 
-                    insert_tl_entry(1, value1.clone(), &control);
+                    insert_tl_entry(1, value1.clone(), control);
                     let other = HashMap::from([(1, value1)]);
                     assert_tl(&other, "After 1st insert");
 
-                    insert_tl_entry(2, value2, &control);
-                    assert_tl(&map_i, "After 2nd insert");
+                    insert_tl_entry(2, value2, control);
+                    assert_tl(map_i, "After 2nd insert");
                 });
                 h.join().unwrap();
             });
@@ -393,7 +393,7 @@ mod tests {
             {
                 let lock = spawned_tids.read().unwrap();
                 let spawned_tid = lock.last().unwrap();
-                map.insert(spawned_tid.clone(), map_i.clone());
+                map.insert(*spawned_tid, map_i.clone());
 
                 // Safety: called after all other threads explicitly joined.
                 unsafe { control.take_tls() };

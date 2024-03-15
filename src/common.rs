@@ -13,6 +13,12 @@ use std::{
 };
 
 //=================
+// Error consts
+
+const POISONED_CONTROL_MUTEX: &str = "poisoned control mutex";
+pub(crate) const POISONED_GUARDED_DATA_MUTEX: &str = "poisoned guarded data mutex";
+
+//=================
 // Traits
 
 /// Encapsulates the core types used by [`ControlG`], [`HolderG`], and their specializations.
@@ -85,9 +91,9 @@ where
     // different from each other and a bit more complex.
     fn tl_data_dropped(
         &mut self,
-        op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
+        op: &(dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync),
         data: P::Dat,
-        tid: &ThreadId,
+        tid: ThreadId,
     );
 }
 
@@ -98,7 +104,7 @@ where
     P: CoreParam + NodeParam,
 {
     /// Registers a node with the control state.
-    fn register_node(&mut self, node: P::Node, tid: &ThreadId);
+    fn register_node(&mut self, node: P::Node, tid: ThreadId);
 }
 
 #[doc(hidden)]
@@ -160,9 +166,9 @@ where
     /// different from each other and a bit more complex.
     fn tl_data_dropped(
         &mut self,
-        op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
+        op: &(dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync),
         data: P::Dat,
-        tid: &ThreadId,
+        tid: ThreadId,
     ) {
         let acc = self.acc_mut();
         op(data, acc, tid);
@@ -208,7 +214,7 @@ where
     pub(crate) state: Arc<Mutex<P::CtrlState>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
-    pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync>,
+    pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync>,
 }
 
 impl<P> ControlG<P>
@@ -219,7 +225,7 @@ where
     /// Instantiates a *control* object.
     pub fn new(
         acc_base: P::Acc,
-        op: impl Fn(P::Dat, &mut P::Acc, &ThreadId) + 'static + Send + Sync,
+        op: impl Fn(P::Dat, &mut P::Acc, ThreadId) + 'static + Send + Sync,
     ) -> Self {
         let state = P::CtrlState::new(acc_base);
         Self {
@@ -229,23 +235,27 @@ where
     }
 
     /// Acquires a lock on [`ControlG`]'s internal Mutex.
+    /// Panics if `self`'s mutex is poisoned.
     pub(crate) fn lock(&self) -> MutexGuard<'_, P::CtrlState> {
-        self.state.lock().unwrap()
+        self.state.lock().expect(POISONED_CONTROL_MUTEX)
     }
 
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
+    /// Panics if `self`'s mutex is poisoned.
     pub fn acc(&self) -> AccGuardG<'_, P> {
         AccGuardG::new(self.lock())
     }
 
     /// Provides access to `self`'s accumulated value.
+    /// Panics if `self`'s mutex is poisoned.
     pub fn with_acc<V>(&self, f: impl FnOnce(&P::Acc) -> V) -> V {
         let acc = self.acc();
         f(&acc)
     }
 
     /// Returns a clone of `self`'s accumulated value.
+    /// Panics if `self`'s mutex is poisoned.
     pub fn clone_acc(&self) -> P::Acc
     where
         P::Acc: Clone,
@@ -255,6 +265,7 @@ where
 
     /// Returns `self`'s accumulated value, using a value of the same type to replace
     /// the existing accumulated value.
+    /// Panics if `self`'s mutex is poisoned.
     pub fn take_acc(&self, replacement: P::Acc) -> P::Acc {
         let mut lock = self.lock();
         let acc = lock.acc_mut();
@@ -262,7 +273,8 @@ where
     }
 
     /// Used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
-    fn tl_data_dropped(&self, data: P::Dat, tid: &ThreadId) {
+    /// Panics if `self`'s mutex is poisoned.
+    fn tl_data_dropped(&self, data: P::Dat, tid: ThreadId) {
         let mut lock = self.lock();
         lock.tl_data_dropped(self.op.deref(), data, tid);
     }
@@ -274,7 +286,8 @@ where
     P::CtrlState: CtrlStateWithNode<P>,
 {
     /// Called by [`HolderG`] when a thread-local variable starts being used.
-    fn register_node(&self, node: P::Node, tid: &ThreadId) {
+    /// Panics if `self`'s mutex is poisoned.
+    fn register_node(&self, node: P::Node, tid: ThreadId) {
         let mut lock = self.lock();
         lock.register_node(node, tid)
     }
@@ -343,7 +356,7 @@ impl<T: 'static> GuardedData<T> for Arc<Mutex<T>> {
     type Guard<'a> = MutexGuard<'a, T>;
 
     fn guard(&self) -> Self::Guard<'_> {
-        self.lock().unwrap()
+        self.lock().expect(POISONED_GUARDED_DATA_MUTEX)
     }
 }
 
@@ -406,7 +419,7 @@ where
             Some(control) => {
                 let mut data_guard = self.data_guard();
                 let data = replace(data_guard.borrow_mut().deref_mut(), (self.make_data)());
-                control.tl_data_dropped(data, &thread::current().id());
+                control.tl_data_dropped(data, thread::current().id());
             }
         }
     }
@@ -444,7 +457,7 @@ where
     fn link_node(&self, control: &ControlG<P>, node: P::Node) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
-        control.register_node(node, &thread::current().id())
+        control.register_node(node, thread::current().id())
     }
 
     /// Ensures `self` is linked to `control` when a node type is used.
@@ -572,11 +585,11 @@ where
 
     fn tl_data_dropped(
         &mut self,
-        op: &(dyn Fn(P::Dat, &mut P::Acc, &ThreadId) + Send + Sync),
+        op: &(dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync),
         data: P::Dat,
-        tid: &ThreadId,
+        tid: ThreadId,
     ) {
-        self.s.tmap.remove(tid);
+        self.s.tmap.remove(&tid);
         let acc = self.acc_mut();
         op(data, acc, tid);
     }
@@ -586,7 +599,7 @@ impl<P> CtrlStateWithNode<TmapD<P>> for CtrlStateG<TmapD<P>>
 where
     P: CoreParam + NodeParam,
 {
-    fn register_node(&mut self, node: <P as NodeParam>::Node, tid: &ThreadId) {
-        self.s.tmap.insert(*tid, node);
+    fn register_node(&mut self, node: <P as NodeParam>::Node, tid: ThreadId) {
+        self.s.tmap.insert(tid, node);
     }
 }

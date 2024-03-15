@@ -36,7 +36,7 @@
 //! }
 //!
 //! // Define your accumulation operation.
-//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+//! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 //!     *acc += data;
 //! }
 //!
@@ -166,6 +166,7 @@ impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
 
@@ -194,16 +195,16 @@ mod tests {
         MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
     }
 
-    fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: &ThreadId) {
+    fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
         println!(
             "`op` called from {:?} with data {:?}",
             thread::current().id(),
             data
         );
 
-        acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+        acc.entry(tid).or_default();
         for (k, v) in data {
-            acc.get_mut(tid).unwrap().insert(k, v.clone());
+            acc.get_mut(&tid).unwrap().insert(k, v.clone());
         }
     }
 
@@ -265,10 +266,7 @@ mod tests {
             let spawned_tids = spawned_tids.try_read().unwrap();
             let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
             let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
-            let map = HashMap::from([
-                (spawned_tids[0].clone(), map_0),
-                (spawned_tids[1].clone(), map_1),
-            ]);
+            let map = HashMap::from([(spawned_tids[0], map_0), (spawned_tids[1], map_1)]);
 
             {
                 let guard = control.acc();

@@ -29,7 +29,7 @@
 //! }
 //!
 //! // Define your accumulation operation.
-//! fn op(data: Data, acc: &mut AccValue, _: &ThreadId) {
+//! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 //!     *acc += data;
 //! }
 //!
@@ -79,29 +79,28 @@
 
 use std::{
     cell::RefCell,
-    error::Error,
-    fmt::{Debug, Display},
+    fmt::Debug,
     mem::replace,
     ops::Deref,
     sync::Arc,
     thread::{self, LocalKey, ThreadId},
 };
+use thiserror::Error;
 use thread_local::ThreadLocal;
 
-/// Indicates attempt to access [`Holder`] before it has been initialized.
-#[derive(Debug)]
-pub struct UninitializedHolderError;
+/// Attempt to use [`Holder`] before it has been linked with [`Control`].
+#[derive(Error, Debug)]
+#[error("attempt to Holder before it has been linked with Control")]
+pub struct HolderNotLinkedError;
 
-impl Display for UninitializedHolderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{UninitializedHolderError:?}: Attempt to access uninitialized Holder."
-        )
-    }
+/// Errors returned by [`Control::drain_tls`].
+#[derive(Error, Debug)]
+pub enum DrainTlsError {
+    #[error("method called while thread-locals are arctive")]
+    ActiveThreadLocalsError,
+    #[error("there were no thread-locals to aggregate")]
+    NoThreadLocalsUsed,
 }
-
-impl Error for UninitializedHolderError {}
 
 /// Controls the collection and accumulation of thread-local variables linked to this object.
 ///
@@ -123,7 +122,7 @@ where
     acc_zero: Arc<dyn Fn() -> U + Send + Sync>,
     /// Operation that combines data sent from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
-    op: Arc<dyn Fn(T, &mut U, &ThreadId) + Send + Sync>,
+    op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
     /// Binary operation that reduces two accumulated values into one.
     op_r: Arc<dyn Fn(U, U) -> U + Send + Sync>,
 }
@@ -162,7 +161,7 @@ where
     /// - `op_r` - binary operation that reduces two accumulated values into one.
     pub fn new(
         acc_zero: impl Fn() -> U + 'static + Send + Sync,
-        op: impl Fn(T, &mut U, &ThreadId) + 'static + Send + Sync,
+        op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
         op_r: impl Fn(U, U) -> U + 'static + Send + Sync,
     ) -> Self {
         Control {
@@ -177,20 +176,20 @@ where
     /// Returns an error if any designated thread-local variable instance still exists, i.e., the corresponding
     /// thread has not yet explicitly joined, directly or indirectly, the thread where this
     /// function is called from.
-    pub fn drain_tls(&mut self) -> Result<U, ()> {
+    pub fn drain_tls(&mut self) -> Result<U, DrainTlsError> {
         let state = replace(&mut self.state, Arc::new(ThreadLocal::new()));
         let unwr_state = match Arc::try_unwrap(state) {
             Ok(unwr_state) => unwr_state,
             Err(state) => {
                 _ = replace(&mut self.state, state); // put it back
-                return Err(());
+                return Err(DrainTlsError::ActiveThreadLocalsError);
             }
         };
         let res = unwr_state
             .into_iter()
             .map(|x| x.into_inner())
             .reduce(self.op_r.as_ref());
-        res.ok_or(())
+        res.ok_or(DrainTlsError::NoThreadLocalsUsed)
     }
 }
 
@@ -203,7 +202,7 @@ where
     control: Control<T, U>,
 }
 
-/// Holds a thread-local [`Sender`] and a clone of the control object (see [`Control`]), enabling the linkage
+/// Holds a clone of the control object (see [`Control`]), enabling the linkage
 /// of the thread-local with the control object.
 ///
 /// `T` is the type of data sent for aggregation and `U` is the aggregate value type.
@@ -216,7 +215,6 @@ where
     U: Send,
 {
     /// Instantiates a holder object.
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(RefCell::new(None))
     }
@@ -233,15 +231,16 @@ where
     }
 
     /// Sends data to be aggregated in the `control` object.
-    fn send_data(&self, data: T) -> Result<(), UninitializedHolderError> {
+    /// Returns an error if `self` is not linked with `control`.
+    fn send_data(&self, data: T) -> Result<(), HolderNotLinkedError> {
         let inner_opt = self.0.borrow();
         match inner_opt.deref() {
-            None => Err(UninitializedHolderError),
+            None => Err(HolderNotLinkedError),
             Some(inner) => {
                 let control = &inner.control;
                 let cell = control.state.get_or(|| RefCell::new((control.acc_zero)()));
                 let mut u = cell.borrow_mut();
-                (control.op)(data, &mut u, &inner.tid);
+                (control.op)(data, &mut u, inner.tid);
                 Ok(())
             }
         }
@@ -253,11 +252,12 @@ pub trait HolderLocalKey<T, U>
 where
     U: Send,
 {
-    /// Ensures the [`Holder`] is initialized.
+    /// Ensures the [`Holder`] is linked with [`Control`].
     fn ensure_linked(&'static self, control: &Control<T, U>);
 
     /// Send data to be aggregated by the `control` object.
-    fn send_data(&'static self, data: T) -> Result<(), UninitializedHolderError>;
+    /// Returns an error if [`Holder`] is not linked with [`Control`].
+    fn send_data(&'static self, data: T) -> Result<(), HolderNotLinkedError>;
 }
 
 impl<T, U> HolderLocalKey<T, U> for LocalKey<Holder<T, U>>
@@ -270,12 +270,13 @@ where
         })
     }
 
-    fn send_data(&'static self, data: T) -> Result<(), UninitializedHolderError> {
+    fn send_data(&'static self, data: T) -> Result<(), HolderNotLinkedError> {
         self.with(|h| h.send_data(data))
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
     use crate::test_support::assert_eq_and_println;
@@ -297,16 +298,16 @@ mod tests {
         static MY_TL: Holder<Data, AccValue> = Holder::new();
     }
 
-    fn op(data: Data, acc: &mut AccValue, tid: &ThreadId) {
+    fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
         println!(
             "`op` called from {:?} with data {:?}",
             thread::current().id(),
             data
         );
 
-        acc.entry(tid.clone()).or_insert_with(|| HashMap::new());
+        acc.entry(tid).or_default();
         let (k, v) = data;
-        acc.get_mut(tid).unwrap().insert(k, v.clone());
+        acc.get_mut(&tid).unwrap().insert(k, v.clone());
     }
 
     fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
@@ -333,7 +334,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let mut control = Control::new(|| HashMap::new(), op, op_r);
+        let mut control = Control::new(HashMap::new, op, op_r);
 
         // This is directly defined as a reference to prevent the move closure below from moving the
         // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
@@ -371,7 +372,7 @@ mod tests {
                         (1, Foo("a".to_owned() + &i.to_string())),
                         (2, Foo("b".to_owned() + &i.to_string())),
                     ]);
-                    let tid_i = spawned_tids[i].clone();
+                    let tid_i = spawned_tids[i];
                     (tid_i, map_i)
                 })
                 .collect::<Vec<_>>();
