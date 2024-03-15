@@ -14,7 +14,7 @@ use std::{
 use thiserror::Error;
 
 //=================
-// Errors
+// Errora
 
 pub(crate) const POISONED_CONTROL_MUTEX: &str = "poisoned control mutex";
 pub(crate) const POISONED_GUARDED_DATA_MUTEX: &str = "poisoned guarded data mutex";
@@ -25,7 +25,7 @@ pub(crate) const POISONED_GUARDED_DATA_MUTEX: &str = "poisoned guarded data mute
 pub struct HolderNotLinkedError;
 
 //=================
-// Traits
+// Param traits
 
 /// Encapsulates the core types used by [`ControlG`], [`HolderG`], and their specializations.
 pub trait CoreParam {
@@ -33,15 +33,6 @@ pub trait CoreParam {
     type Dat;
     /// Type of accumulated value.
     type Acc;
-}
-
-#[doc(hidden)]
-/// Abstracts a type's ability to construct itself.
-pub trait New<S> {
-    type Arg;
-
-    #[allow(clippy::new_ret_no_self)]
-    fn new(arg: Self::Arg) -> S;
 }
 
 #[doc(hidden)]
@@ -57,10 +48,6 @@ pub trait SubStateParam {
 }
 
 #[doc(hidden)]
-/// Used to tag an instantiation of [`CtrlStateG`] and enable it to inherit default [`CtrlStateG`] functionality.
-pub trait UseCtrlStateGDefault {}
-
-#[doc(hidden)]
 /// Abstracts the type of node used by structs and functions that depend on a node type.
 /// The node type represents thread-local variable address or reference information that is held
 /// in the state of a [`ControlG`].
@@ -74,19 +61,44 @@ pub trait GDataParam {
     type GData;
 }
 
+//=================
+// Hidden non-param traits
+
+#[doc(hidden)]
+/// Used to tag an instantiation of [`CtrlStateG`] and enable it to inherit default [`CtrlStateG`] functionality.
+pub trait UseCtrlStateGDefault {}
+
+#[doc(hidden)]
+/// Abstracts a type's ability to construct itself.
+pub trait New<S> {
+    type Arg;
+
+    #[allow(clippy::new_ret_no_self)]
+    fn new(arg: Self::Arg) -> S;
+}
+
+#[doc(hidden)]
+/// Abstracts types that return the accumulator type.
+pub trait WithAcc: New<Self, Arg = Self::Acc>
+where
+    Self: Sized,
+{
+    type Acc;
+
+    /// Returns reference to accumulated value.
+    fn acc(&self) -> &Self::Acc;
+
+    /// Returns mutable reference to accumulated value.
+    fn acc_mut(&mut self) -> &mut Self::Acc;
+}
+
 #[doc(hidden)]
 /// Abstracts the core features of the state of a [`ControlG`].
-pub trait CtrlStateCore<P>: New<Self, Arg = P::Acc>
+pub trait CtrlStateCore<P>: WithAcc<Acc = P::Acc>
 where
     Self: Sized,
     P: CoreParam,
 {
-    /// Returns reference to accumulated value.
-    fn acc(&self) -> &P::Acc;
-
-    /// Returns mutable reference to accumulated value.
-    fn acc_mut(&mut self) -> &mut P::Acc;
-
     /// Invoked when thread-local [`HolderG`] is dropped to notify the control state and accumulate
     /// the thread-local value.
     ///
@@ -111,6 +123,31 @@ where
 {
     /// Registers a node with the control state.
     fn register_node(&mut self, node: P::Node, tid: ThreadId);
+}
+
+//=================
+// Core structs and impls
+
+/// Guard that dereferences to the accumulator type. A lock is held during the guard's lifetime.
+pub struct AccGuardG<'a, S> {
+    guard: MutexGuard<'a, S>,
+}
+
+impl<'a, S> AccGuardG<'a, S> {
+    pub(crate) fn new(lock: MutexGuard<'a, S>) -> Self {
+        Self { guard: lock }
+    }
+}
+
+impl<S> Deref for AccGuardG<'_, S>
+where
+    S: WithAcc,
+{
+    type Target = S::Acc;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.acc()
+    }
 }
 
 #[doc(hidden)]
@@ -151,10 +188,12 @@ where
     }
 }
 
-impl<P> CtrlStateCore<P> for CtrlStateG<P>
+impl<P> WithAcc for CtrlStateG<P>
 where
     P: CoreParam + SubStateParam + UseCtrlStateGDefault,
 {
+    type Acc = P::Acc;
+
     fn acc(&self) -> &P::Acc {
         CtrlStateG::acc(self)
     }
@@ -162,7 +201,12 @@ where
     fn acc_mut(&mut self) -> &mut P::Acc {
         CtrlStateG::acc_mut(self)
     }
+}
 
+impl<P> CtrlStateCore<P> for CtrlStateG<P>
+where
+    P: CoreParam + SubStateParam + UseCtrlStateGDefault,
+{
     /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
     ///
     /// The `data` argument is not strictly necessary to support the implementation for state that uses
@@ -178,35 +222,6 @@ where
     ) {
         let acc = self.acc_mut();
         op(data, acc, tid);
-    }
-}
-
-/// Guard that dereferences to [`CoreParam::Acc`]. A lock is held during the guard's lifetime.
-pub struct AccGuardG<'a, P>
-where
-    P: CtrlStateParam,
-{
-    guard: MutexGuard<'a, P::CtrlState>,
-}
-
-impl<'a, P> AccGuardG<'a, P>
-where
-    P: CtrlStateParam,
-{
-    pub(crate) fn new(lock: MutexGuard<'a, P::CtrlState>) -> Self {
-        AccGuardG { guard: lock }
-    }
-}
-
-impl<P> Deref for AccGuardG<'_, P>
-where
-    P: CoreParam + CtrlStateParam,
-    P::CtrlState: CtrlStateCore<P>,
-{
-    type Target = P::Acc;
-
-    fn deref(&self) -> &Self::Target {
-        self.guard.acc()
     }
 }
 
@@ -249,7 +264,7 @@ where
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
     /// Panics if `self`'s mutex is poisoned.
-    pub fn acc(&self) -> AccGuardG<'_, P> {
+    pub fn acc(&self) -> AccGuardG<'_, P::CtrlState> {
         AccGuardG::new(self.lock())
     }
 
@@ -512,6 +527,9 @@ where
     }
 }
 
+//=================
+// Visible trait
+
 /// Provides access to [`HolderG`] specializations of different framework modules
 /// ([`crate::joined`], [`crate::simple_joined`], [`crate::probed`]).
 pub trait HolderLocalKey<P>
@@ -599,10 +617,12 @@ where
     }
 }
 
-impl<P> CtrlStateCore<TmapD<P>> for CtrlStateG<TmapD<P>>
+impl<P> WithAcc for CtrlStateG<TmapD<P>>
 where
     P: CoreParam + NodeParam,
 {
+    type Acc = P::Acc;
+
     fn acc(&self) -> &P::Acc {
         CtrlStateG::acc(self)
     }
@@ -610,7 +630,12 @@ where
     fn acc_mut(&mut self) -> &mut P::Acc {
         CtrlStateG::acc_mut(self)
     }
+}
 
+impl<P> CtrlStateCore<TmapD<P>> for CtrlStateG<TmapD<P>>
+where
+    P: CoreParam + NodeParam,
+{
     fn tl_data_dropped(
         &mut self,
         op: &(dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync),
