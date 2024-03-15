@@ -102,12 +102,12 @@
 //!
 //! See another example at [`examples/channeled_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/channeled_map_accumulator.rs).
 
+use thiserror::Error;
+
 pub use crate::common::HolderNotLinkedError;
 use crate::common::POISONED_CONTROL_MUTEX;
 use std::{
     cell::RefCell,
-    error::Error,
-    fmt::Display,
     mem::replace,
     ops::Deref,
     sync::{
@@ -139,16 +139,9 @@ enum ReceiveMode {
 }
 
 /// Indicates the illegal attempt to spawn multiple concurrent background receiving threads.
-#[derive(Debug)]
+#[derive(Error, Debug)]
+#[error("Illegal call to start_receiving_tls as background receiver thread already exists.")]
 pub struct MultipleReceiverThreadsError;
-
-impl Display for MultipleReceiverThreadsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{MultipleReceiverThreadsError:?}: Illegal call to start_receiving_tls as background receiver thread already exists.")
-    }
-}
-
-impl Error for MultipleReceiverThreadsError {}
 
 /// State of [`Control`].
 #[derive(Debug)]

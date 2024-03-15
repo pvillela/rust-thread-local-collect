@@ -14,7 +14,7 @@ use std::{
 use thiserror::Error;
 
 //=================
-// Errora
+// Errors
 
 pub(crate) const POISONED_CONTROL_MUTEX: &str = "poisoned control mutex";
 pub(crate) const POISONED_GUARDED_DATA_MUTEX: &str = "poisoned guarded data mutex";
