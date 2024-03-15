@@ -102,6 +102,8 @@
 //!
 //! See another example at [`examples/channeled_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/channeled_map_accumulator.rs).
 
+pub use crate::common::HolderNotLinkedError;
+use crate::common::POISONED_CONTROL_MUTEX;
 use std::{
     cell::RefCell,
     error::Error,
@@ -114,16 +116,9 @@ use std::{
     },
     thread::{self, LocalKey, ThreadId},
 };
-use thiserror::Error;
 
 // Error consts
-const POISONED_CONTROL_MUTEX: &str = "poisoned control mutex";
 const RECEIVER_DISCONNECTED: &str = "receiver disconnected";
-
-/// Attempt to access [`Holder`] before it has been initialized.
-#[derive(Error, Debug)]
-#[error("attempt to access uninitialized Holder")]
-pub struct UninitializedHolderError;
 
 /// Data structure transmitted on channel.
 enum ChannelItem<T> {
@@ -365,9 +360,9 @@ impl<T> Holder<T> {
 
     /// Send data to be aggregated in the `control` object. Returns an error if [`Holder`] is
     /// not initialized.
-    fn send_data(&self, data: T) -> Result<(), UninitializedHolderError> {
+    fn send_data(&self, data: T) -> Result<(), HolderNotLinkedError> {
         let inner_opt = self.0.borrow();
-        let inner = inner_opt.as_ref().ok_or(UninitializedHolderError)?;
+        let inner = inner_opt.as_ref().ok_or(HolderNotLinkedError)?;
         inner
             .sender
             .send(ChannelItem::Payload(inner.tid, data))
@@ -383,7 +378,7 @@ pub trait HolderLocalKey<T> {
 
     /// Send data to be aggregated by the `control` object. Returns an error if [`Holder`] is not
     /// initialized
-    fn send_data(&'static self, data: T) -> Result<(), UninitializedHolderError>;
+    fn send_data(&'static self, data: T) -> Result<(), HolderNotLinkedError>;
 }
 
 impl<T> HolderLocalKey<T> for LocalKey<Holder<T>> {
@@ -393,7 +388,7 @@ impl<T> HolderLocalKey<T> for LocalKey<Holder<T>> {
         })
     }
 
-    fn send_data(&'static self, data: T) -> Result<(), UninitializedHolderError> {
+    fn send_data(&'static self, data: T) -> Result<(), HolderNotLinkedError> {
         self.with(|h| h.send_data(data))
     }
 }

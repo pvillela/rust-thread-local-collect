@@ -77,6 +77,7 @@
 //!
 //! See another example at [`examples/tlcr_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlcr_map_accumulator.rs).
 
+use crate::common::HolderNotLinkedError;
 use std::{
     cell::RefCell,
     fmt::Debug,
@@ -87,11 +88,6 @@ use std::{
 };
 use thiserror::Error;
 use thread_local::ThreadLocal;
-
-/// Attempt to use [`Holder`] before it has been linked with [`Control`].
-#[derive(Error, Debug)]
-#[error("attempt to Holder before it has been linked with Control")]
-pub struct HolderNotLinkedError;
 
 /// Errors returned by [`Control::drain_tls`].
 #[derive(Error, Debug)]

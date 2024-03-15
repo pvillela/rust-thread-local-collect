@@ -28,7 +28,7 @@ thread_local! {
 
 fn update_tl(value: Data, control: &Control<Data, AccValue>) {
     MY_TL.ensure_linked(control);
-    MY_TL.with_data_mut(|data| replace(data, value));
+    MY_TL.with_data_mut(|data| replace(data, value)).unwrap();
 }
 
 fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {

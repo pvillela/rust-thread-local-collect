@@ -12,7 +12,9 @@
 //! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection.
 
 pub use crate::common::HolderLocalKey;
-use crate::common::{ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD};
+use crate::common::{
+    ControlG, CoreParam, GDataParam, HolderG, HolderNotLinkedError, NodeParam, SubStateParam, TmapD,
+};
 use std::{cell::RefCell, marker::PhantomData, mem::replace, ops::DerefMut, thread::LocalKey};
 
 //=================
@@ -120,12 +122,15 @@ impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
     }
 
     /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
-    fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> V {
+    fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> Result<V, HolderNotLinkedError> {
         self.with(|h| h.with_data(f))
     }
 
     /// Invokes `f` mutably on [`Holder`] data. Panics if data is [`None`].
-    fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V {
+    fn with_data_mut<V>(
+        &'static self,
+        f: impl FnOnce(&mut T) -> V,
+    ) -> Result<V, HolderNotLinkedError> {
         self.with(|h| h.with_data_mut(f))
     }
 }
@@ -157,7 +162,7 @@ mod tests {
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
         MY_FOO_MAP.ensure_linked(control);
-        MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
+        MY_FOO_MAP.with_data_mut(|data| data.insert(k, v)).unwrap();
     }
 
     fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
@@ -168,9 +173,11 @@ mod tests {
     }
 
     fn assert_tl(other: &Data, msg: &str) {
-        MY_FOO_MAP.with_data(|map| {
-            assert_eq!(map, other, "{msg}");
-        });
+        MY_FOO_MAP
+            .with_data(|map| {
+                assert_eq!(map, other, "{msg}");
+            })
+            .unwrap();
     }
 
     #[test]

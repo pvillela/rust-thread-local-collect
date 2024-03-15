@@ -23,9 +23,11 @@ thread_local! {
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
     MY_FOO_MAP.ensure_linked(control);
-    MY_FOO_MAP.with_data_mut(|data| {
-        data.insert(k, v);
-    });
+    MY_FOO_MAP
+        .with_data_mut(|data| {
+            data.insert(k, v);
+        })
+        .unwrap();
 }
 
 fn print_tl(prefix: &str) {

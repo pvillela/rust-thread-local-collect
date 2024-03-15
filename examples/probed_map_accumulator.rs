@@ -26,7 +26,7 @@ thread_local! {
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
     MY_FOO_MAP.ensure_linked(control);
-    MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
+    MY_FOO_MAP.with_data_mut(|data| data.insert(k, v)).unwrap();
 }
 
 fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
@@ -43,9 +43,11 @@ fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
 }
 
 fn assert_tl(other: &Data, msg: &str) {
-    MY_FOO_MAP.with_data(|map| {
-        assert_eq_and_println(map, other, msg);
-    });
+    MY_FOO_MAP
+        .with_data(|map| {
+            assert_eq_and_println(map, other, msg);
+        })
+        .unwrap();
 }
 
 #[test]

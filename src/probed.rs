@@ -44,7 +44,7 @@
 //!     MY_TL.ensure_linked(control);
 //!     MY_TL.with_data_mut(|data| {
 //!         *data = value;
-//!     });
+//!     }).unwrap();
 //! }
 //!
 //! fn main() {
@@ -107,8 +107,8 @@
 
 pub use crate::common::HolderLocalKey;
 use crate::common::{
-    ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD,
-    UseCtrlStateGDefault, POISONED_GUARDED_DATA_MUTEX,
+    ControlG, CoreParam, GDataParam, HolderG, HolderNotLinkedError, NodeParam, SubStateParam,
+    TmapD, UseCtrlStateGDefault, POISONED_GUARDED_DATA_MUTEX,
 };
 use std::{
     marker::PhantomData,
@@ -230,13 +230,16 @@ impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
 
     /// Invokes `f` on [`Holder`] data.
     /// Panics if [`Holder`] guarded data mutex is poisoned.
-    fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> V {
+    fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> Result<V, HolderNotLinkedError> {
         self.with(|h| h.with_data(f))
     }
 
     /// Invokes `f` mutably on [`Holder`] data.
     /// Panics if [`Holder`] guarded data mutex is poisoned.
-    fn with_data_mut<V>(&'static self, f: impl FnOnce(&mut T) -> V) -> V {
+    fn with_data_mut<V>(
+        &'static self,
+        f: impl FnOnce(&mut T) -> V,
+    ) -> Result<V, HolderNotLinkedError> {
         self.with(|h| h.with_data_mut(f))
     }
 }
@@ -267,7 +270,7 @@ mod tests {
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
         MY_FOO_MAP.ensure_linked(control);
-        MY_FOO_MAP.with_data_mut(|data| data.insert(k, v));
+        MY_FOO_MAP.with_data_mut(|data| data.insert(k, v)).unwrap();
     }
 
     fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
@@ -284,9 +287,11 @@ mod tests {
     }
 
     fn assert_tl(other: &Data, msg: &str) {
-        MY_FOO_MAP.with_data(|map| {
-            assert_eq_and_println(map, other, msg);
-        });
+        MY_FOO_MAP
+            .with_data(|map| {
+                assert_eq_and_println(map, other, msg);
+            })
+            .unwrap();
     }
 
     #[test]
