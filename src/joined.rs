@@ -1,12 +1,12 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads (see package [overfiew and core concepts](super)). The following features and constraints apply ...
+//! across threads (see package [overview and core concepts](super)). The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
 //! accumulated value when the thread-local variables are dropped following thread termination.
 //! - The [`Control`] object's collection/aggregation function is UNSAFE unless executed after all participating
 //! threads, other than the thread responsible for collection/aggregation, have
-//! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection.
+//! terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
 //! - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
 //! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
 //! implicit join of a scoped thread.
@@ -181,7 +181,8 @@ where
 {
     /// This method takes the value of the designated thread-local variable in the thread responsible for
     /// collection/aggregation, if that variable is used, and aggregates that value
-    /// with this object's accumulator, replacing that value with [`None`].
+    /// with this object's accumulator, replacing that value with the evaluation of the `make_data` function
+    /// passed to [`Holder::new`].
     ///
     /// # Safety
     /// This function can be called safely provided that:

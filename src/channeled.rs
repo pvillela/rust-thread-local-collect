@@ -302,14 +302,14 @@ impl<T, U> Control<T, U> {
         Ok(())
     }
 
-    /// Stop background thread receiving thread-local values.
+    /// Terminate background thread receiving thread-local values.
     pub fn stop_receiving_tls(&self) {
         self.sender
             .send(ChannelItem::StopReceiving)
             .expect(RECEIVER_DISCONNECTED);
     }
 
-    /// Receive all pending messages in channel, stopping the background thread if it exists.
+    /// Receive all pending messages in channel, terminating the background thread if it exists.
     pub fn drain_tls(&self) {
         self.stop_receiving_tls();
         self.lock()
@@ -323,8 +323,7 @@ struct HolderInner<T> {
     sender: Sender<ChannelItem<T>>,
 }
 
-/// Holds a thread-local [`Sender`] and a smart pointer to a [`Control`], enabling the linkage of the thread-local
-/// with the control object.
+/// Holds a thread-local [`Sender`], enabling the linkage of the thread-local with the control object.
 ///
 /// `T` is the type of data sent on the channel.
 pub struct Holder<T>(RefCell<Option<HolderInner<T>>>)
@@ -364,11 +363,12 @@ impl<T> Holder<T> {
 
 /// Provides access to the thread-local variable.
 pub trait HolderLocalKey<T> {
-    /// Ensures the [`Holder`] is initialized, both the [`Sender`] and the `control` smart pointer.
+    /// Ensures the [`Holder`] is linked with [`Control`]. Needs to be called at least once before
+    /// other method calls on this trait. This method is idempotent.
     fn ensure_linked<U>(&'static self, control: &Control<T, U>);
 
     /// Send data to be aggregated by the `control` object. Returns an error if [`Holder`] is not
-    /// initialized
+    /// linked.
     fn send_data(&'static self, data: T) -> Result<(), HolderNotLinkedError>;
 }
 

@@ -1,5 +1,6 @@
-//! This module contains common traits and structs that are used by the other modules in this libray,
-//! except for the [`crate::channeled`] mofule.
+//! This module contains common traits and structs that are used by the other modules in this libray.
+//! Modules [`crate::channeled`] and [`crate::tlcr`] implement the [core conepts](crate#core-concepts) directly and
+//! make minimal use of this module.
 
 use std::{
     borrow::BorrowMut,
@@ -87,9 +88,6 @@ where
 
     /// Returns reference to accumulated value.
     fn acc(&self) -> &Self::Acc;
-
-    /// Returns mutable reference to accumulated value.
-    fn acc_mut(&mut self) -> &mut Self::Acc;
 }
 
 #[doc(hidden)]
@@ -99,6 +97,9 @@ where
     Self: Sized,
     P: CoreParam,
 {
+    /// Returns mutable reference to accumulated value.
+    fn acc_mut(&mut self) -> &mut Self::Acc;
+
     /// Invoked when thread-local [`HolderG`] is dropped to notify the control state and accumulate
     /// the thread-local value.
     ///
@@ -197,16 +198,16 @@ where
     fn acc(&self) -> &P::Acc {
         CtrlStateG::acc(self)
     }
-
-    fn acc_mut(&mut self) -> &mut P::Acc {
-        CtrlStateG::acc_mut(self)
-    }
 }
 
 impl<P> CtrlStateCore<P> for CtrlStateG<P>
 where
     P: CoreParam + SubStateParam + UseCtrlStateGDefault,
 {
+    fn acc_mut(&mut self) -> &mut P::Acc {
+        CtrlStateG::acc_mut(self)
+    }
+
     /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
     ///
     /// The `data` argument is not strictly necessary to support the implementation for state that uses
@@ -536,7 +537,8 @@ pub trait HolderLocalKey<P>
 where
     P: CoreParam + CtrlStateParam,
 {
-    /// Ensures [`HolderG`] instance is linked with `control``.
+    /// Ensures the [`HolderG`] is linked with [`ControlG`]. Needs to be called at least once before
+    /// other method calls on this trait. This method is idempotent.
     fn ensure_linked(&'static self, control: &ControlG<P>);
 
     /// Invokes `f` on the held data.
@@ -626,16 +628,16 @@ where
     fn acc(&self) -> &P::Acc {
         CtrlStateG::acc(self)
     }
-
-    fn acc_mut(&mut self) -> &mut P::Acc {
-        CtrlStateG::acc_mut(self)
-    }
 }
 
 impl<P> CtrlStateCore<TmapD<P>> for CtrlStateG<TmapD<P>>
 where
     P: CoreParam + NodeParam,
 {
+    fn acc_mut(&mut self) -> &mut P::Acc {
+        CtrlStateG::acc_mut(self)
+    }
+
     fn tl_data_dropped(
         &mut self,
         op: &(dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync),

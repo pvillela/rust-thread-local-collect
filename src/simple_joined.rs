@@ -1,5 +1,5 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads (see package [overfiew and core concepts](super)). It is a simplified version of the [`crate::joined`] module which does not rely on
+//! across threads (see package [overview and core concepts](super)). It is a simplified version of the [`crate::joined`] module which does not rely on
 //! unsafe code. The following constraints apply ...
 //! - The designated thread-local variable should NOT be used in the thread responsible for
 //! collection/aggregation. If this condition is violated, the thread-local value on that thread will NOT
@@ -8,7 +8,7 @@
 //! accumulated value when the thread-local variables are dropped following thread termination.
 //! - The aggregated value is reflective of all participating threads if and only if it is accessed after
 //! all participating threads have
-//! terminated and EXPLICITLY joined directly or indirectly into the thread respnosible for collection.
+//! terminated and EXPLICITLY joined directly or indirectly into the thread responsible for collection.
 //! - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
 //! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
 //! implicit join of a scoped thread.

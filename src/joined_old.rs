@@ -2,14 +2,14 @@
 //! on a map in the control state.
 //!
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads (see package [overfiew and core concepts](super)). The following features and constraints apply ...
+//! across threads (see package [overview and core concepts](super)). The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
 //! accumulated value when the thread-local variables are dropped following thread termination.
 //! - The [`Control`] object's collection/aggregation function is UNSAFE unless executed after all participating
 //! threads, other than the thread responsible for collection/aggregation, have
-//! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection.
+//! terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
 
 pub use crate::common::HolderLocalKey;
 
@@ -69,7 +69,8 @@ where
     U: 'static,
 {
     /// This method takes the values of any remaining linked thread-local-variables and aggregates those values
-    /// with this object's accumulator, replacing those values with [`None`].
+    /// with this object's accumulator, replacing those values with the evaluation of the `make_data` function
+    /// passed to [`Holder::new`].
     ///
     /// # Safety
     /// This function can be called safely provided that:

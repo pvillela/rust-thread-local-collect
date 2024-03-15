@@ -1,13 +1,12 @@
 //! This module is supported on **`feature="tlcr"`** only.
 //! This module supports the collection and aggregation of the values from a designated thread-local variable
-//! across threads (see package [overfiew and core concepts](super)). The following features and constraints apply ...
+//! across threads (see package [overview and core concepts](super)). The following features and constraints apply ...
 //! - The designated thread-local variable may NOT be used in the thread responsible for
-//! collection/aggregation.
-//! - The linked thread-local variables hold a [`ThreadLocal`] instance that is a clone of an object of the same
+//! collection/aggregation. (If this condition is violated, the [`Control::drain_tls`] function returns an error.)
+//! - The linked thread-local variables hold a [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance that is a clone of an object of the same
 //! type held in a [Control] object to accumulate thread-local values that are *sent* to it.
-//! - The [`Control::drain_tls`] function can be called after
-//! all participating threads, other than the thread responsible for collection/aggregation, have
-//! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection.
+//! - The [`Control::drain_tls`] function can be called after all participating threads have
+//! terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
 //!
 //! ## Usage pattern
 //!
@@ -92,8 +91,11 @@ use thread_local::ThreadLocal;
 /// Errors returned by [`Control::drain_tls`].
 #[derive(Error, Debug)]
 pub enum DrainTlsError {
-    #[error("method called while thread-locals are arctive")]
+    /// Method was called while thread-locals were arctive.
+    #[error("method called while thread-locals were arctive")]
     ActiveThreadLocalsError,
+
+    /// There were no thread-locals to aggregate.
     #[error("there were no thread-locals to aggregate")]
     NoThreadLocalsUsed,
 }
@@ -101,12 +103,12 @@ pub enum DrainTlsError {
 /// Controls the collection and accumulation of thread-local variables linked to this object.
 ///
 /// `T` is the type of the values *sent* to this object and `U` is the type of the accumulated value.
-/// The thread-locals must be of type [`Holder<T>`].
+/// The thread-locals must be of type [`Holder<T, U>`].
 ///
 /// This type holds the following:
 /// - A state object based on [`ThreadLocal`].
 /// - A nullary closure that produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
-/// - An operation that combines data sent from thread-locals with accumulated value.
+/// - An operation that combines data sent from thread-locals with the accumulated value.
 /// - A binary operation that reduces two accumulated values into one.
 pub struct Control<T, U>
 where
@@ -116,7 +118,7 @@ where
     state: Arc<ThreadLocal<RefCell<U>>>,
     /// Produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
     acc_zero: Arc<dyn Fn() -> U + Send + Sync>,
-    /// Operation that combines data sent from thread-locals with accumulated value.
+    /// Operation that combines data sent from thread-locals with the accumulated value.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
     /// Binary operation that reduces two accumulated values into one.
@@ -170,7 +172,7 @@ where
 
     /// Returns the accumulation of the thread-local values.
     /// Returns an error if any designated thread-local variable instance still exists, i.e., the corresponding
-    /// thread has not yet explicitly joined, directly or indirectly, the thread where this
+    /// thread has not yet terminated and explicitly joined, directly or indirectly, the thread where this
     /// function is called from.
     pub fn drain_tls(&mut self) -> Result<U, DrainTlsError> {
         let state = replace(&mut self.state, Arc::new(ThreadLocal::new()));
@@ -248,7 +250,8 @@ pub trait HolderLocalKey<T, U>
 where
     U: Send,
 {
-    /// Ensures the [`Holder`] is linked with [`Control`].
+    /// Ensures the [`Holder`] is linked with [`Control`]. Needs to be called at least once before
+    /// other method calls on this trait. This method is idempotent.
     fn ensure_linked(&'static self, control: &Control<T, U>);
 
     /// Send data to be aggregated by the `control` object.
