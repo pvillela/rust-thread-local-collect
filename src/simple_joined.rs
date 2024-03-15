@@ -84,10 +84,11 @@
 //!
 //! See another example at [`examples/simple_joined_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/simple_joined_map_accumulator.rs).
 
-pub use crate::common::HolderLocalKey;
+pub use crate::common::{HolderLocalKey, HolderNotLinkedError};
+
 use crate::common::{
-    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, HolderNotLinkedError,
-    New, SubStateParam, UseCtrlStateGDefault,
+    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, New, SubStateParam,
+    UseCtrlStateGDefault,
 };
 use std::{cell::RefCell, marker::PhantomData, thread::LocalKey};
 

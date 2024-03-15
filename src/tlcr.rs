@@ -77,7 +77,8 @@
 //!
 //! See another example at [`examples/tlcr_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlcr_map_accumulator.rs).
 
-use crate::common::HolderNotLinkedError;
+pub use crate::common::HolderNotLinkedError;
+
 use std::{
     cell::RefCell,
     fmt::Debug,

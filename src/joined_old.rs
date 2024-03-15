@@ -11,10 +11,9 @@
 //! threads, other than the thread responsible for collection/aggregation, have
 //! terminated and EXPLICITLY joined, directly or indirectly, into the thread respnosible for collection.
 
-pub use crate::common::HolderLocalKey;
-use crate::common::{
-    ControlG, CoreParam, GDataParam, HolderG, HolderNotLinkedError, NodeParam, SubStateParam, TmapD,
-};
+pub use crate::common::{HolderLocalKey, HolderNotLinkedError};
+
+use crate::common::{ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD};
 use std::{cell::RefCell, marker::PhantomData, mem::replace, ops::DerefMut, thread::LocalKey};
 
 //=================

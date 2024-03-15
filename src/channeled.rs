@@ -102,9 +102,8 @@
 //!
 //! See another example at [`examples/channeled_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/channeled_map_accumulator.rs).
 
-use thiserror::Error;
-
 pub use crate::common::HolderNotLinkedError;
+
 use crate::common::POISONED_CONTROL_MUTEX;
 use std::{
     cell::RefCell,
@@ -116,6 +115,7 @@ use std::{
     },
     thread::{self, LocalKey, ThreadId},
 };
+use thiserror::Error;
 
 // Error consts
 const RECEIVER_DISCONNECTED: &str = "receiver disconnected";
