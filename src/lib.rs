@@ -29,9 +29,13 @@ pub mod probed;
 pub mod simple_joined;
 pub mod test_support;
 
-#[doc(hidden)]
-#[cfg(feature = "old")]
-pub mod joined_old;
-
 #[cfg(feature = "tlcr")]
 pub mod tlcr;
+
+#[doc(hidden)]
+#[cfg(feature = "jold")]
+pub mod joined_old;
+
+#[doc(hidden)]
+#[cfg(feature = "tlcr")]
+pub mod tlcr_old;

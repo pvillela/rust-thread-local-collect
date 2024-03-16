@@ -1,13 +1,18 @@
 //! Simple example usage of [`thread_local_collect::tlcr`].
 
 use std::thread::{self, ThreadId};
-use thread_local_collect::tlcr::Control;
+use thread_local_collect::tlcr_old::{Control, Holder, HolderLocalKey};
 
 // Define your data type, e.g.:
 type Data = i32;
 
 // Define your accumulated value type.
 type AccValue = i32;
+
+// Define your thread-local:
+thread_local! {
+    static MY_TL: Holder<Data, AccValue> = Holder::new();
+}
 
 // Define your accumulation operation.
 fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
@@ -17,6 +22,12 @@ fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 // Define your accumulor reduction operation.
 fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
     acc1 + acc2
+}
+
+// Create a function to send the thread-local value:
+fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
+    MY_TL.ensure_linked(control);
+    MY_TL.send_data(value).unwrap();
 }
 
 const NTHREADS: i32 = 5;
@@ -30,7 +41,7 @@ fn main() {
                 let control = control.clone();
                 s.spawn({
                     move || {
-                        control.send_data(i);
+                        send_tl_data(i, &control);
                     }
                 })
             })

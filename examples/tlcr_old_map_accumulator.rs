@@ -1,12 +1,13 @@
-//! Simple example usage of [`thread_local_collect::tlcr`].
-
 use std::{
     collections::HashMap,
     fmt::Debug,
     sync::RwLock,
     thread::{self, ThreadId},
 };
-use thread_local_collect::{test_support::assert_eq_and_println, tlcr::Control};
+use thread_local_collect::{
+    test_support::assert_eq_and_println,
+    tlcr_old::{Control, Holder, HolderLocalKey},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
@@ -14,6 +15,10 @@ struct Foo(String);
 type Data = (u32, Foo);
 
 type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
+
+thread_local! {
+    static MY_TL: Holder<Data, AccValue> = Holder::new();
+}
 
 fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
     println!(
@@ -42,6 +47,11 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
     acc
 }
 
+fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
+    MY_TL.ensure_linked(control);
+    MY_TL.send_data((k, v)).unwrap();
+}
+
 const NTHREADS: usize = 5;
 
 #[test]
@@ -68,8 +78,8 @@ fn main() {
                         lock[i] = thread::current().id();
                         drop(lock);
 
-                        control.send_data((1, Foo("a".to_owned() + &si)));
-                        control.send_data((2, Foo("b".to_owned() + &si)));
+                        send_tl_data(1, Foo("a".to_owned() + &si), &control);
+                        send_tl_data(2, Foo("b".to_owned() + &si), &control);
                     }
                 })
             })

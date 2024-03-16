@@ -14,13 +14,18 @@
 //!
 //! ```rust
 //! use std::thread::{self, ThreadId};
-//! use thread_local_collect::tlcr::Control;
+//! use thread_local_collect::tlcr_old::{Control, Holder, HolderLocalKey};
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
 //!
 //! // Define your accumulated value type.
 //! type AccValue = i32;
+//!
+//! // Define your thread-local:
+//! thread_local! {
+//!     static MY_TL: Holder<Data, AccValue> = Holder::new();
+//! }
 //!
 //! // Define your accumulation operation.
 //! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
@@ -30,6 +35,12 @@
 //! // Define your accumulor reduction operation.
 //! fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
 //!     acc1 + acc2
+//! }
+//!
+//! // Create a function to send the thread-local value:
+//! fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
+//!     MY_TL.ensure_linked(control);
+//!     MY_TL.send_data(value).unwrap();
 //! }
 //!
 //! const NTHREADS: i32 = 5;
@@ -43,7 +54,7 @@
 //!                 let control = control.clone();
 //!                 s.spawn({
 //!                     move || {
-//!                         control.send_data(i);
+//!                         send_tl_data(i, &control);
 //!                     }
 //!                 })
 //!             })
@@ -65,12 +76,14 @@
 //!
 //! See another example at [`examples/tlcr_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlcr_map_accumulator.rs).
 
+use crate::common::HolderNotLinkedError;
 use std::{
     cell::RefCell,
     fmt::Debug,
     mem::replace,
+    ops::Deref,
     sync::Arc,
-    thread::{self, ThreadId},
+    thread::{self, LocalKey, ThreadId},
 };
 use thiserror::Error;
 use thread_local::ThreadLocal;
@@ -157,13 +170,6 @@ where
         }
     }
 
-    /// Sends data to be aggregated.
-    pub fn send_data(&self, data: T) {
-        let cell = self.state.get_or(|| RefCell::new((self.acc_zero)()));
-        let mut u = cell.borrow_mut();
-        (self.op)(data, &mut u, thread::current().id());
-    }
-
     /// Returns the accumulation of the thread-local values.
     /// Returns an error if any designated thread-local variable instance still exists, i.e., the corresponding
     /// thread has not yet terminated and explicitly joined, directly or indirectly, the thread where this
@@ -185,10 +191,93 @@ where
     }
 }
 
+/// Inner state of [`Holder`].
+struct HolderInner<T, U>
+where
+    U: Send,
+{
+    tid: ThreadId,
+    control: Control<T, U>,
+}
+
+/// Holds a clone of the control object (see [`Control`]), enabling the linkage
+/// of the thread-local with the control object.
+///
+/// `T` is the type of data sent for aggregation and `U` is the aggregate value type.
+pub struct Holder<T, U>(RefCell<Option<HolderInner<T, U>>>)
+where
+    U: Send;
+
+impl<T, U> Holder<T, U>
+where
+    U: Send,
+{
+    /// Instantiates a holder object.
+    pub fn new() -> Self {
+        Self(RefCell::new(None))
+    }
+
+    /// Ensures `self` is initialized.
+    fn ensure_linked(&self, control: &Control<T, U>) {
+        let mut inner = self.0.borrow_mut();
+        if inner.is_none() {
+            *inner = Some(HolderInner {
+                tid: thread::current().id(),
+                control: control.clone(),
+            })
+        }
+    }
+
+    /// Sends data to be aggregated in the `control` object.
+    /// Returns an error if `self` is not linked with `control`.
+    fn send_data(&self, data: T) -> Result<(), HolderNotLinkedError> {
+        let inner_opt = self.0.borrow();
+        match inner_opt.deref() {
+            None => Err(HolderNotLinkedError),
+            Some(inner) => {
+                let control = &inner.control;
+                let cell = control.state.get_or(|| RefCell::new((control.acc_zero)()));
+                let mut u = cell.borrow_mut();
+                (control.op)(data, &mut u, inner.tid);
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Provides access to the thread-local variable.
+pub trait HolderLocalKey<T, U>
+where
+    U: Send,
+{
+    /// Ensures the [`Holder`] is linked with [`Control`]. Needs to be called at least once before
+    /// other method calls on this trait. This method is idempotent.
+    fn ensure_linked(&'static self, control: &Control<T, U>);
+
+    /// Send data to be aggregated by the `control` object.
+    /// Returns an error if [`Holder`] is not linked with [`Control`].
+    fn send_data(&'static self, data: T) -> Result<(), HolderNotLinkedError>;
+}
+
+impl<T, U> HolderLocalKey<T, U> for LocalKey<Holder<T, U>>
+where
+    U: Send,
+{
+    fn ensure_linked(&'static self, control: &Control<T, U>) {
+        self.with(|h| {
+            h.ensure_linked(control);
+        })
+    }
+
+    fn send_data(&'static self, data: T) -> Result<(), HolderNotLinkedError> {
+        self.with(|h| h.send_data(data))
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::Control;
+    use super::{Control, Holder, HolderLocalKey};
     use crate::test_support::assert_eq_and_println;
     use std::{
         collections::HashMap,
@@ -203,6 +292,10 @@ mod tests {
     type Data = (u32, Foo);
 
     type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
+
+    thread_local! {
+        static MY_TL: Holder<Data, AccValue> = Holder::new();
+    }
 
     fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
         println!(
@@ -231,6 +324,11 @@ mod tests {
         acc
     }
 
+    fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
+        MY_TL.ensure_linked(control);
+        MY_TL.send_data((k, v)).unwrap();
+    }
+
     const NTHREADS: usize = 5;
 
     #[test]
@@ -253,8 +351,8 @@ mod tests {
                             lock[i] = thread::current().id();
                             drop(lock);
 
-                            control.send_data((1, Foo("a".to_owned() + &si)));
-                            control.send_data((2, Foo("b".to_owned() + &si)));
+                            send_tl_data(1, Foo("a".to_owned() + &si), &control);
+                            send_tl_data(2, Foo("b".to_owned() + &si), &control);
                         }
                     })
                 })
