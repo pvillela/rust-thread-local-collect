@@ -173,7 +173,7 @@ impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::{Control, Holder, HolderLocalKey};
-
+    use crate::test_support::assert_eq_and_println;
     use std::{
         collections::HashMap,
         fmt::Debug,
@@ -277,7 +277,7 @@ mod tests {
             {
                 let guard = control.acc();
                 let acc = guard.deref();
-                assert!(acc.eq(&map), "Accumulator check: acc={acc:?}, map={map:?}");
+                assert_eq_and_println(acc, &map, "Accumulator check: acc={acc:?}, map={map:?}");
             }
         }
     }
