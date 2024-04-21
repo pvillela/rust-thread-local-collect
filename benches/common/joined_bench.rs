@@ -1,9 +1,9 @@
-//! Benchmark for [`thread_local_collect::simple_joined`].
+//! Benchmark for [`thread_local_collect::joined`].
 
 use super::{bench, BenchTarget};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::simple_joined::{Control, Holder, HolderLocalKey};
+use thread_local_collect::joined::{Control, Holder, HolderLocalKey};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -45,7 +45,7 @@ impl BenchTarget<Data, AccValue> for BenchStruct {
     }
 }
 
-pub fn simple_joined_bench() {
+pub fn joined_bench() {
     let control = Control::new(HashMap::new(), op);
     let target = BenchStruct(control);
     bench(target);

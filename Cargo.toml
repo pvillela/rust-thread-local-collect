@@ -18,10 +18,6 @@ jold = []
 env_logger = "0.11"
 criterion = { version = "0.5", features = ["html_reports"] }
 
-# [[bench]]
-# name = "my_benchmark"
-# harness = false
-
 [[bench]]
-name = "tlc_benchmark"
+name = "benchmark"
 harness = false

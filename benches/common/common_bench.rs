@@ -1,13 +1,5 @@
 use criterion::black_box;
-use std::{ops::Deref, thread};
-
-pub fn fibonacci(n: u64) -> u64 {
-    match n {
-        0 => 1,
-        1 => 1,
-        n => fibonacci(n - 1) + fibonacci(n - 2),
-    }
-}
+use std::{fmt::Debug, ops::Deref, thread};
 
 pub const NTHREADS: u32 = 100;
 pub const NENTRIES: u32 = 10;
@@ -17,8 +9,8 @@ pub trait BenchTarget<T, U> {
     fn acc(&mut self) -> impl Deref<Target = U>;
 }
 
-pub fn bench_fn<T, U>(mut target: impl BenchTarget<T, U> + Sync) -> impl FnMut() {
-    move || {
+pub fn bench<T, U: Debug>(mut target: impl BenchTarget<T, U> + Sync) {
+    let mut bench = move || {
         {
             let target = &target;
             thread::scope(|s| {
@@ -40,7 +32,8 @@ pub fn bench_fn<T, U>(mut target: impl BenchTarget<T, U> + Sync) -> impl FnMut()
 
         {
             let acc = target.acc();
-            black_box(acc);
+            black_box(&acc);
         }
-    }
+    };
+    bench()
 }

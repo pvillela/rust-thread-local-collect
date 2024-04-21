@@ -18,12 +18,12 @@ type Data = HashMap<u32, Foo>;
 type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_FOO_MAP: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
+    static MY_TL: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-    MY_FOO_MAP.ensure_linked(control);
-    MY_FOO_MAP
+    MY_TL.ensure_linked(control);
+    MY_TL
         .with_data_mut(|data| {
             data.insert(k, v);
         })
@@ -31,7 +31,7 @@ fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
 }
 
 fn print_tl(prefix: &str) {
-    MY_FOO_MAP.with(|r| {
+    MY_TL.with(|r| {
         println!(
             "{}: local map for thread id={:?}: {:?}",
             prefix,

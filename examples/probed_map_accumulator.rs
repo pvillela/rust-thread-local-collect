@@ -21,12 +21,12 @@ type Data = HashMap<u32, Foo>;
 type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_FOO_MAP: Holder<Data, AccValue> = Holder::new(HashMap::new);
+    static MY_TL: Holder<Data, AccValue> = Holder::new(HashMap::new);
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-    MY_FOO_MAP.ensure_linked(control);
-    MY_FOO_MAP.with_data_mut(|data| data.insert(k, v)).unwrap();
+    MY_TL.ensure_linked(control);
+    MY_TL.with_data_mut(|data| data.insert(k, v)).unwrap();
 }
 
 fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
@@ -43,7 +43,7 @@ fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
 }
 
 fn assert_tl(other: &Data, msg: &str) {
-    MY_FOO_MAP
+    MY_TL
         .with_data(|map| {
             assert_eq_and_println(map, other, msg);
         })

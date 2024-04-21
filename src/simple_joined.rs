@@ -191,12 +191,12 @@ mod tests {
     type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
 
     thread_local! {
-        static MY_FOO_MAP: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
+        static MY_TL: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-        MY_FOO_MAP.ensure_linked(control);
-        MY_FOO_MAP.with_data_mut(|data| data.insert(k, v)).unwrap();
+        MY_TL.ensure_linked(control);
+        MY_TL.with_data_mut(|data| data.insert(k, v)).unwrap();
     }
 
     fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
@@ -213,7 +213,7 @@ mod tests {
     }
 
     fn assert_tl(other: &Data, msg: &str) {
-        MY_FOO_MAP
+        MY_TL
             .with_data(|map| {
                 assert_eq!(map, other, "{msg}");
             })
