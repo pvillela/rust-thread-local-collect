@@ -19,5 +19,13 @@ env_logger = "0.11"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
-name = "benchmark"
+name = "u32_benchmark"
+harness = false
+
+[[bench]]
+name = "map_benchmark"
+harness = false
+
+[[bench]]
+name = "channeled_bg_benchmark"
 harness = false

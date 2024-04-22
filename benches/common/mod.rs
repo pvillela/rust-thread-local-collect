@@ -1,3 +1,5 @@
+#![allow(unused)] // needed due to linting bug in Rust Analyzer for benches
+
 mod common_bench;
 pub use common_bench::*;
 
