@@ -1,6 +1,6 @@
 //! Benchmark for [`thread_local_collect::simple_joined`].
 
-use super::{bench, BenchTarget};
+use super::{bench, BenchTarget, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
 use thread_local_collect::channeled::{Control, Holder, HolderLocalKey};
@@ -36,12 +36,16 @@ impl BenchTarget<Data, AccValue> for BenchStruct {
     }
 
     fn acc(&mut self) -> impl Deref<Target = AccValue> {
-        self.0.acc()
+        self.0.drain_tls();
+        let acc = self.0.acc();
+        assert!(acc.len() == NTHREADS as usize);
+        acc
     }
 }
 
 pub fn channeled_bench() {
     let control = Control::new(HashMap::new(), op);
+    // control.start_receiving_tls().unwrap(); // this significantly slows thigs down
     let target = BenchStruct(control);
     bench(target);
 }

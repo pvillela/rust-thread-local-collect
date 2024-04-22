@@ -1,6 +1,6 @@
 //! Benchmark for [`thread_local_collect::tlcr`].
 
-use super::{bench, BenchTarget};
+use super::{bench, BenchTarget, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
 use thread_local_collect::tlcr::Control;
@@ -44,7 +44,9 @@ impl BenchTarget<Data, AccValue> for BenchStruct {
     }
 
     fn acc(&mut self) -> impl Deref<Target = AccValue> {
-        Wrap(self.0.drain_tls().unwrap())
+        let acc = self.0.drain_tls().unwrap();
+        assert!(acc.len() == NTHREADS as usize);
+        Wrap(acc)
     }
 }
 
