@@ -1,10 +1,11 @@
 //! This module is supported on **`feature="tlcr"`** only.
-//! This module supports the collection and aggregation of the values from a designated thread-local variable
-//! across threads (see package [overview and core concepts](super)). The following features and constraints apply ...
-//! - The designated thread-local variable may NOT be used in the thread responsible for
-//! collection/aggregation. (If this condition is violated, the [`Control::drain_tls`] function returns an error.)
-//! - The linked thread-local variables hold a [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance that is a clone of an object of the same
-//! type held in a [Control] object to accumulate thread-local values that are *sent* to it.
+//! This module supports the collection and aggregation of values across threads (see package
+//! [overview and core concepts](super)). The following features and constraints apply ...
+//! - Values may NOT be collected from the thread responsible for collection/aggregation.
+//! (If this condition is violated, the [`Control::drain_tls`] function returns an error.)
+//! - The participating threads access a [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance
+//! that is a clone of an object of the same type held in a [Control] object to accumulate thread-local values that
+//! are *sent* to it.
 //! - The [`Control::drain_tls`] function can be called after all participating threads have
 //! terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
 //!
@@ -90,7 +91,6 @@ pub enum DrainTlsError {
 /// Controls the collection and accumulation of thread-local variables linked to this object.
 ///
 /// `T` is the type of the values *sent* to this object and `U` is the type of the accumulated value.
-/// The thread-locals must be of type [`Holder<T, U>`].
 ///
 /// This type holds the following:
 /// - A state object based on [`ThreadLocal`].
