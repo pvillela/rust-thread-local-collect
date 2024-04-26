@@ -17,3 +17,6 @@ pub use channeled_bench::*;
 
 mod tlcr_bench;
 pub use tlcr_bench::*;
+
+mod tlcr_probed_bench;
+pub use tlcr_probed_bench::*;
