@@ -35,12 +35,14 @@ fn target(name: &str) -> fn() {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let target_args = env::var("TARGET_ARGS").unwrap();
+    let target_args = env::var("TARGET_ARGS").expect("`TARGET_ARGS` is set by script `bench.sh`");
     let names: Vec<&str> = target_args.split_whitespace().collect();
     println!("target names={names:?}");
+    // force early validation of all target names
+    let targets: Vec<fn()> = names.iter().map(|name| target(name)).collect();
 
-    for name in names {
-        c.bench_function(name, |b| b.iter(target(name)));
+    for (name, target) in names.into_iter().zip(targets.into_iter()) {
+        c.bench_function(name, |b| b.iter(target));
     }
 }
 
