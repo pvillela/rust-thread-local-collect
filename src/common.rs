@@ -265,7 +265,14 @@ where
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
     /// Panics if `self`'s mutex is poisoned.
-    pub fn acc(&self) -> AccGuardG<'_, P::CtrlState> {
+    pub fn acc0(&self) -> AccGuardG<'_, P::CtrlState> {
+        AccGuardG::new(self.lock())
+    }
+
+    /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
+    /// lifetime.
+    /// Panics if `self`'s mutex is poisoned.
+    pub fn acc<'a>(&'a self) -> impl Deref<Target = P::Acc> + 'a {
         AccGuardG::new(self.lock())
     }
 
