@@ -186,7 +186,7 @@ impl<T, U> ChanneledState<T, U> {
 
 /// Guard object of a [`Control`]'s `acc` field. A lock is held during the guard's lifetime.
 #[derive(Debug)]
-pub struct AccGuard<'a, T, U>(MutexGuard<'a, ChanneledState<T, U>>);
+struct AccGuard<'a, T, U>(MutexGuard<'a, ChanneledState<T, U>>);
 
 impl<'a, T, U> Deref for AccGuard<'a, T, U> {
     type Target = U;
@@ -240,7 +240,7 @@ impl<T, U> Control<T, U> {
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
     /// Panics if `self`'s mutex is poisoned.
-    pub fn acc(&self) -> AccGuard<'_, T, U> {
+    pub fn acc<'a>(&'a self) -> impl Deref<Target = U> + 'a {
         AccGuard(self.lock())
     }
 

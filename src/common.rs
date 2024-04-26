@@ -130,7 +130,7 @@ where
 // Core structs and impls
 
 /// Guard that dereferences to the accumulator type. A lock is held during the guard's lifetime.
-pub struct AccGuardG<'a, S> {
+struct AccGuardG<'a, S> {
     guard: MutexGuard<'a, S>,
 }
 
@@ -260,13 +260,6 @@ where
     /// Panics if `self`'s mutex is poisoned.
     pub(crate) fn lock(&self) -> MutexGuard<'_, P::CtrlState> {
         self.state.lock().expect(POISONED_CONTROL_MUTEX)
-    }
-
-    /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
-    /// lifetime.
-    /// Panics if `self`'s mutex is poisoned.
-    pub fn acc0(&self) -> AccGuardG<'_, P::CtrlState> {
-        AccGuardG::new(self.lock())
     }
 
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
