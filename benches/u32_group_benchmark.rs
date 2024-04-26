@@ -1,5 +1,6 @@
-//! Execution of benchmarks for different modules with u32 accumulators.
+//! Execution of benchmarks for different modules with u32 accumulators, using the `group` construct.
 //! This excludes [common::channeled_bg_u32_bench] which is very slow.
+//! The results are comparable to those from `bench_u32.sh` which uses `benchmark.rs`.
 
 mod common;
 

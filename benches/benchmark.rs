@@ -1,5 +1,5 @@
-//! Execution of benchmarks for different modules with u32 accumulators.
-//! This excludes [common::channeled_bg_u32_bench] which is very slow.
+//! Execution of benchmarks for different modules.
+//! The modules are selected based on the environment variable `TARGET_ARGS`, which is set by script `bench.sh`.
 
 mod common;
 

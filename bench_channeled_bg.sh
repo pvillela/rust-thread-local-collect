@@ -1,3 +1,3 @@
 #!/bin/bash
 
-cargo bench --all-features --bench channeled_bg_benchmark
+./bench.sh channeled_bg_u32 channeled_bg_map
