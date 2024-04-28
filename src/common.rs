@@ -10,7 +10,7 @@ use std::{
     mem::replace,
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex, MutexGuard},
-    thread::{self, ThreadId},
+    thread::{self, LocalKey, ThreadId},
 };
 use thiserror::Error;
 
@@ -228,10 +228,15 @@ where
 
 /// Controls the collection and accumulation of thread-local values linked to this object.
 /// Such values, of type [`CoreParam::Dat`], must be held in thread-locals of type [`HolderG<P>`].
-pub struct ControlG<P>
+pub struct ControlG<P, D>
 where
-    P: CoreParam + CtrlStateParam,
+    P: CoreParam + GDataParam + CtrlStateParam + 'static,
+    P::Dat: 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P::CtrlState: CtrlStateCore<P>,
+    D: 'static,
 {
+    pub(crate) tl: &'static LocalKey<HolderG<P, D>>,
     /// Keeps track of linked thread-locals and accumulated value.
     pub(crate) state: Arc<Mutex<P::CtrlState>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
@@ -239,18 +244,22 @@ where
     pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync>,
 }
 
-impl<P> ControlG<P>
+impl<P, D> ControlG<P, D>
 where
-    P: CoreParam + CtrlStateParam,
+    P: CoreParam + GDataParam + CtrlStateParam + 'static,
+    P::Dat: 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Instantiates a *control* object.
     pub fn new(
+        tl: &'static LocalKey<HolderG<P, D>>,
         acc_base: P::Acc,
         op: impl Fn(P::Dat, &mut P::Acc, ThreadId) + 'static + Send + Sync,
     ) -> Self {
         let state = P::CtrlState::new(acc_base);
         Self {
+            tl,
             state: Arc::new(Mutex::new(state)),
             op: Arc::new(op),
         }
@@ -302,9 +311,45 @@ where
     }
 }
 
-impl<P> ControlG<P>
+pub struct NoNode;
+
+impl<P> ControlG<P, NoNode>
 where
-    P: CoreParam + NodeParam + CtrlStateParam,
+    P: CoreParam + GDataParam + CtrlStateParam + 'static + UseCtrlStateGDefault,
+    P::Dat: 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P::CtrlState: CtrlStateCore<P>,
+{
+    /// Invokes `f` on the held data.
+    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
+    pub fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> Result<V, HolderNotLinkedError> {
+        self.tl.with(|h| {
+            h.ensure_linked(self);
+            h.with_data(f)
+        })
+    }
+
+    /// Invokes `f` mutably on the held data.
+    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
+    pub fn with_data_mut<V>(
+        &self,
+        f: impl FnOnce(&mut P::Dat) -> V,
+    ) -> Result<V, HolderNotLinkedError> {
+        self.tl.with(|h| {
+            h.ensure_linked(self);
+            h.with_data_mut(f)
+        })
+    }
+}
+
+pub struct WithNode;
+
+impl<P> ControlG<P, WithNode>
+where
+    P: CoreParam + NodeParam + GDataParam + CtrlStateParam + 'static,
+    P::Dat: 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P::CtrlState: CtrlStateCore<P>,
     P::CtrlState: CtrlStateWithNode<P>,
 {
     /// Called by [`HolderG`] when a thread-local variable starts being used.
@@ -313,23 +358,56 @@ where
         let mut lock = self.lock();
         lock.register_node(node, tid)
     }
+
+    /// Invokes `f` on the held data.
+    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
+    pub(crate) fn with_data_node<V>(
+        &self,
+        f: impl FnOnce(&P::Dat) -> V,
+        node: fn(&Self) -> P::Node,
+    ) -> Result<V, HolderNotLinkedError> {
+        self.tl.with(|h| {
+            h.ensure_linked(self, node(self));
+            h.with_data(f)
+        })
+    }
+
+    /// Invokes `f` mutably on the held data.
+    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
+    pub(crate) fn with_data_mut_node<V>(
+        &self,
+        f: impl FnOnce(&mut P::Dat) -> V,
+        node: fn(&Self) -> P::Node,
+    ) -> Result<V, HolderNotLinkedError> {
+        self.tl.with(|h| {
+            h.ensure_linked(self, node(self));
+            h.with_data_mut(f)
+        })
+    }
 }
 
-impl<P> Clone for ControlG<P>
+impl<P, D> Clone for ControlG<P, D>
 where
-    P: CoreParam + CtrlStateParam,
+    P: CoreParam + GDataParam + CtrlStateParam + 'static,
+    P::Dat: 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P::CtrlState: CtrlStateCore<P>,
 {
     fn clone(&self) -> Self {
         Self {
+            tl: self.tl,
             state: self.state.clone(),
             op: self.op.clone(),
         }
     }
 }
 
-impl<P> Debug for ControlG<P>
+impl<P, D> Debug for ControlG<P, D>
 where
-    P: CoreParam + CtrlStateParam,
+    P: CoreParam + GDataParam + CtrlStateParam + 'static,
+    P::Dat: 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P::CtrlState: CtrlStateCore<P>,
     P::CtrlState: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -384,19 +462,20 @@ impl<T: 'static> GuardedData<T> for Arc<Mutex<T>> {
 
 /// Holds thread-local data and a smart pointer to a [`ControlG`], enabling the linkage of the held data
 /// with the control object.
-pub struct HolderG<P>
+pub struct HolderG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam,
+    P: CoreParam + GDataParam + CtrlStateParam + 'static,
     P::Dat: 'static,
     P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
     P::CtrlState: CtrlStateCore<P>,
+    D: 'static,
 {
     pub(crate) data: P::GData,
-    pub(crate) control: RefCell<Option<ControlG<P>>>,
+    pub(crate) control: RefCell<Option<ControlG<P, D>>>,
     pub(crate) make_data: fn() -> P::Dat,
 }
 
-impl<P> HolderG<P>
+impl<P, D> HolderG<P, D>
 where
     P: CoreParam + GDataParam + CtrlStateParam,
     P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
@@ -413,7 +492,7 @@ where
     }
 
     /// Returns reference to `control` field.
-    pub(crate) fn control(&self) -> Ref<'_, Option<ControlG<P>>> {
+    pub(crate) fn control(&self) -> Ref<'_, Option<ControlG<P, D>>> {
         self.control.borrow()
     }
 
@@ -463,7 +542,7 @@ where
     }
 }
 
-impl<P> HolderG<P>
+impl<P> HolderG<P, NoNode>
 where
     P: CoreParam + GDataParam + CtrlStateParam,
     P::Dat: 'static,
@@ -471,20 +550,20 @@ where
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Initializes the `control` field in [`HolderG`].
-    fn link(&self, control: &ControlG<P>) {
+    fn link(&self, control: &ControlG<P, NoNode>) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
     }
 
     /// Ensures `self` is linkded with `control`.
-    pub(crate) fn ensure_linked(&self, control: &ControlG<P>) {
+    pub(crate) fn ensure_linked(&self, control: &ControlG<P, NoNode>) {
         if self.control().as_ref().is_none() {
             self.link(control);
         }
     }
 }
 
-impl<P> HolderG<P>
+impl<P> HolderG<P, WithNode>
 where
     P: CoreParam + GDataParam + NodeParam + CtrlStateParam,
     P::Dat: 'static,
@@ -492,21 +571,21 @@ where
     P::CtrlState: CtrlStateWithNode<P>,
 {
     /// Initializes the `control` field in [`HolderG`] when a node type is used.
-    fn link_node(&self, control: &ControlG<P>, node: P::Node) {
+    fn link(&self, control: &ControlG<P, WithNode>, node: P::Node) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
         control.register_node(node, thread::current().id())
     }
 
     /// Ensures `self` is linked to `control` when a node type is used.
-    pub(crate) fn ensure_linked_node(&self, control: &ControlG<P>, node: P::Node) {
+    pub(crate) fn ensure_linked(&self, control: &ControlG<P, WithNode>, node: P::Node) {
         if self.control().as_ref().is_none() {
-            self.link_node(control, node);
+            self.link(control, node);
         }
     }
 }
 
-impl<P> Debug for HolderG<P>
+impl<P, D> Debug for HolderG<P, D>
 where
     P: CoreParam + GDataParam + CtrlStateParam + Debug,
     P::GData: GuardedData<P::Dat, Arg = P::Dat> + Debug + 'static,
@@ -517,7 +596,7 @@ where
     }
 }
 
-impl<P> Drop for HolderG<P>
+impl<P, D> Drop for HolderG<P, D>
 where
     P: CoreParam + GDataParam + CtrlStateParam,
     P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
@@ -526,32 +605,6 @@ where
     fn drop(&mut self) {
         self.drop_data()
     }
-}
-
-//=================
-// Visible trait
-
-/// Provides access to [`HolderG`] specializations of different framework modules
-/// ([`crate::joined`], [`crate::simple_joined`], [`crate::probed`]).
-pub trait HolderLocalKey<P>
-where
-    P: CoreParam + CtrlStateParam,
-{
-    /// Ensures the [`HolderG`] is linked with [`ControlG`]. Needs to be called at least once before
-    /// other method calls on this trait. This method is idempotent.
-    fn ensure_linked(&'static self, control: &ControlG<P>);
-
-    /// Invokes `f` on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    fn with_data<V>(&'static self, f: impl FnOnce(&P::Dat) -> V)
-        -> Result<V, HolderNotLinkedError>;
-
-    /// Invokes `f` mutably on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    fn with_data_mut<V>(
-        &'static self,
-        f: impl FnOnce(&mut P::Dat) -> V,
-    ) -> Result<V, HolderNotLinkedError>;
 }
 
 //=================
