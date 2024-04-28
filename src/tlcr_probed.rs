@@ -1,8 +1,8 @@
 //! This module is supported on **`feature="tlcr"`** only.
 //! This module supports the collection and aggregation of values across threads (see package
 //! [overview and core concepts](super)). The following features and constraints apply ...
-//! - Values may NOT be collected from the thread responsible for collection/aggregation.
-//! (If this condition is violated, the [`Control::drain_tls`] function returns an error.)
+//! - Values may be collected from the thread responsible for collection/aggregation, provided that [`Control`]
+//! is created on that thread and is not cloned by that thread.
 //! - The participating threads access a [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance
 //! that is a clone of an object of the same type held in a [Control] object to accumulate thread-local values that
 //! are *sent* to it.
@@ -251,6 +251,14 @@ mod tests {
     fn test() {
         let mut control = Control::new(HashMap::new, op, op_r);
 
+        {
+            control.send_data((1, Foo("a".to_owned())));
+            control.send_data((2, Foo("b".to_owned())));
+        }
+
+        let tid_own = thread::current().id();
+        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
+
         // This is directly defined as a reference to prevent the move closure below from moving the
         // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
         let spawned_tids = &RwLock::new(vec![thread::current().id(); NTHREADS]);
@@ -291,7 +299,8 @@ mod tests {
                     (tid_i, map_i)
                 })
                 .collect::<Vec<_>>();
-            let map = maps.into_iter().collect::<HashMap<_, _>>();
+            let mut map = maps.into_iter().collect::<HashMap<_, _>>();
+            map.insert(tid_own, map_own);
 
             {
                 let acc = control.drain_tls().unwrap();
