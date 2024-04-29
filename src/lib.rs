@@ -25,7 +25,7 @@ pub mod channeled;
 pub mod common;
 pub mod joined;
 pub mod probed;
-// pub mod simple_joined;
+pub mod simple_joined;
 pub mod test_support;
 
 #[cfg(feature = "tlcr")]
@@ -33,10 +33,3 @@ pub mod tlcr;
 
 #[cfg(feature = "tlcr")]
 pub mod tlcr_probed;
-
-// #[doc(hidden)]
-// #[cfg(feature = "jold")]
-// pub mod joined_old;
-#[doc(hidden)]
-#[cfg(feature = "tlcr")]
-pub mod tlcr_old;

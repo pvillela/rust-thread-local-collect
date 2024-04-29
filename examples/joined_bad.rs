@@ -1,9 +1,6 @@
 //! Demonstrates race condition in [thread_local_collect::joined::Control::take_tls].
 
-use thread_local_collect::{
-    common::HolderLocalKey,
-    joined::{Control, Holder},
-};
+use thread_local_collect::joined::{Control, Holder};
 
 use std::{
     collections::HashMap,
@@ -22,12 +19,11 @@ type Data = HashMap<u32, Foo>;
 type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_FOO_MAP: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
+    static MY_TL: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-    MY_FOO_MAP.ensure_linked(control);
-    MY_FOO_MAP.with_data_mut(|data| data.insert(k, v)).unwrap();
+    control.with_data_mut(|data| data.insert(k, v)).unwrap();
 }
 
 fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
@@ -37,8 +33,8 @@ fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
     }
 }
 
-fn assert_tl(other: &Data, msg: &str) {
-    MY_FOO_MAP
+fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccumulatorMap>) {
+    control
         .with_data(|map| {
             assert_eq!(map, other, "{msg}");
         })
@@ -47,7 +43,7 @@ fn assert_tl(other: &Data, msg: &str) {
 
 /// Demonstrates race condition in [thread_local_collect::joined::Control::take_tls]
 fn own_thread_and_implicit_joins() {
-    let control = Control::new(HashMap::new(), op);
+    let control = Control::new(&MY_TL, HashMap::new(), op);
 
     let own_tid = thread::current().id();
     println!("main_tid={:?}", own_tid);
@@ -58,7 +54,7 @@ fn own_thread_and_implicit_joins() {
         insert_tl_entry(2, Foo("b".to_owned()), &control);
 
         let other = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-        assert_tl(&other, "After main thread inserts");
+        assert_tl(&other, "After main thread inserts", &control);
     }
 
     thread::sleep(Duration::from_millis(100));
@@ -80,10 +76,10 @@ fn own_thread_and_implicit_joins() {
 
                 insert_tl_entry(1, value1.clone(), &control);
                 let other = HashMap::from([(1, value1)]);
-                assert_tl(&other, "Before 1st insert");
+                assert_tl(&other, "Before 1st insert", &control);
 
                 insert_tl_entry(2, value2, &control);
-                assert_tl(map_i, "Before 2nd insert");
+                assert_tl(map_i, "Before 2nd insert", &control);
             });
         });
 
@@ -92,8 +88,7 @@ fn own_thread_and_implicit_joins() {
             let spawned_tid = lock.last().unwrap();
             map.insert(*spawned_tid, map_i.clone());
 
-            // Safety: NOT called after all other threads explicitly joined.
-            unsafe { control.take_tls() };
+            control.take_tls();
 
             let acc = control.acc();
             assert_eq!(acc.deref(), &map, "Accumulator check on iteration {}", i);

@@ -5,7 +5,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::probed::{Control, Holder, HolderLocalKey};
+use thread_local_collect::probed::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;
@@ -25,8 +25,7 @@ fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 
 // Create a function to update the thread-local value:
 fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-    MY_TL.ensure_linked(control);
-    MY_TL
+    control
         .with_data_mut(|data| {
             *data = value;
         })
@@ -34,7 +33,7 @@ fn update_tl(value: Data, control: &Control<Data, AccValue>) {
 }
 
 fn main() {
-    let control = Control::new(0, op);
+    let control = Control::new(&MY_TL, 0, op);
 
     update_tl(1, &control);
 

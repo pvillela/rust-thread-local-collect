@@ -1,7 +1,7 @@
 //! Example usage of [`thread_local_collect::simple_joined`].
 
 use thread_local_collect::{
-    simple_joined::{Control, Holder, HolderLocalKey},
+    simple_joined::{Control, Holder},
     test_support::assert_eq_and_println,
 };
 
@@ -26,8 +26,7 @@ thread_local! {
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-    MY_TL.ensure_linked(control);
-    MY_TL.with_data_mut(|data| data.insert(k, v)).unwrap();
+    control.with_data_mut(|data| data.insert(k, v)).unwrap();
 }
 
 fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
@@ -43,8 +42,8 @@ fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
     }
 }
 
-fn assert_tl(other: &Data, msg: &str) {
-    MY_TL
+fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccumulatorMap>) {
+    control
         .with_data(|map| {
             assert_eq!(map, other, "{msg}");
         })
@@ -57,7 +56,7 @@ fn test() {
 }
 
 fn main() {
-    let control = Control::new(HashMap::new(), op);
+    let control = Control::new(&MY_TL, HashMap::new(), op);
     let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
     thread::scope(|s| {
@@ -79,7 +78,7 @@ fn main() {
                         insert_tl_entry(1, Foo("a".to_owned() + &si), control);
 
                         let other = HashMap::from([(1, Foo("a".to_owned() + &si))]);
-                        assert_tl(&other, "After 1st insert");
+                        assert_tl(&other, "After 1st insert", control);
 
                         insert_tl_entry(2, Foo("b".to_owned() + &si), control);
 
@@ -87,7 +86,7 @@ fn main() {
                             (1, Foo("a".to_owned() + &si)),
                             (2, Foo("b".to_owned() + &si)),
                         ]);
-                        assert_tl(&other, "After 2nd insert");
+                        assert_tl(&other, "After 2nd insert", control);
                     }
                 })
             })

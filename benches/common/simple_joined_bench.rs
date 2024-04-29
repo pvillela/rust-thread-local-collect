@@ -3,13 +3,13 @@
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::simple_joined::{Control, Holder, HolderLocalKey};
+use thread_local_collect::simple_joined::{Control, Holder};
 
 mod map_bench {
     use super::*;
 
     #[derive(Debug, Clone)]
-    pub(super) struct Foo(String);
+    pub struct Foo(String);
 
     type Data = HashMap<u32, Foo>;
 
@@ -20,8 +20,7 @@ mod map_bench {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        MY_TL.ensure_linked(control);
-        MY_TL
+        control
             .with_data_mut(|data| {
                 data.insert(k, v);
             })
@@ -47,6 +46,10 @@ mod map_bench {
             acc
         }
     }
+
+    pub(super) fn control() -> Control<Data, AccValue> {
+        Control::new(&MY_TL, HashMap::new(), op)
+    }
 }
 
 mod u32_bench {
@@ -61,15 +64,14 @@ mod u32_bench {
     }
 
     fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-        MY_TL.ensure_linked(control);
-        MY_TL
+        control
             .with_data_mut(|data| {
                 *data += value;
             })
             .unwrap();
     }
 
-    pub(super) fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {
+    pub fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {
         *acc += data;
     }
 
@@ -87,16 +89,18 @@ mod u32_bench {
             acc
         }
     }
+
+    pub(super) fn control() -> Control<Data, AccValue> {
+        Control::new(&MY_TL, 0, op)
+    }
 }
 
 pub fn simple_joined_map_bench() {
     use map_bench::*;
-    let control = Control::new(HashMap::new(), op);
-    bench(control);
+    bench(control());
 }
 
 pub fn simple_joined_u32_bench() {
     use u32_bench::*;
-    let control = Control::new(0, op);
-    bench(control);
+    bench(control());
 }

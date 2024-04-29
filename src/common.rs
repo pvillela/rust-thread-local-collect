@@ -236,6 +236,7 @@ where
     P::CtrlState: CtrlStateCore<P>,
     D: 'static,
 {
+    /// Reference to thread-local
     pub(crate) tl: &'static LocalKey<HolderG<P, D>>,
     /// Keeps track of linked thread-locals and accumulated value.
     pub(crate) state: Arc<Mutex<P::CtrlState>>,

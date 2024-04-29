@@ -22,7 +22,7 @@
 //!     ops::Deref,
 //!     thread::{self, ThreadId},
 //! };
-//! use thread_local_collect::simple_joined::{Control, Holder, HolderLocalKey};
+//! use thread_local_collect::simple_joined::{Control, Holder};
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -42,14 +42,15 @@
 //!
 //! // Create a function to update the thread-local value:
 //! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     MY_TL.ensure_linked(control);
-//!     MY_TL.with_data_mut(|data| {
-//!         *data = value;
-//!     }).unwrap();
+//!     control
+//!         .with_data_mut(|data| {
+//!             *data = value;
+//!         })
+//!         .unwrap();
 //! }
 //!
 //! fn main() {
-//!     let control = Control::new(0, op);
+//!     let control = Control::new(&MY_TL, 0, op);
 //!
 //!     update_tl(1, &control);
 //!
@@ -84,13 +85,11 @@
 //!
 //! See another example at [`examples/simple_joined_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/simple_joined_map_accumulator.rs).
 
-pub use crate::common::HolderLocalKey;
-
 use crate::common::{
-    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, HolderNotLinkedError,
-    New, SubStateParam, UseCtrlStateGDefault,
+    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, New, NoNode,
+    SubStateParam, UseCtrlStateGDefault,
 };
-use std::{cell::RefCell, marker::PhantomData, thread::LocalKey};
+use std::{cell::RefCell, marker::PhantomData};
 
 //=================
 // Core implementation based on common module
@@ -139,40 +138,17 @@ impl<T, U> CtrlStateParam for P<T, U> {
 ///
 /// `T` is the type of the thread-local values and `U` is the type of the accumulated value.
 /// The data values are held in thread-locals of type [`Holder<T, U>`].
-pub type Control<T, U> = ControlG<P<T, U>>;
+pub type Control<T, U> = ControlG<P<T, U>, NoNode>;
 
 /// Specialization of [`HolderG`] for this module.
 /// Holds thread-local data of type `T` and a smart pointer to a [`Control<T, U>`], enabling the linkage of
 /// the held data with the control object.
-pub type Holder<T, U> = HolderG<P<T, U>>;
-
-//=================
-// Implementation of HolderLocalKey.
-
-impl<T, U> HolderLocalKey<P<T, U>> for LocalKey<Holder<T, U>> {
-    /// Ensures [`Holder`] is properly initialized by initializing it if not.
-    fn ensure_linked(&'static self, control: &Control<T, U>) {
-        self.with(|h| h.ensure_linked(control))
-    }
-
-    /// Invokes `f` on [`Holder`] data. Panics if data is [`None`].
-    fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> Result<V, HolderNotLinkedError> {
-        self.with(|h| h.with_data(f))
-    }
-
-    /// Invokes `f` mutably on [`Holder`] data. Panics if data is [`None`].
-    fn with_data_mut<V>(
-        &'static self,
-        f: impl FnOnce(&mut T) -> V,
-    ) -> Result<V, HolderNotLinkedError> {
-        self.with(|h| h.with_data_mut(f))
-    }
-}
+pub type Holder<T, U> = HolderG<P<T, U>, NoNode>;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Control, Holder, HolderLocalKey};
+    use super::{Control, Holder};
     use crate::test_support::assert_eq_and_println;
     use std::{
         collections::HashMap,
@@ -195,8 +171,7 @@ mod tests {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-        MY_TL.ensure_linked(control);
-        MY_TL.with_data_mut(|data| data.insert(k, v)).unwrap();
+        control.with_data_mut(|data| data.insert(k, v)).unwrap();
     }
 
     fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
@@ -212,8 +187,8 @@ mod tests {
         }
     }
 
-    fn assert_tl(other: &Data, msg: &str) {
-        MY_TL
+    fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccumulatorMap>) {
+        control
             .with_data(|map| {
                 assert_eq!(map, other, "{msg}");
             })
@@ -222,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_all() {
-        let control = Control::new(HashMap::new(), op);
+        let control = Control::new(&MY_TL, HashMap::new(), op);
         let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
         thread::scope(|s| {
@@ -244,7 +219,7 @@ mod tests {
                             insert_tl_entry(1, Foo("a".to_owned() + &si), control);
 
                             let other = HashMap::from([(1, Foo("a".to_owned() + &si))]);
-                            assert_tl(&other, "After 1st insert");
+                            assert_tl(&other, "After 1st insert", control);
 
                             insert_tl_entry(2, Foo("b".to_owned() + &si), control);
 
@@ -252,7 +227,7 @@ mod tests {
                                 (1, Foo("a".to_owned() + &si)),
                                 (2, Foo("b".to_owned() + &si)),
                             ]);
-                            assert_tl(&other, "After 2nd insert");
+                            assert_tl(&other, "After 2nd insert", control);
                         }
                     })
                 })

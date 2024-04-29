@@ -20,7 +20,7 @@
 //!     thread::{self, ThreadId},
 //!     time::Duration,
 //! };
-//! use thread_local_collect::channeled::{Control, Holder, HolderLocalKey};
+//! use thread_local_collect::channeled::{Control, Holder};
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -40,12 +40,11 @@
 //!
 //! // Create a function to send the thread-local value:
 //! fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
-//!     MY_TL.ensure_linked(control);
-//!     MY_TL.send_data(value).unwrap();
+//!     control.send_data(value).unwrap();
 //! }
 //!
 //! fn main() {
-//!     let control = Control::new(0, op);
+//!     let control = Control::new(&MY_TL, 0, op);
 //!
 //!     thread::scope(|s| {
 //!         let h = s.spawn(|| {
@@ -200,7 +199,12 @@ impl<'a, T, U> Deref for AccGuard<'a, T, U> {
 ///
 /// `T` is the type of the values sent on the channel to this object and `U` is the type of the accumulated value.
 /// The thread-locals must be of type [`Holder<T>`].
-pub struct Control<T, U> {
+pub struct Control<T, U>
+where
+    T: 'static,
+{
+    /// Reference to thread-local
+    pub(crate) tl: &'static LocalKey<Holder<T>>,
     /// Keeps track of registered threads and accumulated value.
     state: Arc<Mutex<ChanneledState<T, U>>>,
     /// Sender on channel that is received by control.
@@ -213,6 +217,7 @@ pub struct Control<T, U> {
 impl<T, U> Clone for Control<T, U> {
     fn clone(&self) -> Self {
         Self {
+            tl: self.tl,
             state: self.state.clone(),
             sender: self.sender.clone(),
             op: self.op.clone(),
@@ -222,9 +227,14 @@ impl<T, U> Clone for Control<T, U> {
 
 impl<T, U> Control<T, U> {
     /// Instantiates a [`Control`] object.
-    pub fn new(acc_base: U, op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync) -> Self {
+    pub fn new(
+        tl: &'static LocalKey<Holder<T>>,
+        acc_base: U,
+        op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
+    ) -> Self {
         let (sender, receiver) = channel();
         Control {
+            tl,
             state: Arc::new(Mutex::new(ChanneledState::new(acc_base, receiver))),
             sender,
             op: Arc::new(op),
@@ -315,6 +325,13 @@ impl<T, U> Control<T, U> {
         self.lock()
             .receive_tls(ReceiveMode::Drain, self.op.as_ref());
     }
+
+    pub fn send_data(&self, data: T) -> Result<(), HolderNotLinkedError> {
+        self.tl.with(|h| {
+            h.ensure_linked(self);
+            h.send_data(data)
+        })
+    }
 }
 
 /// Inner state of [`Holder`].
@@ -361,33 +378,10 @@ impl<T> Holder<T> {
     }
 }
 
-/// Provides access to the thread-local variable.
-pub trait HolderLocalKey<T> {
-    /// Ensures the [`Holder`] is linked with [`Control`]. Needs to be called at least once before
-    /// other method calls on this trait. This method is idempotent.
-    fn ensure_linked<U>(&'static self, control: &Control<T, U>);
-
-    /// Send data to be aggregated by the `control` object. Returns an error if [`Holder`] is not
-    /// linked.
-    fn send_data(&'static self, data: T) -> Result<(), HolderNotLinkedError>;
-}
-
-impl<T> HolderLocalKey<T> for LocalKey<Holder<T>> {
-    fn ensure_linked<U>(&'static self, control: &Control<T, U>) {
-        self.with(|h| {
-            h.ensure_linked(control);
-        })
-    }
-
-    fn send_data(&'static self, data: T) -> Result<(), HolderNotLinkedError> {
-        self.with(|h| h.send_data(data))
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Control, Holder, HolderLocalKey};
+    use super::{Control, Holder};
     use crate::test_support::{assert_eq_and_println, ThreadGater};
     use std::{
         collections::HashMap,
@@ -422,13 +416,12 @@ mod tests {
     }
 
     fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        MY_TL.ensure_linked(control);
-        MY_TL.send_data((k, v)).unwrap();
+        control.send_data((k, v)).unwrap();
     }
 
     #[test]
     fn own_thread_and_explicit_join() {
-        let control = Control::new(HashMap::new(), op);
+        let control = Control::new(&MY_TL, HashMap::new(), op);
 
         let main_tid = thread::current().id();
         println!("main_tid={:?}", main_tid);

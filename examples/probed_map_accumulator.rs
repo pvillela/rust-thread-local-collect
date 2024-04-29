@@ -9,7 +9,7 @@ use std::{
 };
 use thread_local_collect::test_support::ThreadGater;
 use thread_local_collect::{
-    probed::{Control, Holder, HolderLocalKey},
+    probed::{Control, Holder},
     test_support::assert_eq_and_println,
 };
 
@@ -25,8 +25,7 @@ thread_local! {
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-    MY_TL.ensure_linked(control);
-    MY_TL.with_data_mut(|data| data.insert(k, v)).unwrap();
+    control.with_data_mut(|data| data.insert(k, v)).unwrap();
 }
 
 fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
@@ -42,8 +41,8 @@ fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
     }
 }
 
-fn assert_tl(other: &Data, msg: &str) {
-    MY_TL
+fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccValue>) {
+    control
         .with_data(|map| {
             assert_eq_and_println(map, other, msg);
         })
@@ -56,7 +55,7 @@ fn test() {
 }
 
 fn main() {
-    let control = Control::new(HashMap::new(), op);
+    let control = Control::new(&MY_TL, HashMap::new(), op);
 
     let main_tid = thread::current().id();
     println!("main_tid={:?}", main_tid);
@@ -85,7 +84,7 @@ fn main() {
                     main_thread_gater.wait_for(gate);
                     insert_tl_entry(k, v.clone(), &control);
                     my_map.insert(k, v);
-                    assert_tl(my_map, assert_tl_msg);
+                    assert_tl(my_map, assert_tl_msg, &control);
 
                     let mut exp = expected_acc_mutex.try_lock().unwrap();
                     op(my_map.clone(), &mut exp, spawned_tid);
@@ -131,7 +130,7 @@ fn main() {
             insert_tl_entry(1, Foo("a".to_owned()), &control);
             insert_tl_entry(2, Foo("b".to_owned()), &control);
             let my_map = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-            assert_tl(&my_map, "After main thread inserts");
+            assert_tl(&my_map, "After main thread inserts", &control);
 
             let mut map = expected_acc_mutex.try_lock().unwrap();
             map.insert(main_tid, my_map);

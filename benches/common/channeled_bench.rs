@@ -3,7 +3,7 @@
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::channeled::{Control, Holder, HolderLocalKey};
+use thread_local_collect::channeled::{Control, Holder};
 
 mod map_bench {
     use super::*;
@@ -20,11 +20,10 @@ mod map_bench {
     }
 
     fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        MY_TL.ensure_linked(control);
-        MY_TL.send_data((k, v)).unwrap();
+        control.send_data((k, v)).unwrap();
     }
 
-    pub(super) fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
+    pub fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
         acc.entry(tid).or_default();
         let (k, v) = data;
         acc.get_mut(&tid).unwrap().insert(k, v.clone());
@@ -43,6 +42,10 @@ mod map_bench {
             acc
         }
     }
+
+    pub(super) fn control() -> Control<Data, AccValue> {
+        Control::new(&MY_TL, HashMap::new(), op)
+    }
 }
 
 mod u32_bench {
@@ -57,11 +60,10 @@ mod u32_bench {
     }
 
     fn send_tl_data(value: u32, control: &Control<Data, AccValue>) {
-        MY_TL.ensure_linked(control);
-        MY_TL.send_data(value).unwrap();
+        control.send_data(value).unwrap();
     }
 
-    pub(super) fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {
+    fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {
         *acc += data;
     }
 
@@ -80,30 +82,32 @@ mod u32_bench {
             acc
         }
     }
+
+    pub(super) fn control() -> Control<Data, AccValue> {
+        Control::new(&MY_TL, 0, op)
+    }
 }
 
 pub fn channeled_nobg_map_bench() {
     use map_bench::*;
-    let control = Control::new(HashMap::new(), op);
-    bench(control);
+    bench(control());
 }
 
 pub fn channeled_bg_map_bench() {
     use map_bench::*;
-    let control = Control::new(HashMap::new(), op);
+    let control = control();
     control.start_receiving_tls().unwrap(); // this significantly slows thigs down
     bench(control);
 }
 
 pub fn channeled_nobg_u32_bench() {
     use u32_bench::*;
-    let control = Control::new(0, op);
-    bench(control);
+    bench(control());
 }
 
 pub fn channeled_bg_u32_bench() {
     use u32_bench::*;
-    let control = Control::new(0, op);
+    let control = control();
     control.start_receiving_tls().unwrap(); // this significantly slows thigs down
     bench(control);
 }
