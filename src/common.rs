@@ -191,7 +191,7 @@ where
 
 impl<P> WithAcc for CtrlStateG<P>
 where
-    P: CoreParam + SubStateParam + UseCtrlStateGDefault,
+    P: CoreParam + SubStateParam,
 {
     type Acc = P::Acc;
 
@@ -669,17 +669,6 @@ where
         Self {
             tmap: HashMap::new(),
         }
-    }
-}
-
-impl<P> WithAcc for CtrlStateG<TmapD<P>>
-where
-    P: CoreParam + NodeParam,
-{
-    type Acc = P::Acc;
-
-    fn acc(&self) -> &P::Acc {
-        CtrlStateG::acc(self)
     }
 }
 
