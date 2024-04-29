@@ -104,18 +104,15 @@
 //!
 //! See another example at [`examples/probed_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/probed_map_accumulator.rs).
 
-pub use crate::common::HolderLocalKey;
-
 use crate::common::{
     ControlG, CoreParam, GDataParam, HolderG, HolderNotLinkedError, NodeParam, SubStateParam,
-    TmapD, UseCtrlStateGDefault, POISONED_GUARDED_DATA_MUTEX,
+    TmapD, UseCtrlStateGDefault, WithNode, POISONED_GUARDED_DATA_MUTEX,
 };
 use std::{
     marker::PhantomData,
     mem::replace,
     ops::DerefMut,
     sync::{Arc, Mutex},
-    thread::LocalKey,
 };
 
 //=================
@@ -158,7 +155,7 @@ impl<T, U> GDataParam for P<T, U> {
 ///
 /// `T` is the type of the thread-local values and `U` is the type of the accumulated value.
 /// The data values are held in thread-locals of type [`Holder<T, U>`].
-pub type Control<T, U> = ControlG<TmapD<P<T, U>>>;
+pub type Control<T, U> = ControlG<TmapD<P<T, U>>, WithNode>;
 
 impl<T, U> Control<T, U>
 where
@@ -207,48 +204,32 @@ where
         }
         acc_clone
     }
+
+    fn node(&self) -> Node<T> {
+        self.tl.with(|h| Node {
+            data: h.data.clone(),
+            make_data: h.make_data,
+        })
+    }
+
+    pub fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> Result<V, HolderNotLinkedError> {
+        self.with_data_node(f, Self::node)
+    }
+
+    pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> Result<V, HolderNotLinkedError> {
+        self.with_data_mut_node(f, Self::node)
+    }
 }
 
 /// Specialization of [`HolderG`] for this module.
 /// Holds thread-local data of type `T` and a smart pointer to a [`Control<T, U>`], enabling the linkage of
 /// the held data with the control object.
-pub type Holder<T, U> = HolderG<TmapD<P<T, U>>>;
-
-//=================
-// Implementation of HolderLocalKey.
-
-impl<T, U> HolderLocalKey<TmapD<P<T, U>>> for LocalKey<Holder<T, U>> {
-    /// Ensures [`Holder`] is linked with [`Control`].
-    fn ensure_linked(&'static self, control: &Control<T, U>) {
-        self.with(|h| {
-            let node = Node {
-                data: h.data.clone(),
-                make_data: h.make_data,
-            };
-            h.ensure_linked_node(control, node);
-        })
-    }
-
-    /// Invokes `f` on [`Holder`] data.
-    /// Panics if [`Holder`] guarded data mutex is poisoned.
-    fn with_data<V>(&'static self, f: impl FnOnce(&T) -> V) -> Result<V, HolderNotLinkedError> {
-        self.with(|h| h.with_data(f))
-    }
-
-    /// Invokes `f` mutably on [`Holder`] data.
-    /// Panics if [`Holder`] guarded data mutex is poisoned.
-    fn with_data_mut<V>(
-        &'static self,
-        f: impl FnOnce(&mut T) -> V,
-    ) -> Result<V, HolderNotLinkedError> {
-        self.with(|h| h.with_data_mut(f))
-    }
-}
+pub type Holder<T, U> = HolderG<TmapD<P<T, U>>, WithNode>;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Control, Holder, HolderLocalKey};
+    use super::{Control, Holder};
     use crate::test_support::{assert_eq_and_println, ThreadGater};
     use std::{
         collections::HashMap,
@@ -270,8 +251,7 @@ mod tests {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        MY_TL.ensure_linked(control);
-        MY_TL.with_data_mut(|data| data.insert(k, v)).unwrap();
+        control.with_data_mut(|data| data.insert(k, v)).unwrap();
     }
 
     fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
@@ -287,8 +267,8 @@ mod tests {
         }
     }
 
-    fn assert_tl(other: &Data, msg: &str) {
-        MY_TL
+    fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccValue>) {
+        control
             .with_data(|map| {
                 assert_eq_and_println(map, other, msg);
             })
@@ -297,7 +277,7 @@ mod tests {
 
     #[test]
     fn own_thread_and_explicit_join() {
-        let control = Control::new(HashMap::new(), op);
+        let control = Control::new(&MY_TL, HashMap::new(), op);
 
         let main_tid = thread::current().id();
         println!("main_tid={:?}", main_tid);
@@ -329,7 +309,7 @@ mod tests {
                     main_thread_gater.wait_for(gate);
                     insert_tl_entry(k, v.clone(), &control);
                     my_map.insert(k, v);
-                    assert_tl(my_map, assert_tl_msg);
+                    assert_tl(my_map, assert_tl_msg, &control);
 
                     let mut exp = expected_acc_mutex.try_lock().unwrap();
                     op(my_map.clone(), &mut exp, spawned_tid);
@@ -375,7 +355,7 @@ mod tests {
                 insert_tl_entry(1, Foo("a".to_owned()), &control);
                 insert_tl_entry(2, Foo("b".to_owned()), &control);
                 let my_map = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-                assert_tl(&my_map, "After main thread inserts");
+                assert_tl(&my_map, "After main thread inserts", &control);
 
                 let mut map = expected_acc_mutex.try_lock().unwrap();
                 map.insert(main_tid, my_map);
