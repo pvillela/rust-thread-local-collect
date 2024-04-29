@@ -80,7 +80,7 @@ fn main() {
     {
         // Take and accumulate the thread-local values.
         // SAFETY: OK to call function below after all other threads have joined.
-        unsafe { control.take_tls() };
+        control.take_tls();
 
         println!("After call to `take_tls`: control={:?}", control);
 
