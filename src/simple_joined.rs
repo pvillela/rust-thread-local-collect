@@ -42,11 +42,9 @@
 //!
 //! // Create a function to update the thread-local value:
 //! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     control
-//!         .with_data_mut(|data| {
-//!             *data = value;
-//!         })
-//!         .unwrap();
+//!     control.with_data_mut(|data| {
+//!         *data = value;
+//!     });
 //! }
 //!
 //! fn main() {
@@ -171,7 +169,7 @@ mod tests {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-        control.with_data_mut(|data| data.insert(k, v)).unwrap();
+        control.with_data_mut(|data| data.insert(k, v));
     }
 
     fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
@@ -188,11 +186,9 @@ mod tests {
     }
 
     fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccumulatorMap>) {
-        control
-            .with_data(|map| {
-                assert_eq!(map, other, "{msg}");
-            })
-            .unwrap();
+        control.with_data(|map| {
+            assert_eq!(map, other, "{msg}");
+        });
     }
 
     #[test]

@@ -40,7 +40,7 @@
 //!
 //! // Create a function to send the thread-local value:
 //! fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
-//!     control.send_data(value).unwrap();
+//!     control.send_data(value);
 //! }
 //!
 //! fn main() {
@@ -101,7 +101,7 @@
 //!
 //! See another example at [`examples/channeled_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/channeled_map_accumulator.rs).
 
-use crate::common::{HolderNotLinkedError, POISONED_CONTROL_MUTEX};
+use crate::common::POISONED_CONTROL_MUTEX;
 use std::{
     cell::RefCell,
     mem::replace,
@@ -326,10 +326,10 @@ impl<T, U> Control<T, U> {
             .receive_tls(ReceiveMode::Drain, self.op.as_ref());
     }
 
-    pub fn send_data(&self, data: T) -> Result<(), HolderNotLinkedError> {
+    pub fn send_data(&self, data: T) {
         self.tl.with(|h| {
             h.ensure_linked(self);
-            h.send_data(data)
+            h.send_data(data, self)
         })
     }
 }
@@ -367,14 +367,18 @@ impl<T> Holder<T> {
 
     /// Send data to be aggregated in the `control` object. Returns an error if [`Holder`] is
     /// not initialized.
-    fn send_data(&self, data: T) -> Result<(), HolderNotLinkedError> {
+    fn send_data<U>(&self, data: T, control: &Control<T, U>) {
+        self.ensure_linked(control);
         let inner_opt = self.0.borrow();
-        let inner = inner_opt.as_ref().ok_or(HolderNotLinkedError)?;
-        inner
-            .sender
-            .send(ChannelItem::Payload(inner.tid, data))
-            .expect(RECEIVER_DISCONNECTED);
-        Ok(())
+        match inner_opt.deref() {
+            Some(inner) => {
+                inner
+                    .sender
+                    .send(ChannelItem::Payload(inner.tid, data))
+                    .expect(RECEIVER_DISCONNECTED);
+            }
+            None => panic!("unreachable code"),
+        }
     }
 }
 
@@ -416,7 +420,7 @@ mod tests {
     }
 
     fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        control.send_data((k, v)).unwrap();
+        control.send_data((k, v));
     }
 
     #[test]

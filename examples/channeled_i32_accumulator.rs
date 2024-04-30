@@ -25,7 +25,7 @@ fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 
 // Create a function to send the thread-local value:
 fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
-    control.send_data(value).unwrap();
+    control.send_data(value);
 }
 
 fn main() {

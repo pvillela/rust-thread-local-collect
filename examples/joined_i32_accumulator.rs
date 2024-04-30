@@ -24,11 +24,9 @@ fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 
 // Create a function to update the thread-local value:
 fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-    control
-        .with_data_mut(|data| {
-            *data = value;
-        })
-        .unwrap();
+    control.with_data_mut(|data| {
+        *data = value;
+    });
 }
 
 fn main() {

@@ -12,18 +12,12 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
     thread::{self, LocalKey, ThreadId},
 };
-use thiserror::Error;
 
 //=================
 // Errora
 
 pub(crate) const POISONED_CONTROL_MUTEX: &str = "poisoned control mutex";
 pub(crate) const POISONED_GUARDED_DATA_MUTEX: &str = "poisoned guarded data mutex";
-
-/// Attempt to access `Holder` before it has been linked with `Control`.
-#[derive(Error, Debug)]
-#[error("attempt to access uninitialized Holder")]
-pub struct HolderNotLinkedError;
 
 //=================
 // Param traits
@@ -323,7 +317,7 @@ where
 {
     /// Invokes `f` on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> Result<V, HolderNotLinkedError> {
+    pub fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
         self.tl.with(|h| {
             h.ensure_linked(self);
             h.with_data(f)
@@ -332,10 +326,7 @@ where
 
     /// Invokes `f` mutably on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub fn with_data_mut<V>(
-        &self,
-        f: impl FnOnce(&mut P::Dat) -> V,
-    ) -> Result<V, HolderNotLinkedError> {
+    pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
         self.tl.with(|h| {
             h.ensure_linked(self);
             h.with_data_mut(f)
@@ -366,7 +357,7 @@ where
         &self,
         f: impl FnOnce(&P::Dat) -> V,
         node: fn(&Self) -> P::Node,
-    ) -> Result<V, HolderNotLinkedError> {
+    ) -> V {
         self.tl.with(|h| {
             h.ensure_linked(self, node(self));
             h.with_data(f)
@@ -379,7 +370,7 @@ where
         &self,
         f: impl FnOnce(&mut P::Dat) -> V,
         node: fn(&Self) -> P::Node,
-    ) -> Result<V, HolderNotLinkedError> {
+    ) -> V {
         self.tl.with(|h| {
             h.ensure_linked(self, node(self));
             h.with_data_mut(f)
@@ -504,30 +495,16 @@ where
 
     /// Invokes `f` on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub(crate) fn with_data<V>(
-        &self,
-        f: impl FnOnce(&P::Dat) -> V,
-    ) -> Result<V, HolderNotLinkedError> {
-        if self.control().deref().is_none() {
-            return Err(HolderNotLinkedError);
-        }
+    pub(crate) fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
         let guard = self.data_guard();
-        let res = f(&guard);
-        Ok(res)
+        f(&guard)
     }
 
     /// Invokes `f` mutably on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub(crate) fn with_data_mut<V>(
-        &self,
-        f: impl FnOnce(&mut P::Dat) -> V,
-    ) -> Result<V, HolderNotLinkedError> {
-        if self.control().deref().is_none() {
-            return Err(HolderNotLinkedError);
-        }
+    pub(crate) fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
         let mut guard = self.data_guard();
-        let res = f(&mut guard);
-        Ok(res)
+        f(&mut guard)
     }
 
     /// Used by [`Drop`] trait impl.

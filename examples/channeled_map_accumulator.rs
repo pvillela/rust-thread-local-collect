@@ -37,7 +37,7 @@ fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
 }
 
 fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-    control.send_data((k, v)).unwrap();
+    control.send_data((k, v));
 }
 
 #[test]

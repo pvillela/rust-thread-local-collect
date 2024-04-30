@@ -34,11 +34,9 @@ fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
 }
 
 fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccumulatorMap>) {
-    control
-        .with_data(|map| {
-            assert_eq!(map, other, "{msg}");
-        })
-        .unwrap();
+    control.with_data(|map| {
+        assert_eq!(map, other, "{msg}");
+    });
 }
 
 /// Demonstrates race condition in [thread_local_collect::joined::Control::take_tls]

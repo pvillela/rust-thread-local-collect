@@ -20,7 +20,7 @@ mod map_bench {
     }
 
     fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        control.send_data((k, v)).unwrap();
+        control.send_data((k, v));
     }
 
     pub fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
@@ -60,7 +60,7 @@ mod u32_bench {
     }
 
     fn send_tl_data(value: u32, control: &Control<Data, AccValue>) {
-        control.send_data(value).unwrap();
+        control.send_data(value);
     }
 
     fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {

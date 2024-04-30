@@ -20,11 +20,9 @@ mod map_bench {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        control
-            .with_data_mut(|data| {
-                data.insert(k, v);
-            })
-            .unwrap();
+        control.with_data_mut(|data| {
+            data.insert(k, v);
+        });
     }
 
     pub fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
@@ -64,11 +62,9 @@ mod u32_bench {
     }
 
     fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-        control
-            .with_data_mut(|data| {
-                *data += value;
-            })
-            .unwrap();
+        control.with_data_mut(|data| {
+            *data += value;
+        });
     }
 
     pub fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {

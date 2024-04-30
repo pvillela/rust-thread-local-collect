@@ -40,11 +40,9 @@
 //!
 //! // Create a function to update the thread-local value:
 //! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     control
-//!         .with_data_mut(|data| {
-//!             *data = value;
-//!         })
-//!         .unwrap();
+//!     control.with_data_mut(|data| {
+//!         *data = value;
+//!     });
 //! }
 //!
 //! fn main() {
@@ -106,8 +104,8 @@
 //! See another example at [`examples/probed_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/probed_map_accumulator.rs).
 
 use crate::common::{
-    ControlG, CoreParam, GDataParam, HolderG, HolderNotLinkedError, NodeParam, SubStateParam,
-    TmapD, UseCtrlStateGDefault, WithNode, POISONED_GUARDED_DATA_MUTEX,
+    ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD,
+    UseCtrlStateGDefault, WithNode, POISONED_GUARDED_DATA_MUTEX,
 };
 use std::{
     marker::PhantomData,
@@ -213,11 +211,11 @@ where
         })
     }
 
-    pub fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> Result<V, HolderNotLinkedError> {
+    pub fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> V {
         self.with_data_node(f, Self::node)
     }
 
-    pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> Result<V, HolderNotLinkedError> {
+    pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> V {
         self.with_data_mut_node(f, Self::node)
     }
 }
@@ -252,7 +250,7 @@ mod tests {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        control.with_data_mut(|data| data.insert(k, v)).unwrap();
+        control.with_data_mut(|data| data.insert(k, v));
     }
 
     fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
@@ -269,11 +267,9 @@ mod tests {
     }
 
     fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccValue>) {
-        control
-            .with_data(|map| {
-                assert_eq_and_println(map, other, msg);
-            })
-            .unwrap();
+        control.with_data(|map| {
+            assert_eq_and_println(map, other, msg);
+        });
     }
 
     #[test]
