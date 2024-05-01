@@ -8,7 +8,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::joined::{Control, Holder, HolderLocalKey};
+use thread_local_collect::joined::{Control, Holder};
 
 #[derive(Debug, Clone)]
 struct Foo(String);
@@ -22,12 +22,9 @@ thread_local! {
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
-    MY_TL.ensure_linked(control);
-    MY_TL
-        .with_data_mut(|data| {
-            data.insert(k, v);
-        })
-        .unwrap();
+    control.with_data_mut(|data| {
+        data.insert(k, v);
+    });
 }
 
 fn print_tl(prefix: &str) {
@@ -59,7 +56,7 @@ fn main() {
     set_var("RUST_LOG", "trace");
     _ = env_logger::try_init();
 
-    let control = Control::new(HashMap::new(), op);
+    let control = Control::new(&MY_TL, HashMap::new(), op);
 
     insert_tl_entry(1, Foo("a".to_owned()), &control);
     insert_tl_entry(2, Foo("b".to_owned()), &control);
@@ -81,7 +78,7 @@ fn main() {
     {
         // Take and accumulate the thread-local values.
         // SAFETY: OK to call function below after all other threads have joined.
-        unsafe { control.take_tls() };
+        control.take_tls();
 
         println!("After call to `take_tls`: control={:?}", control);
 

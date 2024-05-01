@@ -33,11 +33,3 @@ pub mod tlcr;
 
 #[cfg(feature = "tlcr")]
 pub mod tlcr_probed;
-
-#[doc(hidden)]
-#[cfg(feature = "jold")]
-pub mod joined_old;
-
-#[doc(hidden)]
-#[cfg(feature = "tlcr")]
-pub mod tlcr_old;

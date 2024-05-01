@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 use thread_local_collect::{
-    channeled::{Control, Holder, HolderLocalKey},
+    channeled::{Control, Holder},
     test_support::{assert_eq_and_println, ThreadGater},
 };
 
@@ -37,8 +37,7 @@ fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
 }
 
 fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-    MY_TL.ensure_linked(control);
-    MY_TL.send_data((k, v)).unwrap();
+    control.send_data((k, v));
 }
 
 #[test]
@@ -47,7 +46,7 @@ fn test() {
 }
 
 fn main() {
-    let control = Control::new(HashMap::new(), op);
+    let control = Control::new(&MY_TL, HashMap::new(), op);
 
     let main_tid = thread::current().id();
     println!("main_tid={:?}", main_tid);

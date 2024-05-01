@@ -4,7 +4,7 @@ use std::{
     ops::Deref,
     thread::{self, ThreadId},
 };
-use thread_local_collect::joined::{Control, Holder, HolderLocalKey};
+use thread_local_collect::joined::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;
@@ -24,16 +24,13 @@ fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 
 // Create a function to update the thread-local value:
 fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-    MY_TL.ensure_linked(control);
-    MY_TL
-        .with_data_mut(|data| {
-            *data = value;
-        })
-        .unwrap();
+    control.with_data_mut(|data| {
+        *data = value;
+    });
 }
 
 fn main() {
-    let control = Control::new(0, op);
+    let control = Control::new(&MY_TL, 0, op);
 
     update_tl(1, &control);
 
@@ -47,7 +44,7 @@ fn main() {
     {
         // Take and accumulate the thread-local values.
         // SAFETY: Call this after all other threads registered with `control` have been joined.
-        unsafe { control.take_tls() };
+        control.take_tls();
 
         // Different ways to print the accumulated value
 

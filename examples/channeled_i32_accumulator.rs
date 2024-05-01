@@ -5,7 +5,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::channeled::{Control, Holder, HolderLocalKey};
+use thread_local_collect::channeled::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;
@@ -25,12 +25,11 @@ fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 
 // Create a function to send the thread-local value:
 fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
-    MY_TL.ensure_linked(control);
-    MY_TL.send_data(value).unwrap();
+    control.send_data(value);
 }
 
 fn main() {
-    let control = Control::new(0, op);
+    let control = Control::new(&MY_TL, 0, op);
 
     thread::scope(|s| {
         let h = s.spawn(|| {
