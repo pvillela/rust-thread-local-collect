@@ -234,7 +234,7 @@ mod tests {
     const NTHREADS: usize = 5;
 
     #[test]
-    fn test() {
+    fn own_thread_and_explicit_joins() {
         let mut control = Control::new(HashMap::new, op, op_r);
 
         {
@@ -293,5 +293,21 @@ mod tests {
                 assert_eq_and_println(acc, map, "Accumulator check");
             }
         }
+    }
+
+    #[test]
+    fn own_thread_only() {
+        let mut control = Control::new(HashMap::new, op, op_r);
+
+        control.send_data((1, Foo("a".to_owned())));
+        control.send_data((2, Foo("b".to_owned())));
+
+        let tid_own = thread::current().id();
+        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
+
+        let map = HashMap::from([(tid_own, map_own)]);
+
+        let acc = control.drain_tls().unwrap();
+        assert_eq_and_println(acc, map, "Accumulator check");
     }
 }
