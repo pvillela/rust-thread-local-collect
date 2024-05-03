@@ -1,7 +1,7 @@
-//! Simple example usage of [`thread_local_collect::tlcr`].
+//! Simple example usage of [`thread_local_collect::mtlcr::tlcr`].
 
 use std::thread::{self, ThreadId};
-use thread_local_collect::tlcr::Control;
+use thread_local_collect::mtlcr::tlcr::Control;
 
 // Define your data type, e.g.:
 type Data = i32;

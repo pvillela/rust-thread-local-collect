@@ -20,7 +20,7 @@
 //!     thread::{self, ThreadId},
 //!     time::Duration,
 //! };
-//! use thread_local_collect::channeled::{Control, Holder};
+//! use thread_local_collect::mtlm::channeled::{Control, Holder};
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -101,7 +101,7 @@
 //!
 //! See another example at [`examples/channeled_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/channeled_map_accumulator.rs).
 
-use crate::common::POISONED_CONTROL_MUTEX;
+use crate::mtlm::common::POISONED_CONTROL_MUTEX;
 use std::{
     cell::RefCell,
     mem::replace,

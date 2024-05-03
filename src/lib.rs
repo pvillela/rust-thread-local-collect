@@ -21,15 +21,6 @@
 //!
 //! See the different modules for usage examples.
 
-pub mod channeled;
-pub mod common;
-pub mod joined;
-pub mod probed;
-pub mod simple_joined;
+pub mod mtlcr;
+pub mod mtlm;
 pub mod test_support;
-
-#[cfg(feature = "tlcr")]
-pub mod tlcr;
-
-#[cfg(feature = "tlcr")]
-pub mod tlcr_probed;

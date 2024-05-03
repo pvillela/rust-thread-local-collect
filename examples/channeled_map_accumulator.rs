@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 use thread_local_collect::{
-    channeled::{Control, Holder},
+    mtlm::channeled::{Control, Holder},
     test_support::{assert_eq_and_println, ThreadGater},
 };
 

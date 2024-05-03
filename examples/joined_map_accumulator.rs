@@ -8,7 +8,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::joined::{Control, Holder};
+use thread_local_collect::mtlm::joined::{Control, Holder};
 
 #[derive(Debug, Clone)]
 struct Foo(String);

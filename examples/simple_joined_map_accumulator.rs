@@ -1,7 +1,7 @@
 //! Example usage of [`thread_local_collect::simple_joined`].
 
 use thread_local_collect::{
-    simple_joined::{Control, Holder},
+    mtlm::simple_joined::{Control, Holder},
     test_support::assert_eq_and_println,
 };
 

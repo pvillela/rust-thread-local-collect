@@ -3,7 +3,7 @@
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::simple_joined::{Control, Holder};
+use thread_local_collect::mtlm::simple_joined::{Control, Holder};
 
 mod map_bench {
     use super::*;

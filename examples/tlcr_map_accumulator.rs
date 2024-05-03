@@ -1,4 +1,4 @@
-//! Simple example usage of [`thread_local_collect::tlcr`].
+//! Simple example usage of [`thread_local_collect::mtlcr::tlcr`].
 
 use std::{
     collections::HashMap,
@@ -6,7 +6,7 @@ use std::{
     sync::RwLock,
     thread::{self, ThreadId},
 };
-use thread_local_collect::{test_support::assert_eq_and_println, tlcr::Control};
+use thread_local_collect::{mtlcr::tlcr::Control, test_support::assert_eq_and_println};
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);

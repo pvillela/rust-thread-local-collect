@@ -1,9 +1,9 @@
-//! Benchmark for [`thread_local_collect::tlcr`].
+//! Benchmark for [`thread_local_collect::mtlcr::tlcr`].
 
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::tlcr_probed::Control;
+use thread_local_collect::mtlcr::tlcr_probed::Control;
 
 mod map_bench {
     use super::*;

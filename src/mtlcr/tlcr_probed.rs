@@ -16,7 +16,7 @@
 //!
 //! ```rust
 //! use std::thread::{self, ThreadId};
-//! use thread_local_collect::tlcr_probed::Control;
+//! use thread_local_collect::mtlcr::tlcr_probed::Control;
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;

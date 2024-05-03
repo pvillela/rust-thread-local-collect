@@ -4,7 +4,7 @@ use std::{
     ops::Deref,
     thread::{self, ThreadId},
 };
-use thread_local_collect::joined::{Control, Holder};
+use thread_local_collect::mtlm::joined::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;

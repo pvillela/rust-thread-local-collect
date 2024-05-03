@@ -5,7 +5,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::channeled::{Control, Holder};
+use thread_local_collect::mtlm::channeled::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;
