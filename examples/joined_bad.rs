@@ -1,4 +1,4 @@
-//! Demonstrates race condition in [thread_local_collect::joined::Control::take_tls].
+//! Demonstrates race condition in [thread_local_collect::joined::Control::take_own_tl].
 
 use thread_local_collect::joined::{Control, Holder};
 
@@ -39,7 +39,7 @@ fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccumulatorMap>) {
     });
 }
 
-/// Demonstrates race condition in [thread_local_collect::joined::Control::take_tls]
+/// Demonstrates race condition in [thread_local_collect::joined::Control::take_own_tl]
 fn own_thread_and_implicit_joins() {
     let control = Control::new(&MY_TL, HashMap::new(), op);
 
@@ -86,7 +86,7 @@ fn own_thread_and_implicit_joins() {
             let spawned_tid = lock.last().unwrap();
             map.insert(*spawned_tid, map_i.clone());
 
-            control.take_tls();
+            control.take_own_tl();
 
             let acc = control.acc();
             assert_eq!(acc.deref(), &map, "Accumulator check on iteration {}", i);

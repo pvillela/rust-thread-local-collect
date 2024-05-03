@@ -58,9 +58,8 @@
 //!     });
 //!
 //!     {
-//!         // Take and accumulate the thread-local values.
-//!         // SAFETY: Call this after all other threads registered with `control` have been joined.
-//!         control.take_tls();
+//!         // Take and accumulate the thread-local value from the main thread.
+//!         control.take_own_tl();
 //!
 //!         // Different ways to print the accumulated value
 //!
@@ -173,7 +172,7 @@ where
     /// passed to [`Holder::new`].
     ///
     /// Panics if `self`'s mutex is poisoned.
-    pub fn take_tls(&self) {
+    pub fn take_own_tl(&self) {
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
         let state = guard.deref_mut();
@@ -351,7 +350,7 @@ mod tests {
             hs.for_each(|h| h.join().unwrap());
         });
 
-        control.take_tls();
+        control.take_own_tl();
         println!("control={control:?}");
 
         // Clone below to avoid using active lock in an assertion. Otherwise, if the assertion fails,
