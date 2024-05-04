@@ -1,3 +1,5 @@
+//! Modules that use the [`std::thread_local`] macro.
+
 pub mod channeled;
 pub mod common;
 pub mod joined;

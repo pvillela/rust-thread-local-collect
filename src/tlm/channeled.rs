@@ -99,7 +99,7 @@
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/tlm_channeled_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/channeled_map_accumulator.rs).
+//! See another example at [`examples/tlm_channeled_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlm_channeled_map_accumulator.rs).
 
 use crate::tlm::common::POISONED_CONTROL_MUTEX;
 use std::{

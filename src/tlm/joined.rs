@@ -1,5 +1,5 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads (see package [overview and core concepts](super)). The following features and constraints apply ...
+//! across threads (see package [overview and core concepts](crate)). The following features and constraints apply ...
 //! - The designated thread-local variable may be defined and used in the thread responsible for
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
@@ -82,7 +82,7 @@
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/tlm_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/joined_map_accumulator.rs).
+//! See another example at [`examples/tlm_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlm_joined_map_accumulator.rs).
 
 use crate::tlm::common::{
     ControlG, CoreParam, CtrlStateG, CtrlStateParam, CtrlStateWithNode, GDataParam, HolderG, New,

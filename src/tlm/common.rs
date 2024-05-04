@@ -1,6 +1,6 @@
 //! This module contains common traits and structs that are used by the other modules in this libray.
-//! Modules [`crate::channeled`] and [`crate::tlcr`] implement the [core conepts](crate#core-concepts) directly and
-//! make minimal use of this module.
+//! Module [`super::channeled`] implements the [core conepts](crate#core-concepts) directly and
+//! makes minimal use of this module.
 
 use std::{
     borrow::BorrowMut,
@@ -100,7 +100,7 @@ where
     // The `data` argument is not strictly necessary to support the implementation for state that uses
     // a node type as the data can be recovered from the corresponding node. However, the `data` argument makes
     // the generic implementation simpler and uniform across all modules. Without the `data`
-    // argument, the implementations of this method for [`crate::joined`] and [`crate::probed`] would be
+    // argument, the implementations of this method for [`super::joined`] and [`super::probed`] would be
     // different from each other and a bit more complex.
     fn tl_data_dropped(
         &mut self,
@@ -207,7 +207,7 @@ where
     /// The `data` argument is not strictly necessary to support the implementation for state that uses
     /// a node type as the data can be recovered from the corresponding node. However, the `data` argument makes
     /// the generic implementation simpler and uniform across all modules. Without the `data`
-    /// argument, the implementations of this method for [`crate::joined`] and [`crate::probed`] would be
+    /// argument, the implementations of this method for [`super::joined`] and [`super::probed`] would be
     /// different from each other and a bit more complex.
     fn tl_data_dropped(
         &mut self,
@@ -588,10 +588,10 @@ where
 //=================
 // Control sub-state struct with a thread map.
 
-/// Type used by the specialization of [`ControlG`] for module [`crate::probed`].
-//  Holds the thread map used by the [`ControlG`] specializations for module [`crate::probed`].
-//  Used also for module [`crate::joined_old`] which shows a previous more complex implementation of module
-//  [`crate::joined`].
+/// Type used by the specialization of [`ControlG`] for module [`super::probed`].
+//  Holds the thread map used by the [`ControlG`] specializations for module [`super::probed`].
+//  Used also for module [`super::joined_old`] which shows a previous more complex implementation of module
+//  [`super::joined`].
 //  Also used to partially discriminate common [`ControlG`] functionality used by those modules.
 #[derive(Debug)]
 pub struct TmapD<P>

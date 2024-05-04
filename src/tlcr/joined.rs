@@ -1,6 +1,6 @@
 //! This module is supported on **`feature="tlcr"`** only.
 //! This module supports the collection and aggregation of values across threads (see package
-//! [overview and core concepts](super)). The following features and constraints apply ...
+//! [overview and core concepts](crate)). The following features and constraints apply ...
 //! - Values may be collected from the thread responsible for collection/aggregation, provided that [`Control`]
 //! is created on that thread and is not cloned by that thread.
 //! - The participating threads access a [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance
@@ -64,7 +64,7 @@
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/tlcr_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlcr_map_accumulator.rs).
+//! See another example at [`examples/tlcr_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlcr_joined_map_accumulator.rs).
 
 use std::{
     cell::RefCell,

@@ -1,5 +1,5 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads (see package [overview and core concepts](super)). It is a simplified version of the [`crate::joined`]
+//! across threads (see package [overview and core concepts](crate)). It is a simplified version of the [`super::joined`]
 //! module which does not support accumulating the thread-local value on the thread responsible for
 //! collection/aggregation. The following constraints apply ...
 //! - The designated thread-local variable should NOT be used in the thread responsible for
@@ -82,7 +82,7 @@
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/tlm_simple_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/simple_joined_map_accumulator.rs).
+//! See another example at [`examples/tlm_simple_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlm_simple_joined_map_accumulator.rs).
 
 use crate::tlm::common::{
     ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, New, NoNode,
