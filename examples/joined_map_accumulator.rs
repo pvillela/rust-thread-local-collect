@@ -10,7 +10,7 @@ use std::{
 };
 use thread_local_collect::mtlm::joined::{Control, Holder};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
 
 type Data = HashMap<u32, Foo>;
