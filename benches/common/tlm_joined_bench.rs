@@ -1,9 +1,9 @@
-//! Benchmark for [`thread_local_collect::mtlm::simple_joined`].
+//! Benchmark for [`thread_local_collect::tlm::joined`].
 
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::mtlm::simple_joined::{Control, Holder};
+use thread_local_collect::tlm::joined::{Control, Holder};
 
 mod map_bench {
     use super::*;
@@ -25,7 +25,7 @@ mod map_bench {
         });
     }
 
-    pub(super) fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
+    pub fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
         acc.entry(tid).or_default();
         for (k, v) in data {
             acc.get_mut(&tid).unwrap().insert(k, v.clone());
@@ -91,12 +91,12 @@ mod u32_bench {
     }
 }
 
-pub fn simple_joined_map_bench() {
+pub fn tlm_joined_map_bench() {
     use map_bench::*;
     bench(control());
 }
 
-pub fn simple_joined_u32_bench() {
+pub fn tlm_joined_u32_bench() {
     use u32_bench::*;
     bench(control());
 }

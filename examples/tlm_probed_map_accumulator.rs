@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::mtlm::probed`].
+//! Example usage of [`thread_local_collect::tlm::probed`].
 
 use std::{
     collections::HashMap,
@@ -9,8 +9,8 @@ use std::{
 };
 use thread_local_collect::test_support::ThreadGater;
 use thread_local_collect::{
-    mtlm::probed::{Control, Holder},
     test_support::assert_eq_and_println,
+    tlm::probed::{Control, Holder},
 };
 
 #[derive(Debug, Clone, PartialEq)]

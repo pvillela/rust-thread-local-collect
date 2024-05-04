@@ -1,9 +1,9 @@
-//! Benchmark for [`thread_local_collect::mtlcr::tlcr`].
+//! Benchmark for [`thread_local_collect::tlcr::joined`].
 
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::mtlcr::tlcr::Control;
+use thread_local_collect::tlcr::joined::Control;
 
 mod map_bench {
     use super::*;
@@ -92,13 +92,13 @@ mod u32_bench {
     }
 }
 
-pub fn tlcr_map_bench() {
+pub fn tlcr_joined_map_bench() {
     use map_bench::*;
     let control = Control::new(HashMap::new, op, op_r);
     bench(control);
 }
 
-pub fn tlcr_u32_bench() {
+pub fn tlcr_joined_u32_bench() {
     use u32_bench::*;
     let control = Control::new(|| 0, op, op_r);
     bench(control);

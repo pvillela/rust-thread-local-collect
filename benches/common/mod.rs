@@ -3,17 +3,17 @@
 mod common_bench;
 pub use common_bench::*;
 
-mod joined_bench;
-pub use joined_bench::*;
+mod tlm_joined_bench;
+pub use tlm_joined_bench::*;
 
-mod simple_joined_bench;
-pub use simple_joined_bench::*;
+mod tlm_simple_joined_bench;
+pub use tlm_simple_joined_bench::*;
 
-mod probed_bench;
-pub use probed_bench::*;
+mod tlm_probed_bench;
+pub use tlm_probed_bench::*;
 
-mod channeled_bench;
-pub use channeled_bench::*;
+mod tlm_channeled_bench;
+pub use tlm_channeled_bench::*;
 
 mod tlcr_bench;
 pub use tlcr_bench::*;

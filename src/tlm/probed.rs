@@ -20,7 +20,7 @@
 //!     thread::{self, ThreadId},
 //!     time::Duration,
 //! };
-//! use thread_local_collect::mtlm::probed::{Control, Holder};
+//! use thread_local_collect::tlm::probed::{Control, Holder};
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -101,9 +101,9 @@
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/probed_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/probed_map_accumulator.rs).
+//! See another example at [`examples/tlm_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/probed_map_accumulator.rs).
 
-use crate::mtlm::common::{
+use crate::tlm::common::{
     ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD,
     UseCtrlStateGDefault, WithNode, POISONED_GUARDED_DATA_MUTEX,
 };

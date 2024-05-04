@@ -1,11 +1,11 @@
-//! Simple example usage of [`thread_local_collect::mtlm::probed`].
+//! Simple example usage of [`thread_local_collect::tlm::probed`].
 
 use std::{
     ops::Deref,
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::mtlm::probed::{Control, Holder};
+use thread_local_collect::tlm::probed::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;

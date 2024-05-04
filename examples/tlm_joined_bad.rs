@@ -1,6 +1,6 @@
-//! Demonstrates race condition in [thread_local_collect::mtlm::joined::Control::take_tls].
+//! Demonstrates race condition in [thread_local_collect::tlm::joined::Control::take_tls].
 
-use thread_local_collect::mtlm::joined::{Control, Holder};
+use thread_local_collect::tlm::joined::{Control, Holder};
 
 use std::{
     collections::HashMap,
@@ -39,7 +39,7 @@ fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccumulatorMap>) {
     });
 }
 
-/// Demonstrates race condition in [thread_local_collect::mtlm::joined::Control::take_own_tl]
+/// Demonstrates race condition in [thread_local_collect::tlm::joined::Control::take_own_tl]
 fn own_thread_and_implicit_joins() {
     let control = Control::new(&MY_TL, HashMap::new(), op);
 

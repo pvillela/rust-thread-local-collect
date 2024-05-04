@@ -1,5 +1,5 @@
 #[cfg(feature = "tlcr")]
-pub mod tlcr;
+pub mod joined;
 
 #[cfg(feature = "tlcr")]
-pub mod tlcr_probed;
+pub mod probed;

@@ -16,7 +16,7 @@
 //!
 //! ```rust
 //! use std::thread::{self, ThreadId};
-//! use thread_local_collect::mtlcr::tlcr_probed::Control;
+//! use thread_local_collect::tlcr::probed::Control;
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -65,7 +65,7 @@
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/tlcr_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlcr_map_accumulator.rs).
+//! See another example at [`examples/tlcr_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlcr_map_accumulator.rs).
 
 use std::{
     fmt::Debug,

@@ -20,7 +20,7 @@
 //!     ops::Deref,
 //!     thread::{self, ThreadId},
 //! };
-//! use thread_local_collect::mtlm::joined::{Control, Holder};
+//! use thread_local_collect::tlm::joined::{Control, Holder};
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -82,9 +82,9 @@
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/joined_map_accumulator.rs`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/joined_map_accumulator.rs).
+//! See another example at [`examples/tlm_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/joined_map_accumulator.rs).
 
-use crate::mtlm::common::{
+use crate::tlm::common::{
     ControlG, CoreParam, CtrlStateG, CtrlStateParam, CtrlStateWithNode, GDataParam, HolderG, New,
     NodeParam, SubStateParam, UseCtrlStateGDefault, WithNode,
 };

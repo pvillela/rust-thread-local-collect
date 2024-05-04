@@ -21,6 +21,6 @@
 //!
 //! See the different modules for usage examples.
 
-pub mod mtlcr;
-pub mod mtlm;
 pub mod test_support;
+pub mod tlcr;
+pub mod tlm;

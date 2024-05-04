@@ -1,44 +1,42 @@
-//! Benchmark for [`thread_local_collect::mtlm::simple_joined`].
+//! Benchmark for [`thread_local_collect::tlm::simple_joined`].
 
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::mtlm::probed::{Control, Holder};
+use thread_local_collect::tlm::channeled::{Control, Holder};
 
 mod map_bench {
     use super::*;
 
     #[derive(Debug, Clone)]
-    pub struct Foo(String);
+    pub(crate) struct Foo(String);
 
-    type Data = HashMap<u32, Foo>;
+    type Data = (u32, Foo);
 
     type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
     thread_local! {
-        static MY_TL: Holder<Data, AccValue> = Holder::new(HashMap::new);
+        static MY_TL: Holder<Data> = Holder::new();
     }
 
-    fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        control.with_data_mut(|data| {
-            data.insert(k, v);
-        });
+    fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
+        control.send_data((k, v));
     }
 
     pub fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
         acc.entry(tid).or_default();
-        for (k, v) in data {
-            acc.get_mut(&tid).unwrap().insert(k, v.clone());
-        }
+        let (k, v) = data;
+        acc.get_mut(&tid).unwrap().insert(k, v.clone());
     }
 
     impl BenchTarget<Data, AccValue> for Control<Data, AccValue> {
         fn add_value(&self, t_idx: u32, i_idx: u32) {
             let si = black_box(t_idx.to_string());
-            insert_tl_entry(i_idx, Foo("a".to_owned() + &si), self);
+            send_tl_data(i_idx, Foo("a".to_owned() + &si), self);
         }
 
         fn acc(&mut self) -> impl Deref<Target = AccValue> {
+            self.drain_tls();
             let acc = Self::acc(self);
             assert!(acc.len() == NTHREADS as usize);
             acc
@@ -58,25 +56,24 @@ mod u32_bench {
     type AccValue = u32;
 
     thread_local! {
-        static MY_TL: Holder<Data, AccValue> = Holder::new(||0);
+        static MY_TL: Holder<Data> = Holder::new();
     }
 
-    fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-        control.with_data_mut(|data| {
-            *data += value;
-        });
+    fn send_tl_data(value: u32, control: &Control<Data, AccValue>) {
+        control.send_data(value);
     }
 
-    pub fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {
+    fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {
         *acc += data;
     }
 
     impl BenchTarget<Data, AccValue> for Control<Data, AccValue> {
         fn add_value(&self, t_idx: u32, i_idx: u32) {
-            update_tl(t_idx * i_idx, self);
+            send_tl_data(t_idx * i_idx, self);
         }
 
         fn acc(&mut self) -> impl Deref<Target = AccValue> {
+            self.drain_tls();
             let acc = Self::acc(self);
             assert_eq!(
                 *acc,
@@ -91,12 +88,26 @@ mod u32_bench {
     }
 }
 
-pub fn probed_map_bench() {
+pub fn tlm_channeled_nobg_map_bench() {
     use map_bench::*;
     bench(control());
 }
 
-pub fn probed_u32_bench() {
+pub fn tlm_channeled_bg_map_bench() {
+    use map_bench::*;
+    let control = control();
+    control.start_receiving_tls().unwrap(); // this significantly slows thigs down
+    bench(control);
+}
+
+pub fn tlm_channeled_nobg_u32_bench() {
     use u32_bench::*;
     bench(control());
+}
+
+pub fn tlm_channeled_bg_u32_bench() {
+    use u32_bench::*;
+    let control = control();
+    control.start_receiving_tls().unwrap(); // this significantly slows thigs down
+    bench(control);
 }

@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./bench.sh simple_joined_u32 joined_u32 probed_u32 tlcr_u32 tlcr_probed_u32 channeled_nobg_u32
+./bench.sh tlm_simple_joined_u32 tlm_joined_u32 tlm_probed_u32 tlcr_joined_u32 tlcr_probed_u32 tlm_channeled_nobg_u32

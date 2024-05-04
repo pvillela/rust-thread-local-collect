@@ -1,11 +1,11 @@
-//! Simple example usage of [`thread_local_collect::mtlm::channeled`].
+//! Simple example usage of [`thread_local_collect::tlm::channeled`].
 
 use std::{
     ops::Deref,
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::mtlm::channeled::{Control, Holder};
+use thread_local_collect::tlm::channeled::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;

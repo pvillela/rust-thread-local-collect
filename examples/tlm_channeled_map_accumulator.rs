@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::mtlm::channeled`].
+//! Example usage of [`thread_local_collect::tlm::channeled`].
 
 use std::{
     collections::HashMap,
@@ -9,8 +9,8 @@ use std::{
     time::Duration,
 };
 use thread_local_collect::{
-    mtlm::channeled::{Control, Holder},
     test_support::{assert_eq_and_println, ThreadGater},
+    tlm::channeled::{Control, Holder},
 };
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./bench.sh simple_joined_map joined_map probed_map tlcr_map tlcr_probed_map channeled_nobg_map
+./bench.sh tlm_simple_joined_map tlm_joined_map tlm_probed_map tlcr_joined_map tlcr_probed_map tlm_channeled_nobg_map

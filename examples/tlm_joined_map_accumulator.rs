@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::mtlm::joined`].
+//! Example usage of [`thread_local_collect::tlm::joined`].
 
 use std::{
     collections::HashMap,
@@ -8,7 +8,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::mtlm::joined::{Control, Holder};
+use thread_local_collect::tlm::joined::{Control, Holder};
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);

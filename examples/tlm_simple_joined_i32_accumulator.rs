@@ -1,10 +1,10 @@
-//! Simple example usage of [`thread_local_collect::mtlm::joined`].
+//! Simple example usage of [`thread_local_collect::tlm::simple_joined`].
 
 use std::{
     ops::Deref,
     thread::{self, ThreadId},
 };
-use thread_local_collect::mtlm::joined::{Control, Holder};
+use thread_local_collect::tlm::simple_joined::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;
@@ -42,9 +42,6 @@ fn main() {
     });
 
     {
-        // Take and accumulate the thread-local value from the main thread.
-        control.take_own_tl();
-
         // Different ways to print the accumulated value
 
         println!("accumulated={}", control.acc().deref());
