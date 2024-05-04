@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::simple_joined`].
+//! Example usage of [`thread_local_collect::mtlm::simple_joined`].
 
 use thread_local_collect::{
     mtlm::simple_joined::{Control, Holder},

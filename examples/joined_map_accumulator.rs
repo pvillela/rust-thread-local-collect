@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::joined`].
+//! Example usage of [`thread_local_collect::mtlm::joined`].
 
 use std::{
     collections::HashMap,

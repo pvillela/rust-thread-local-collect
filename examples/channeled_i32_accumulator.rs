@@ -1,4 +1,4 @@
-//! Simple example usage of [`thread_local_collect::channeled`].
+//! Simple example usage of [`thread_local_collect::mtlm::channeled`].
 
 use std::{
     ops::Deref,

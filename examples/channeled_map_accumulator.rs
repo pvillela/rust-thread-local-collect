@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::channeled`].
+//! Example usage of [`thread_local_collect::mtlm::channeled`].
 
 use std::{
     collections::HashMap,

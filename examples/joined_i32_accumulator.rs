@@ -1,4 +1,4 @@
-//! Simple example usage of [`thread_local_collect::joined`].
+//! Simple example usage of [`thread_local_collect::mtlm::joined`].
 
 use std::{
     ops::Deref,

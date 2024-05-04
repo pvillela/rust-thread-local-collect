@@ -1,4 +1,4 @@
-//! Benchmark for [`thread_local_collect::simple_joined`].
+//! Benchmark for [`thread_local_collect::mtlm::simple_joined`].
 
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
 use criterion::black_box;
