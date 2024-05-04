@@ -1,6 +1,7 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads (see package [overview and core concepts](super)). It is a simplified version of the [`crate::joined`] module which does not rely on
-//! unsafe code. The following constraints apply ...
+//! across threads (see package [overview and core concepts](super)). It is a simplified version of the [`crate::joined`]
+//! module which does not support accumulating the thread-local value on the thread responsible for
+//! collection/aggregation. The following constraints apply ...
 //! - The designated thread-local variable should NOT be used in the thread responsible for
 //! collection/aggregation. If this condition is violated, the thread-local value on that thread will NOT
 //! be collected and aggregated.

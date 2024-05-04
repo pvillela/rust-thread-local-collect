@@ -42,9 +42,8 @@ fn main() {
     });
 
     {
-        // Take and accumulate the thread-local values.
-        // SAFETY: Call this after all other threads registered with `control` have been joined.
-        control.take_tls();
+        // Take and accumulate the thread-local value from the main thread.
+        control.take_own_tl();
 
         // Different ways to print the accumulated value
 
