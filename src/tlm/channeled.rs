@@ -385,7 +385,7 @@ impl<T> Holder<T> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Control, Holder};
+    use super::{Control, Holder, MultipleReceiverThreadsError};
     use crate::test_support::{assert_eq_and_println, ThreadGater};
     use std::{
         collections::HashMap,
@@ -597,6 +597,24 @@ mod tests {
                         );
                     });
                 }
+            }
+        });
+    }
+
+    #[test]
+    fn multiple_receiver_threads() {
+        let control = Control::new(&MY_TL, HashMap::new(), op);
+
+        thread::scope(|s| {
+            s.spawn(|| {
+                send_tl_data(0, Foo("aa".to_owned()), &control);
+            });
+
+            control.start_receiving_tls().unwrap();
+            let res = control.start_receiving_tls();
+            match res {
+                Err(MultipleReceiverThreadsError) => (),
+                _ => assert!(false, "unexpected result {res:?}"),
             }
         });
     }

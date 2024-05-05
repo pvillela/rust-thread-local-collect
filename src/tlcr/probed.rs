@@ -249,7 +249,7 @@ mod tests {
     const NTHREADS: usize = 5;
 
     #[test]
-    fn test() {
+    fn own_thread_and_explicit_joins_no_probe() {
         let mut control = Control::new(HashMap::new, op, op_r);
 
         {
@@ -308,5 +308,52 @@ mod tests {
                 assert_eq_and_println(acc, map, "Accumulator check");
             }
         }
+    }
+
+    #[test]
+    fn own_thread_only_no_probe() {
+        let mut control = Control::new(HashMap::new, op, op_r);
+
+        control.send_data((1, Foo("a".to_owned())));
+        control.send_data((2, Foo("b".to_owned())));
+
+        let tid_own = thread::current().id();
+        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
+
+        let map = HashMap::from([(tid_own, map_own)]);
+
+        let acc = control.drain_tls().unwrap();
+        assert_eq_and_println(acc, map, "Accumulator check");
+    }
+
+    #[test]
+    fn no_thread() {
+        let mut control = Control::new(HashMap::new, op, op_r);
+        let acc = control.drain_tls();
+        match acc {
+            Err(super::DrainTlsError::NoThreadLocalsUsed) => (),
+            _ => assert!(false, "unexpected result {acc:?}"),
+        };
+    }
+
+    #[test]
+    fn active_thread_locals() {
+        let mut control = Control::new(HashMap::new, op, op_r);
+
+        thread::scope(|s| {
+            s.spawn({
+                let control = control.clone();
+                move || {
+                    control.send_data((1, Foo("a".to_owned())));
+                    control.send_data((2, Foo("b".to_owned())));
+                }
+            });
+
+            let acc = control.drain_tls();
+            match acc {
+                Err(super::DrainTlsError::ActiveThreadLocalsError) => (),
+                _ => assert!(false, "unexpected result {acc:?}"),
+            };
+        });
     }
 }
