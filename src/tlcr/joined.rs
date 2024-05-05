@@ -164,10 +164,11 @@ where
         (self.op)(data, &mut u, thread::current().id());
     }
 
-    /// Returns the accumulation of the thread-local values.
-    /// Returns an error if any designated thread-local variable instance still exists, i.e., the corresponding
-    /// thread has not yet terminated and explicitly joined, directly or indirectly, the thread where this
-    /// function is called from.
+    /// Returns the accumulation of the thread-local values, replacing the state of `self` with an empty [`ThreadLocal`].
+    /// Returns an error if `self` has not been used by any threads or any thread
+    /// using control, other than the thread where this function is called from, has not yet terminated and explicitly
+    /// joined, directly or indirectly, the thread where this function is called from. In this case, the state of
+    /// `self` is left unchanged.
     pub fn drain_tls(&mut self) -> Result<U, DrainTlsError> {
         let state = replace(&mut self.state, Arc::new(ThreadLocal::new()));
         let unwr_state = match Arc::try_unwrap(state) {
