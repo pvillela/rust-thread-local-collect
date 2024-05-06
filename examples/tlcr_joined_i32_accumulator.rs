@@ -37,12 +37,11 @@ fn main() {
             .collect::<Vec<_>>();
 
         hs.into_iter().for_each(|h| h.join().unwrap());
-
-        // Drain thread-locals.
-        let acc = control.drain_tls().unwrap();
-
-        // Print the accumulated value
-
-        println!("accumulated={acc}");
     });
+
+    // Drain thread-locals.
+    let acc = control.drain_tls().unwrap();
+
+    // Print the accumulated value
+    println!("accumulated={acc}");
 }

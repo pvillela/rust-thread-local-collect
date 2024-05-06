@@ -419,10 +419,6 @@ mod tests {
         acc.get_mut(&tid).unwrap().insert(k, v.clone());
     }
 
-    fn send_tl_data(k: u32, v: Foo, control: &Control<Data, AccValue>) {
-        control.send_data((k, v));
-    }
-
     #[test]
     fn own_thread_and_explicit_join() {
         let control = Control::new(&MY_TL, HashMap::new(), op);
@@ -451,7 +447,7 @@ mod tests {
 
                 let mut process_value = |gate: u8, k: u32, v: Foo| {
                     main_thread_gater.wait_for(gate);
-                    send_tl_data(k, v.clone(), &control);
+                    control.send_data((k, v.clone()));
                     my_map.insert(k, v);
                     expected_acc_mutex
                         .try_lock()
@@ -473,8 +469,8 @@ mod tests {
             }
 
             {
-                send_tl_data(1, Foo("a".to_owned()), &control);
-                send_tl_data(2, Foo("b".to_owned()), &control);
+                control.send_data((1, Foo("a".to_owned())));
+                control.send_data((2, Foo("b".to_owned())));
                 let my_map = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
 
                 // Allow background receiving thread to receive above sends.
@@ -607,7 +603,7 @@ mod tests {
 
         thread::scope(|s| {
             s.spawn(|| {
-                send_tl_data(0, Foo("aa".to_owned()), &control);
+                control.send_data((0, Foo("aa".to_owned())));
             });
 
             control.start_receiving_tls().unwrap();
