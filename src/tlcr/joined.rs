@@ -22,7 +22,6 @@
 //! // Define your accumulated value type.
 //! type AccValue = i32;
 //!
-//!
 //! // Define your zero accumulated value function.
 //! fn acc_zero() -> AccValue {
 //!     0
@@ -41,28 +40,33 @@
 //! const NTHREADS: i32 = 5;
 //!
 //! fn main() {
+//!     // Instantiate the control object.
 //!     let mut control = Control::new(acc_zero, op, op_r);
 //!
-//!     thread::scope(|s| {
-//!         let hs = (0..NTHREADS)
-//!             .map(|i| {
-//!                 let control = control.clone();
-//!                 s.spawn({
-//!                     move || {
-//!                         control.send_data(i);
-//!                     }
-//!                 })
+//!     // Send data to control from main thread if desired.
+//!     control.send_data(100);
+//!
+//!     let hs = (0..NTHREADS)
+//!         .map(|i| {
+//!             // Clone control for use in the new thread.
+//!             let control = control.clone();
+//!             thread::spawn({
+//!                 move || {
+//!                     // Send data from thread to control object.
+//!                     control.send_data(i);
+//!                 }
 //!             })
-//!             .collect::<Vec<_>>();
+//!         })
+//!         .collect::<Vec<_>>();
 //!
-//!         hs.into_iter().for_each(|h| h.join().unwrap());
+//!     // Join all threads.
+//!     hs.into_iter().for_each(|h| h.join().unwrap());
 //!
-//!         // Drain thread-locals.
-//!         let acc = control.drain_tls().unwrap();
+//!     // Drain thread-local values.
+//!     let acc = control.drain_tls().unwrap();
 //!
-//!         // Print the accumulated value
-//!         println!("accumulated={acc}");
-//!     });
+//!     // Print the accumulated value
+//!     println!("accumulated={acc}");
 //! }
 //! ````
 //!

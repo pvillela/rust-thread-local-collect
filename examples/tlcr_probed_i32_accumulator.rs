@@ -34,23 +34,25 @@ fn main() {
     // Send data to control from main thread if desired.
     control.send_data(1);
 
-    thread::scope(|s| {
-        let h = s.spawn(|| {
+    let h = thread::spawn({
+        // Clone control for use in the new thread.
+        let control = control.clone();
+        move || {
             control.send_data(10);
             thread::sleep(Duration::from_millis(10));
             control.send_data(20);
-        });
-
-        // Wait for spawned thread to do some work.
-        thread::sleep(Duration::from_millis(5));
-
-        // Probe the thread-local values and get the accuulated value computed from
-        // current thread-local values.
-        let acc = control.probe_tls().unwrap();
-        println!("non-final accumulated from probe_tls(): {}", acc);
-
-        h.join().unwrap();
+        }
     });
+
+    // Wait for spawned thread to do some work.
+    thread::sleep(Duration::from_millis(5));
+
+    // Probe the thread-local values and get the accuulated value computed from
+    // current thread-local values.
+    let acc = control.probe_tls().unwrap();
+    println!("non-final accumulated from probe_tls(): {}", acc);
+
+    h.join().unwrap();
 
     // Probe the thread-local variables and get the accuulated value computed from
     // final thread-local values.

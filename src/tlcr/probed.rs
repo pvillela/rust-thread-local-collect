@@ -14,7 +14,10 @@
 //! Here's an outline of how this little framework can be used:
 //!
 //! ```rust
-//! use std::thread::{self, ThreadId};
+//! use std::{
+//!     thread::{self, ThreadId},
+//!     time::Duration,
+//! };
 //! use thread_local_collect::tlcr::probed::Control;
 //!
 //! // Define your data type, e.g.:
@@ -38,31 +41,43 @@
 //!     acc1 + acc2
 //! }
 //!
-//! const NTHREADS: i32 = 5;
-//!
 //! fn main() {
+//!     // Instantiate the control object.
 //!     let mut control = Control::new(acc_zero, op, op_r);
 //!
-//!     thread::scope(|s| {
-//!         let hs = (0..NTHREADS)
-//!             .map(|i| {
-//!                 let control = control.clone();
-//!                 s.spawn({
-//!                     move || {
-//!                         control.send_data(i);
-//!                     }
-//!                 })
-//!             })
-//!             .collect::<Vec<_>>();
+//!     // Send data to control from main thread if desired.
+//!     control.send_data(1);
 //!
-//!         hs.into_iter().for_each(|h| h.join().unwrap());
-//!
-//!         // Drain thread-locals.
-//!         let acc = control.drain_tls().unwrap();
-//!
-//!         // Print the accumulated value
-//!         println!("accumulated={acc}");
+//!     let h = thread::spawn({
+//!         // Clone control for use in the new thread.
+//!         let control = control.clone();
+//!         move || {
+//!             control.send_data(10);
+//!             thread::sleep(Duration::from_millis(10));
+//!             control.send_data(20);
+//!         }
 //!     });
+//!
+//!     // Wait for spawned thread to do some work.
+//!     thread::sleep(Duration::from_millis(5));
+//!
+//!     // Probe the thread-local values and get the accuulated value computed from
+//!     // current thread-local values.
+//!     let acc = control.probe_tls().unwrap();
+//!     println!("non-final accumulated from probe_tls(): {}", acc);
+//!
+//!     h.join().unwrap();
+//!
+//!     // Probe the thread-local variables and get the accuulated value computed from
+//!     // final thread-local values.
+//!     let acc = control.probe_tls().unwrap();
+//!     println!("final accumulated from probe_tls(): {}", acc);
+//!
+//!     // Drain the final thread-local values.
+//!     let acc = control.drain_tls().unwrap();
+//!
+//!     // Print the accumulated value
+//!     println!("accumulated={acc}");
 //! }
 //! ````
 //!

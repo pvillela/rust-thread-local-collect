@@ -33,23 +33,21 @@ fn main() {
     // Send data to control from main thread if desired.
     control.send_data(100);
 
-    thread::scope(|s| {
-        let hs = (0..NTHREADS)
-            .map(|i| {
-                // Shadow control with its reference so it is not captured by move closure below.
-                let control = &control;
-                s.spawn({
-                    move || {
-                        // Send data from thread to control object.
-                        control.send_data(i);
-                    }
-                })
+    let hs = (0..NTHREADS)
+        .map(|i| {
+            // Clone control for use in the new thread.
+            let control = control.clone();
+            thread::spawn({
+                move || {
+                    // Send data from thread to control object.
+                    control.send_data(i);
+                }
             })
-            .collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
 
-        // Join all threads.
-        hs.into_iter().for_each(|h| h.join().unwrap());
-    });
+    // Join all threads.
+    hs.into_iter().for_each(|h| h.join().unwrap());
 
     // Drain thread-local values.
     let acc = control.drain_tls().unwrap();
