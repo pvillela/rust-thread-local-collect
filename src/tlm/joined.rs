@@ -186,9 +186,7 @@ where
         }
     }
 
-    fn node(&self) -> () {
-        ()
-    }
+    fn node(&self) {}
 
     pub fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> V {
         self.with_data_node(f, Self::node)

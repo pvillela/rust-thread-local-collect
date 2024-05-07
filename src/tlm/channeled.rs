@@ -250,7 +250,7 @@ impl<T, U> Control<T, U> {
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
     /// Panics if `self`'s mutex is poisoned.
-    pub fn acc<'a>(&'a self) -> impl Deref<Target = U> + 'a {
+    pub fn acc(&self) -> impl Deref<Target = U> + '_ {
         AccGuard(self.lock())
     }
 
@@ -610,7 +610,7 @@ mod tests {
             let res = control.start_receiving_tls();
             match res {
                 Err(MultipleReceiverThreadsError) => (),
-                _ => assert!(false, "unexpected result {res:?}"),
+                _ => panic!("unexpected result {res:?}"),
             }
         });
     }

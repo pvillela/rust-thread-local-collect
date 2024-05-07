@@ -323,7 +323,7 @@ mod tests {
         let acc = control.drain_tls();
         match acc {
             Err(super::DrainTlsError::NoThreadLocalsUsed) => (),
-            _ => assert!(false, "unexpected result {acc:?}"),
+            _ => panic!("unexpected result {acc:?}"),
         };
     }
 
@@ -343,7 +343,7 @@ mod tests {
             let acc = control.drain_tls();
             match acc {
                 Err(super::DrainTlsError::ActiveThreadLocalsError) => (),
-                _ => assert!(false, "unexpected result {acc:?}"),
+                _ => panic!("unexpected result {acc:?}"),
             };
         });
     }

@@ -269,7 +269,7 @@ where
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
     /// Panics if `self`'s mutex is poisoned.
-    pub fn acc<'a>(&'a self) -> impl Deref<Target = P::Acc> + 'a {
+    pub fn acc(&self) -> impl Deref<Target = P::Acc> + '_ {
         AccGuardG::new(self.lock())
     }
 

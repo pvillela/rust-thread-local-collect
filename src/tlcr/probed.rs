@@ -70,6 +70,7 @@
 //!
 //! See another example at [`examples/tlcr_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlcr_probed_map_accumulator.rs).
 
+use crate::tlm::common::POISONED_CONTROL_MUTEX;
 use std::{
     fmt::Debug,
     mem::replace,
@@ -164,7 +165,7 @@ where
     /// Sends data to be aggregated.
     pub fn send_data(&self, data: T) {
         let cell = self.state.get_or(|| Mutex::new((self.acc_zero)()));
-        let mut u = cell.lock().unwrap();
+        let mut u = cell.lock().expect(POISONED_CONTROL_MUTEX);
         (self.op)(data, &mut u, thread::current().id());
     }
 
@@ -186,7 +187,7 @@ where
         let res = unwr_state
             .into_iter()
             .map(|x| {
-                let mut data_guard = x.lock().unwrap();
+                let mut data_guard = x.lock().expect(POISONED_CONTROL_MUTEX);
                 let data = replace(data_guard.deref_mut(), (self.acc_zero)());
                 data
             })
@@ -201,7 +202,7 @@ where
         U: Clone,
     {
         let iter = self.state.iter();
-        iter.map(|x| x.lock().unwrap().clone())
+        iter.map(|x| x.lock().expect(POISONED_CONTROL_MUTEX).clone())
             .reduce(self.op_r.as_ref())
     }
 }
@@ -443,7 +444,7 @@ mod tests {
         let acc = control.drain_tls();
         match acc {
             Err(super::DrainTlsError::NoThreadLocalsUsed) => (),
-            _ => assert!(false, "unexpected result {acc:?}"),
+            _ => panic!("unexpected result {acc:?}"),
         };
     }
 
@@ -463,7 +464,7 @@ mod tests {
             let acc = control.drain_tls();
             match acc {
                 Err(super::DrainTlsError::ActiveThreadLocalsError) => (),
-                _ => assert!(false, "unexpected result {acc:?}"),
+                _ => panic!("unexpected result {acc:?}"),
             };
         });
     }
