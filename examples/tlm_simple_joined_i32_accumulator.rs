@@ -34,28 +34,28 @@ fn main() {
 
     update_tl(1, &control);
 
-    thread::scope(|s| {
-        let h = s.spawn(|| {
+    let h = thread::spawn({
+        // Clone control for the new thread.
+        let control = control.clone();
+        move || {
             update_tl(10, &control);
-        });
-        h.join().unwrap();
+        }
     });
+    h.join().unwrap();
 
-    {
-        // Different ways to print the accumulated value
+    // Different ways to print the accumulated value
 
-        println!("accumulated={}", control.acc().deref());
+    println!("accumulated={}", control.acc().deref());
 
-        let acc = control.acc();
-        println!("accumulated={}", acc.deref());
-        drop(acc);
+    let acc = control.acc();
+    println!("accumulated={}", acc.deref());
+    drop(acc);
 
-        control.with_acc(|acc| println!("accumulated={}", acc));
+    control.with_acc(|acc| println!("accumulated={}", acc));
 
-        let acc = control.clone_acc();
-        println!("accumulated={}", acc);
+    let acc = control.clone_acc();
+    println!("accumulated={}", acc);
 
-        let acc = control.take_acc(0);
-        println!("accumulated={}", acc);
-    }
+    let acc = control.take_acc(0);
+    println!("accumulated={}", acc);
 }
