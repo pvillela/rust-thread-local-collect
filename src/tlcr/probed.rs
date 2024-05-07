@@ -290,7 +290,7 @@ mod tests {
         thread::scope(|s| {
             let hs = (0..NTHREADS)
                 .map(|i| {
-                    let control = control.clone();
+                    let control = &control;
                     s.spawn({
                         move || {
                             let si = i.to_string();
@@ -467,20 +467,18 @@ mod tests {
     fn active_thread_locals() {
         let mut control = Control::new(HashMap::new, op, op_r);
 
-        thread::scope(|s| {
-            s.spawn({
-                let control = control.clone();
-                move || {
-                    control.send_data((1, Foo("a".to_owned())));
-                    control.send_data((2, Foo("b".to_owned())));
-                }
-            });
-
-            let acc = control.drain_tls();
-            match acc {
-                Err(super::DrainTlsError::ActiveThreadLocalsError) => (),
-                _ => panic!("unexpected result {acc:?}"),
-            };
+        thread::spawn({
+            let control = control.clone();
+            move || {
+                control.send_data((1, Foo("a".to_owned())));
+                control.send_data((2, Foo("b".to_owned())));
+            }
         });
+
+        let acc = control.drain_tls();
+        match acc {
+            Err(super::DrainTlsError::ActiveThreadLocalsError) => (),
+            _ => panic!("unexpected result {acc:?}"),
+        };
     }
 }
