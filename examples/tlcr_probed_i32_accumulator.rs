@@ -12,6 +12,11 @@ type Data = i32;
 // Define your accumulated value type.
 type AccValue = i32;
 
+// Define your zero accumulated value function.
+fn acc_zero() -> AccValue {
+    0
+}
+
 // Define your accumulation operation.
 fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
     *acc += data;
@@ -23,7 +28,7 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
 }
 
 fn main() {
-    let mut control = Control::new(|| 0, op, op_r);
+    let mut control = Control::new(acc_zero, op, op_r);
 
     control.send_data(1);
 

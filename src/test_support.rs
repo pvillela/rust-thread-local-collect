@@ -84,7 +84,7 @@ impl ThreadGater {
 }
 
 /// Prints `msg`, `left`, `right`, and then
-/// asserts equality of `left` and `right` with`msg` as the assert message.
+/// asserts equality of `left` and `right` with `msg` as the assert message.
 pub fn assert_eq_and_println<T: PartialEq + Debug>(left: T, right: T, msg: &str) {
     println!("{msg} - left={left:?}; right={right:?}");
     assert_eq!(left, right, "{msg}");

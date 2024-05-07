@@ -1,13 +1,12 @@
 //! This module is supported on **`feature="tlcr"`** only.
 //! This module supports the collection and aggregation of values across threads (see package
 //! [overview and core concepts](crate)). The following features and constraints apply ...
-//! - Values may be collected from the thread responsible for collection/aggregation, provided that [`Control`]
-//! is created on that thread and is not cloned by that thread.
-//! - The participating threads access a [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance
-//! that is a clone of an object of the same type held in a [Control] object to accumulate thread-local values that
-//! are *sent* to it.
-//! - The [`Control::drain_tls`] function can be called after all participating threads have
-//! terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
+//! - Values may be collected from the thread responsible for collection/aggregation, provided that the `control`
+//! object of type [`Control`] is created on that thread and is not cloned by that thread.
+//! - The participating threads *send* data to a clonable `control` object which contains a
+//! [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance that aggregates the values.
+//! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
+//! threads have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
 //! - The [`Control::probe_tls`] function can be called at any time to return the current aggregated value.
 //!
 //! ## Usage pattern
@@ -24,6 +23,11 @@
 //! // Define your accumulated value type.
 //! type AccValue = i32;
 //!
+//! // Define your zero accumulated value function.
+//! fn acc_zero() -> AccValue {
+//!     0
+//! }
+//!
 //! // Define your accumulation operation.
 //! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
 //!     *acc += data;
@@ -37,7 +41,7 @@
 //! const NTHREADS: i32 = 5;
 //!
 //! fn main() {
-//!     let mut control = Control::new(|| 0, op, op_r);
+//!     let mut control = Control::new(acc_zero, op, op_r);
 //!
 //!     thread::scope(|s| {
 //!         let hs = (0..NTHREADS)
@@ -57,7 +61,6 @@
 //!         let acc = control.drain_tls().unwrap();
 //!
 //!         // Print the accumulated value
-//!
 //!         println!("accumulated={acc}");
 //!     });
 //! }
@@ -80,23 +83,23 @@ use thread_local::ThreadLocal;
 /// Errors returned by [`Control::drain_tls`].
 #[derive(Error, Debug)]
 pub enum DrainTlsError {
-    /// Method was called while thread-locals were arctive.
+    /// Method was called while some thread that sent a value for accumulation was still active.
     #[error("method called while thread-locals were arctive")]
     ActiveThreadLocalsError,
 
-    /// There were no thread-locals to aggregate.
+    /// There were no threads that sent values for accumulation.
     #[error("there were no thread-locals to aggregate")]
     NoThreadLocalsUsed,
 }
 
-/// Controls the collection and accumulation of thread-local variables linked to this object.
+/// Controls the collection and accumulation of thread-local values.
 ///
 /// `T` is the type of the values *sent* to this object and `U` is the type of the accumulated value.
 ///
 /// This type holds the following:
 /// - A state object based on [`ThreadLocal`].
 /// - A nullary closure that produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
-/// - An operation that combines data sent from thread-locals with the accumulated value.
+/// - An operation that combines the accumulated value with data sent from threads.
 /// - A binary operation that reduces two accumulated values into one.
 pub struct Control<T, U>
 where
@@ -106,7 +109,7 @@ where
     state: Arc<ThreadLocal<Mutex<U>>>,
     /// Produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
     acc_zero: Arc<dyn Fn() -> U + Send + Sync>,
-    /// Operation that combines data sent from thread-locals with the accumulated value.
+    /// Operation that combines the accumulated value with data sent from threads.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
     /// Binary operation that reduces two accumulated values into one.
@@ -143,7 +146,7 @@ where
     /// Instantiates a [`Control`] object.
     ///
     /// - `acc_zero` - produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
-    /// - `op` - operation that combines data sent from thread-locals with accumulated value.
+    /// - `op` - operation that combines the accumulated value with data sent from threads.
     /// - `op_r` - binary operation that reduces two accumulated values into one.
     pub fn new(
         acc_zero: impl Fn() -> U + 'static + Send + Sync,
@@ -165,9 +168,10 @@ where
         (self.op)(data, &mut u, thread::current().id());
     }
 
-    /// Returns the accumulation of the thread-local values, replacing the state of `self` with an empty [`ThreadLocal`].
+    /// Returns the accumulation of the thread-local values, replacing the state of `self` with an empty
+    /// [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html).
     /// Returns an error if `self` has not been used by any threads or any thread
-    /// using control, other than the thread where this function is called from, has not yet terminated and explicitly
+    /// using `self`, other than the thread where this function is called from, has not yet terminated and explicitly
     /// joined, directly or indirectly, the thread where this function is called from. In this case, the state of
     /// `self` is left unchanged.
     pub fn drain_tls(&mut self) -> Result<U, DrainTlsError> {
@@ -190,6 +194,8 @@ where
         res.ok_or(DrainTlsError::NoThreadLocalsUsed)
     }
 
+    /// Returns the current accumulation of the thread-local values, without changing the state of `self`,
+    /// or `None` is no values have been sent by threads for accumulation.
     pub fn probe_tls(&self) -> Option<U>
     where
         U: Clone,
