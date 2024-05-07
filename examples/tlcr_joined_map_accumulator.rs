@@ -59,7 +59,7 @@ fn main() {
     thread::scope(|s| {
         let hs = (0..NTHREADS)
             .map(|i| {
-                let control = control.clone();
+                let control = &control;
                 s.spawn({
                     move || {
                         let si = i.to_string();

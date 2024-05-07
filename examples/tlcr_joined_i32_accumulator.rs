@@ -27,24 +27,31 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
 const NTHREADS: i32 = 5;
 
 fn main() {
+    // Instantiate the control object.
     let mut control = Control::new(acc_zero, op, op_r);
+
+    // Send data to control from main thread if desired.
+    control.send_data(100);
 
     thread::scope(|s| {
         let hs = (0..NTHREADS)
             .map(|i| {
-                let control = control.clone();
+                // Shadow control with its reference so it is not captured by move closure below.
+                let control = &control;
                 s.spawn({
                     move || {
+                        // Send data from thread to control object.
                         control.send_data(i);
                     }
                 })
             })
             .collect::<Vec<_>>();
 
+        // Join all threads.
         hs.into_iter().for_each(|h| h.join().unwrap());
     });
 
-    // Drain thread-locals.
+    // Drain thread-local values.
     let acc = control.drain_tls().unwrap();
 
     // Print the accumulated value

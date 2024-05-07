@@ -28,8 +28,10 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
 }
 
 fn main() {
+    // Instantiate the control object.
     let mut control = Control::new(acc_zero, op, op_r);
 
+    // Send data to control from main thread if desired.
     control.send_data(1);
 
     thread::scope(|s| {
