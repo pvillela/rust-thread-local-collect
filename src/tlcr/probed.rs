@@ -85,7 +85,6 @@
 //!
 //! See another example at [`examples/tlcr_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlcr_probed_map_accumulator.rs).
 
-use crate::tlm::common::POISONED_CONTROL_MUTEX;
 use std::{
     fmt::Debug,
     mem::replace,
@@ -95,6 +94,9 @@ use std::{
 };
 use thiserror::Error;
 use thread_local::ThreadLocal;
+
+/// Error message.
+const POISONED_CONTROL_MUTEX: &str = "poisoned control mutex";
 
 /// Errors returned by [`Control::drain_tls`].
 #[derive(Error, Debug)]
