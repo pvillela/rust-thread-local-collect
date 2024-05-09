@@ -1,6 +1,6 @@
 use super::common::{
-    ControlG, CoreParam, CtrlStateCore, CtrlStateParam, GDataParam, GuardedData, HolderG, New,
-    NoNode, UseCtrlStateGDefault,
+    ControlG, CoreParam, CtrlStateCore, CtrlStateParam, GDataParam, GuardedData, Hldr, HldrParam,
+    HolderG, New, NoNode,
 };
 use std::{
     sync::Arc,
@@ -13,11 +13,10 @@ pub trait SentDataParam {
 
 pub struct ControlSendG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static + SentDataParam,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
-    P::CtrlState: CtrlStateCore<P>,
-    D: 'static,
+    P: CoreParam + CtrlStateParam + HldrParam + SentDataParam,
+    P::Hldr: Hldr,
+
+    P: 'static,
 {
     pub(crate) control: ControlG<P, D>,
     /// Produces a zero value of type `P::Dat`, which is needed to obtain consistent aggregation results.
@@ -31,11 +30,11 @@ where
 
 impl<P, D> ControlSendG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static + SentDataParam,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + CtrlStateParam + HldrParam + SentDataParam,
+    P::Hldr: Hldr,
+
+    P: CtrlStateParam,
     P::CtrlState: CtrlStateCore<P>,
-    D: 'static,
 {
     pub fn drain_tls(&mut self) -> Result<P::Acc, String> {
         if Arc::strong_count(&self.control.state) > 0 {
@@ -49,21 +48,25 @@ where
 
 impl<P> ControlSendG<P, NoNode>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static + SentDataParam + UseCtrlStateGDefault,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, NoNode>> + SentDataParam,
+
+    P: CtrlStateParam + GDataParam,
     P::CtrlState: CtrlStateCore<P>,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
 {
     pub fn send_data(&self, sent_data: P::SDat) {
         self.control
             .with_data_mut(|data| (self.op)(sent_data, data, thread::current().id()))
     }
 }
+
 impl<P> ControlSendG<P, NoNode>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static + SentDataParam + UseCtrlStateGDefault,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, NoNode>> + SentDataParam,
+
+    P: CtrlStateParam + GDataParam + SentDataParam,
+    P::CtrlState: CtrlStateCore<P>,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
     P::CtrlState: CtrlStateCore<P> + New<P::CtrlState, Arg = P::Acc>,
 {
     pub(crate) fn new_priv(

@@ -104,18 +104,17 @@
 //! See another example at [`examples/tlm_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlm_probed_map_accumulator.rs).
 
 use crate::tlm::common::{
-    ControlG, CoreParam, GDataParam, HolderG, New, NodeParam, SubStateParam, TmapD,
-    UseCtrlStateGDefault, WithNode, POISONED_GUARDED_DATA_MUTEX,
+    ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD, WithNode,
+    POISONED_GUARDED_DATA_MUTEX,
 };
 use std::{
     marker::PhantomData,
     mem::replace,
     ops::DerefMut,
     sync::{Arc, Mutex},
-    thread::{LocalKey, ThreadId},
 };
 
-use super::common::{CtrlStateG, WithAcc, WithNodeFn};
+use super::common::{HldrParam, WithNodeFn};
 
 //=================
 // Core implementation based on common module
@@ -148,6 +147,14 @@ impl<T, U> SubStateParam for P<T, U> {
 
 impl<T, U> GDataParam for P<T, U> {
     type GData = Arc<Mutex<T>>;
+}
+
+impl<T, U> HldrParam for TmapD<P<T, U>>
+where
+    T: 'static,
+    U: 'static,
+{
+    type Hldr = Holder<T, U>;
 }
 
 // type CtrlState<T, U> = CtrlStateG<TmapD<P<T, U>>>;

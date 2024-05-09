@@ -90,6 +90,8 @@ use crate::tlm::common::{
 };
 use std::{cell::RefCell, marker::PhantomData};
 
+use super::common::HldrParam;
+
 //=================
 // Core implementation based on common module
 
@@ -124,6 +126,14 @@ impl<T, U> New<P<T, U>> for P<T, U> {
             _u: PhantomData,
         }
     }
+}
+
+impl<T, U> HldrParam for P<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
+    type Hldr = Holder<T, U>;
 }
 
 type CtrlState<T, U> = CtrlStateG<P<T, U>>;

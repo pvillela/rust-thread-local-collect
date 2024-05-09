@@ -7,6 +7,7 @@ use std::{
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
     fmt::Debug,
+    marker::PhantomData,
     mem::replace,
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex, MutexGuard},
@@ -163,7 +164,7 @@ where
 #[derive(Debug)]
 pub struct CtrlStateG<P>
 where
-    P: CoreParam + CtrlStateParam + SubStateParam,
+    P: CoreParam + SubStateParam,
 {
     pub(crate) acc: P::Acc,
     pub(crate) s: P::SubState,
@@ -172,7 +173,7 @@ where
 
 impl<P> CtrlStateG<P>
 where
-    P: CoreParam + CtrlStateParam + SubStateParam,
+    P: CoreParam + SubStateParam,
 {
     pub(crate) fn acc_priv(&self) -> &P::Acc {
         &self.acc
@@ -185,7 +186,7 @@ where
 
 impl<P> New<Self> for CtrlStateG<P>
 where
-    P: CoreParam + CtrlStateParam + SubStateParam,
+    P: CoreParam + SubStateParam,
     P::SubState: New<P::SubState, Arg = ()>,
 {
     type Arg = P::Acc;
@@ -200,7 +201,7 @@ where
 
 impl<P> WithAcc for CtrlStateG<P>
 where
-    P: CoreParam + CtrlStateParam + SubStateParam,
+    P: CoreParam + SubStateParam,
 {
     type Acc = P::Acc;
 
@@ -215,7 +216,7 @@ where
 
 impl<P> CtrlStateCore<P> for CtrlStateG<P>
 where
-    P: CoreParam + CtrlStateParam + SubStateParam + UseCtrlStateGDefault,
+    P: CoreParam + SubStateParam + UseCtrlStateGDefault,
 {
     /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
     ///
@@ -235,35 +236,41 @@ where
     }
 }
 
+pub trait HldrParam {
+    type Hldr;
+}
+
+pub trait Hldr {}
+
 /// Controls the collection and accumulation of thread-local values linked to this object.
 /// Such values, of type [`CoreParam::Dat`], must be held in thread-locals of type [`HolderG<P>`].
 pub struct ControlG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
-    P::CtrlState: CtrlStateCore<P>,
-    D: 'static,
+    P: CoreParam + CtrlStateParam + HldrParam,
+    P::Hldr: Hldr,
+
+    P: 'static,
 {
     /// Reference to thread-local
-    pub(crate) tl: &'static LocalKey<HolderG<P, D>>,
+    pub(crate) tl: &'static LocalKey<P::Hldr>,
     /// Keeps track of linked thread-locals and accumulated value.
     pub(crate) state: Arc<Mutex<P::CtrlState>>,
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
     pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync>,
+    _d: PhantomData<D>,
 }
 
 impl<P, D> ControlG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + CtrlStateParam + HldrParam,
+    P::Hldr: Hldr,
+
     P::CtrlState: CtrlStateCore<P> + New<P::CtrlState, Arg = P::Acc>,
 {
     /// Instantiates a *control* object.
     pub fn new(
-        tl: &'static LocalKey<HolderG<P, D>>,
+        tl: &'static LocalKey<P::Hldr>,
         acc_base: P::Acc,
         op: impl Fn(P::Dat, &mut P::Acc, ThreadId) + 'static + Send + Sync,
     ) -> Self {
@@ -272,15 +279,16 @@ where
             tl,
             state: Arc::new(Mutex::new(state)),
             op: Arc::new(op),
+            _d: PhantomData,
         }
     }
 }
 
 impl<P, D> ControlG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + CtrlStateParam + HldrParam,
+    P::Hldr: Hldr,
+
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Acquires a lock on [`ControlG`]'s internal Mutex.
@@ -333,10 +341,11 @@ pub struct NoNode;
 
 impl<P> ControlG<P, NoNode>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static + UseCtrlStateGDefault,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, NoNode>>,
+
+    P: CtrlStateParam + GDataParam,
     P::CtrlState: CtrlStateCore<P>,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
 {
     /// Invokes `f` on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
@@ -361,9 +370,10 @@ pub struct WithNode;
 
 impl<P> ControlG<P, WithNode>
 where
-    P: CoreParam + NodeParam + GDataParam + CtrlStateParam + 'static,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + CtrlStateParam + HldrParam,
+    P::Hldr: Hldr,
+
+    P: NodeParam,
     P::CtrlState: CtrlStateWithNode<P>,
 {
     /// Called by [`HolderG`] when a thread-local variable starts being used.
@@ -376,9 +386,11 @@ where
 
 impl<P> ControlG<P, WithNode>
 where
-    P: CoreParam + NodeParam + GDataParam + CtrlStateParam + 'static,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, WithNode>>,
+
+    P: NodeParam + CtrlStateParam + GDataParam,
+    P::CtrlState: CtrlStateCore<P>,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
     P::CtrlState: CtrlStateWithNode<P>,
     Self: WithNodeFn<P, NodeFnArg = Self>,
 {
@@ -407,26 +419,24 @@ where
 
 impl<P, D> Clone for ControlG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
-    P::CtrlState: CtrlStateCore<P>,
+    P: CoreParam + CtrlStateParam + HldrParam,
+    P::Hldr: Hldr,
 {
     fn clone(&self) -> Self {
         Self {
             tl: self.tl,
             state: self.state.clone(),
             op: self.op.clone(),
+            _d: PhantomData,
         }
     }
 }
 
 impl<P, D> Debug for ControlG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
-    P::CtrlState: CtrlStateCore<P>,
+    P: CoreParam + CtrlStateParam + HldrParam,
+    P::Hldr: Hldr,
+
     P::CtrlState: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -483,21 +493,28 @@ impl<T: 'static> GuardedData<T> for Arc<Mutex<T>> {
 /// with the control object.
 pub struct HolderG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + 'static,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
     P::CtrlState: CtrlStateCore<P>,
-    D: 'static,
 {
     pub(crate) data: P::GData,
     pub(crate) control: RefCell<Option<ControlG<P, D>>>,
     pub(crate) make_data: fn() -> P::Dat,
+    _d: PhantomData<D>,
+}
+
+impl<P, D> Hldr for HolderG<P, D>
+where
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::CtrlState: CtrlStateCore<P>,
+{
 }
 
 impl<P, D> HolderG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Instantiates a holder object. The `make_data` function produces the value used to initialize the
@@ -507,6 +524,7 @@ where
             data: P::GData::new(make_data()),
             control: RefCell::new(None),
             make_data,
+            _d: PhantomData,
         }
     }
 
@@ -549,9 +567,8 @@ where
 
 impl<P> HolderG<P, NoNode>
 where
-    P: CoreParam + GDataParam + CtrlStateParam,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Initializes the `control` field in [`HolderG`].
@@ -570,9 +587,11 @@ where
 
 impl<P> HolderG<P, WithNode>
 where
-    P: CoreParam + GDataParam + NodeParam + CtrlStateParam,
-    P::Dat: 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::CtrlState: CtrlStateCore<P>,
+
+    P: NodeParam,
     P::CtrlState: CtrlStateWithNode<P>,
 {
     /// Initializes the `control` field in [`HolderG`] when a node type is used.
@@ -596,9 +615,11 @@ where
 
 impl<P, D> Debug for HolderG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam + Debug,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + Debug + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
     P::CtrlState: CtrlStateCore<P>,
+
+    P::GData: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("Holder{{data: {:?}}}", &self.data))
@@ -607,8 +628,8 @@ where
 
 impl<P, D> Drop for HolderG<P, D>
 where
-    P: CoreParam + GDataParam + CtrlStateParam,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
     P::CtrlState: CtrlStateCore<P>,
 {
     fn drop(&mut self) {
