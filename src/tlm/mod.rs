@@ -5,3 +5,5 @@ pub mod common;
 pub mod joined;
 pub mod probed;
 pub mod simple_joined;
+
+pub mod control_send;

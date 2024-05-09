@@ -34,12 +34,13 @@ pub trait CoreParam {
 /// Abstracts the type of the state of a [`ControlG`].
 pub trait CtrlStateParam {
     type CtrlState;
+    // type StateArg;
 }
 
 #[doc(hidden)]
 /// Abstracts the type of a sub-state of a [`CtrlStateG`].
 pub trait SubStateParam {
-    type SubState: New<Self::SubState, Arg = ()>;
+    type SubState;
 }
 
 #[doc(hidden)]
@@ -49,6 +50,10 @@ pub trait SubStateParam {
 pub trait NodeParam {
     type Node;
 }
+
+// pub trait NodeFnParam {
+//     type NodeFn;
+// }
 
 #[doc(hidden)]
 /// Abstracts the type of [`GuardedData`] used by [`HolderG`].
@@ -74,7 +79,7 @@ pub trait New<S> {
 
 #[doc(hidden)]
 /// Abstracts types that return the accumulator type.
-pub trait WithAcc: New<Self, Arg = Self::Acc>
+pub trait WithAcc
 where
     Self: Sized,
 {
@@ -82,6 +87,8 @@ where
 
     /// Returns reference to accumulated value.
     fn acc(&self) -> &Self::Acc;
+    /// Returns mutable reference to accumulated value.
+    fn acc_mut(&mut self) -> &mut Self::Acc;
 }
 
 #[doc(hidden)]
@@ -91,9 +98,6 @@ where
     Self: Sized,
     P: CoreParam,
 {
-    /// Returns mutable reference to accumulated value.
-    fn acc_mut(&mut self) -> &mut Self::Acc;
-
     /// Invoked when thread-local [`HolderG`] is dropped to notify the control state and accumulate
     /// the thread-local value.
     ///
@@ -118,6 +122,15 @@ where
 {
     /// Registers a node with the control state.
     fn register_node(&mut self, node: P::Node, tid: ThreadId);
+}
+
+pub trait WithNodeFn<P>
+where
+    P: NodeParam,
+{
+    type NodeFnArg;
+
+    fn node_fn(arg: &Self::NodeFnArg) -> P::Node;
 }
 
 //=================
@@ -150,28 +163,30 @@ where
 #[derive(Debug)]
 pub struct CtrlStateG<P>
 where
-    P: CoreParam + SubStateParam,
+    P: CoreParam + CtrlStateParam + SubStateParam,
 {
     pub(crate) acc: P::Acc,
     pub(crate) s: P::SubState,
+    // pub(crate) state_arg: P::StateArg,
 }
 
 impl<P> CtrlStateG<P>
 where
-    P: CoreParam + SubStateParam,
+    P: CoreParam + CtrlStateParam + SubStateParam,
 {
-    fn acc(&self) -> &P::Acc {
+    pub(crate) fn acc_priv(&self) -> &P::Acc {
         &self.acc
     }
 
-    pub(crate) fn acc_mut(&mut self) -> &mut P::Acc {
+    pub(crate) fn acc_mut_priv(&mut self) -> &mut P::Acc {
         &mut self.acc
     }
 }
 
 impl<P> New<Self> for CtrlStateG<P>
 where
-    P: CoreParam + SubStateParam,
+    P: CoreParam + CtrlStateParam + SubStateParam,
+    P::SubState: New<P::SubState, Arg = ()>,
 {
     type Arg = P::Acc;
 
@@ -185,23 +200,23 @@ where
 
 impl<P> WithAcc for CtrlStateG<P>
 where
-    P: CoreParam + SubStateParam,
+    P: CoreParam + CtrlStateParam + SubStateParam,
 {
     type Acc = P::Acc;
 
     fn acc(&self) -> &P::Acc {
-        CtrlStateG::acc(self)
+        CtrlStateG::acc_priv(self)
+    }
+
+    fn acc_mut(&mut self) -> &mut P::Acc {
+        CtrlStateG::acc_mut_priv(self)
     }
 }
 
 impl<P> CtrlStateCore<P> for CtrlStateG<P>
 where
-    P: CoreParam + SubStateParam + UseCtrlStateGDefault,
+    P: CoreParam + CtrlStateParam + SubStateParam + UseCtrlStateGDefault,
 {
-    fn acc_mut(&mut self) -> &mut P::Acc {
-        CtrlStateG::acc_mut(self)
-    }
-
     /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
     ///
     /// The `data` argument is not strictly necessary to support the implementation for state that uses
@@ -215,7 +230,7 @@ where
         data: P::Dat,
         tid: ThreadId,
     ) {
-        let acc = self.acc_mut();
+        let acc = self.acc_mut_priv();
         op(data, acc, tid);
     }
 }
@@ -244,7 +259,7 @@ where
     P: CoreParam + GDataParam + CtrlStateParam + 'static,
     P::Dat: 'static,
     P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
-    P::CtrlState: CtrlStateCore<P>,
+    P::CtrlState: CtrlStateCore<P> + New<P::CtrlState, Arg = P::Acc>,
 {
     /// Instantiates a *control* object.
     pub fn new(
@@ -259,7 +274,15 @@ where
             op: Arc::new(op),
         }
     }
+}
 
+impl<P, D> ControlG<P, D>
+where
+    P: CoreParam + GDataParam + CtrlStateParam + 'static,
+    P::Dat: 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P::CtrlState: CtrlStateCore<P>,
+{
     /// Acquires a lock on [`ControlG`]'s internal Mutex.
     /// Panics if `self`'s mutex is poisoned.
     pub(crate) fn lock(&self) -> MutexGuard<'_, P::CtrlState> {
@@ -341,7 +364,6 @@ where
     P: CoreParam + NodeParam + GDataParam + CtrlStateParam + 'static,
     P::Dat: 'static,
     P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
-    P::CtrlState: CtrlStateCore<P>,
     P::CtrlState: CtrlStateWithNode<P>,
 {
     /// Called by [`HolderG`] when a thread-local variable starts being used.
@@ -350,29 +372,34 @@ where
         let mut lock = self.lock();
         lock.register_node(node, tid)
     }
+}
+
+impl<P> ControlG<P, WithNode>
+where
+    P: CoreParam + NodeParam + GDataParam + CtrlStateParam + 'static,
+    P::Dat: 'static,
+    P::GData: GuardedData<P::Dat, Arg = P::Dat> + 'static,
+    P::CtrlState: CtrlStateWithNode<P>,
+    Self: WithNodeFn<P, NodeFnArg = Self>,
+{
+    fn node(&self) -> P::Node {
+        Self::node_fn(self)
+    }
 
     /// Invokes `f` on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub(crate) fn with_data_node<V>(
-        &self,
-        f: impl FnOnce(&P::Dat) -> V,
-        node: fn(&Self) -> P::Node,
-    ) -> V {
+    pub fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
         self.tl.with(|h| {
-            h.ensure_linked(self, node(self));
+            h.ensure_linked(self, Self::node);
             h.with_data(f)
         })
     }
 
     /// Invokes `f` mutably on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub(crate) fn with_data_mut_node<V>(
-        &self,
-        f: impl FnOnce(&mut P::Dat) -> V,
-        node: fn(&Self) -> P::Node,
-    ) -> V {
+    pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
         self.tl.with(|h| {
-            h.ensure_linked(self, node(self));
+            h.ensure_linked(self, Self::node);
             h.with_data_mut(f)
         })
     }
@@ -556,9 +583,13 @@ where
     }
 
     /// Ensures `self` is linked to `control` when a node type is used.
-    pub(crate) fn ensure_linked(&self, control: &ControlG<P, WithNode>, node: P::Node) {
+    pub(crate) fn ensure_linked(
+        &self,
+        control: &ControlG<P, WithNode>,
+        node: fn(&ControlG<P, WithNode>) -> P::Node,
+    ) {
         if self.control().as_ref().is_none() {
-            self.link(control, node);
+            self.link(control, node(control));
         }
     }
 }
@@ -596,14 +627,15 @@ where
 #[derive(Debug)]
 pub struct TmapD<P>
 where
-    P: NodeParam,
+    P: CoreParam + NodeParam + GDataParam,
 {
+    // pub(crate) node: fn(&P::GData) -> P::Node,
     pub(crate) tmap: HashMap<ThreadId, P::Node>,
 }
 
 impl<P> CoreParam for TmapD<P>
 where
-    P: CoreParam + NodeParam,
+    P: CoreParam + NodeParam + GDataParam,
 {
     type Acc = P::Acc;
     type Dat = P::Dat;
@@ -611,21 +643,22 @@ where
 
 impl<P> NodeParam for TmapD<P>
 where
-    P: CoreParam + NodeParam,
+    P: CoreParam + NodeParam + GDataParam,
 {
     type Node = P::Node;
 }
 
 impl<P> CtrlStateParam for TmapD<P>
 where
-    P: CoreParam + NodeParam,
+    P: CoreParam + NodeParam + GDataParam,
 {
     type CtrlState = CtrlStateG<Self>;
+    // type StateArg = fn(&P::GData) -> P::Node;
 }
 
 impl<P> SubStateParam for TmapD<P>
 where
-    P: CoreParam + NodeParam,
+    P: CoreParam + NodeParam + GDataParam,
 {
     type SubState = Self;
 }
@@ -639,7 +672,7 @@ where
 
 impl<P> New<Self> for TmapD<P>
 where
-    P: NodeParam,
+    P: CoreParam + NodeParam + GDataParam,
 {
     type Arg = ();
 
@@ -652,12 +685,8 @@ where
 
 impl<P> CtrlStateCore<TmapD<P>> for CtrlStateG<TmapD<P>>
 where
-    P: CoreParam + NodeParam,
+    P: CoreParam + NodeParam + GDataParam,
 {
-    fn acc_mut(&mut self) -> &mut P::Acc {
-        CtrlStateG::acc_mut(self)
-    }
-
     fn tl_data_dropped(
         &mut self,
         op: &(dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync),
@@ -665,14 +694,14 @@ where
         tid: ThreadId,
     ) {
         self.s.tmap.remove(&tid);
-        let acc = self.acc_mut();
+        let acc = self.acc_mut_priv();
         op(data, acc, tid);
     }
 }
 
 impl<P> CtrlStateWithNode<TmapD<P>> for CtrlStateG<TmapD<P>>
 where
-    P: CoreParam + NodeParam,
+    P: CoreParam + NodeParam + GDataParam,
 {
     fn register_node(&mut self, node: <P as NodeParam>::Node, tid: ThreadId) {
         self.s.tmap.insert(tid, node);

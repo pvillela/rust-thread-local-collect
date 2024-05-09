@@ -96,6 +96,8 @@ use std::{
     thread::{self, ThreadId},
 };
 
+use super::common::WithNodeFn;
+
 //=================
 // Core implementation based on common module
 
@@ -161,11 +163,31 @@ impl<T, U> CtrlStateWithNode<P<T, U>> for CtrlState<T, U> {
 /// The data values are held in thread-locals of type [`Holder<T, U>`].
 pub type Control<T, U> = ControlG<P<T, U>, WithNode>;
 
+impl<T, U> WithNodeFn<P<T, U>> for Control<T, U> {
+    type NodeFnArg = Self;
+
+    fn node_fn(_: &Self) {}
+}
+
 impl<T, U> Control<T, U>
 where
     T: 'static,
     U: 'static,
 {
+    // /// Instantiates a *control* object.
+    // pub fn new(
+    //     tl: &'static LocalKey<Holder<T, U>>,
+    //     acc_base: U,
+    //     op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
+    // ) -> Self {
+    //     let state = CtrlState::new(acc_base);
+    //     Self {
+    //         tl,
+    //         state: Arc::new(Mutex::new(state)),
+    //         op: Arc::new(op),
+    //     }
+    // }
+
     /// This method takes the value of the designated thread-local variable in the thread responsible for
     /// collection/aggregation, if that variable is used, and aggregates that value
     /// with this object's accumulator, replacing that value with the evaluation of the `make_data` function
@@ -185,16 +207,6 @@ where
             });
         }
     }
-
-    fn node(&self) {}
-
-    pub fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> V {
-        self.with_data_node(f, Self::node)
-    }
-
-    pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> V {
-        self.with_data_mut_node(f, Self::node)
-    }
 }
 
 /// Specialization of [`HolderG`] for this module.
@@ -205,7 +217,7 @@ pub type Holder<T, U> = HolderG<P<T, U>, WithNode>;
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Control, Holder};
+    use super::*;
     use crate::test_support::assert_eq_and_println;
     use std::{
         collections::HashMap,

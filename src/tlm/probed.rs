@@ -104,7 +104,7 @@
 //! See another example at [`examples/tlm_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlm_probed_map_accumulator.rs).
 
 use crate::tlm::common::{
-    ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD,
+    ControlG, CoreParam, GDataParam, HolderG, New, NodeParam, SubStateParam, TmapD,
     UseCtrlStateGDefault, WithNode, POISONED_GUARDED_DATA_MUTEX,
 };
 use std::{
@@ -112,7 +112,10 @@ use std::{
     mem::replace,
     ops::DerefMut,
     sync::{Arc, Mutex},
+    thread::{LocalKey, ThreadId},
 };
+
+use super::common::{CtrlStateG, WithAcc, WithNodeFn};
 
 //=================
 // Core implementation based on common module
@@ -143,11 +146,23 @@ impl<T, U> SubStateParam for P<T, U> {
     type SubState = TmapD<Self>;
 }
 
-impl<T, U> UseCtrlStateGDefault for P<T, U> {}
-
 impl<T, U> GDataParam for P<T, U> {
     type GData = Arc<Mutex<T>>;
 }
+
+// type CtrlState<T, U> = CtrlStateG<TmapD<P<T, U>>>;
+
+// impl<T, U> WithAcc for CtrlState<T, U> {
+//     type Acc = U;
+
+//     fn acc(&self) -> &U {
+//         CtrlStateG::acc_priv(self)
+//     }
+
+//     fn acc_mut(&mut self) -> &mut U {
+//         CtrlStateG::acc_mut_priv(self)
+//     }
+// }
 
 /// Specialization of [`ControlG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
@@ -156,11 +171,39 @@ impl<T, U> GDataParam for P<T, U> {
 /// The data values are held in thread-locals of type [`Holder<T, U>`].
 pub type Control<T, U> = ControlG<TmapD<P<T, U>>, WithNode>;
 
+impl<T, U> WithNodeFn<TmapD<P<T, U>>> for Control<T, U> {
+    type NodeFnArg = Self;
+
+    fn node_fn(this: &Self) -> Node<T> {
+        this.tl.with(|h| Node {
+            data: h.data.clone(),
+            make_data: h.make_data,
+        })
+    }
+}
+
 impl<T, U> Control<T, U>
 where
     T: 'static,
     U: 'static,
 {
+    // /// Instantiates a *control* object.
+    // pub fn new(
+    //     tl: &'static LocalKey<Holder<T, U>>,
+    //     acc_base: U,
+    //     op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
+    // ) -> Self {
+    //     let state = CtrlState::new((acc_base, |gdata| Node {
+    //         data: gdata.clone(),
+    //         make_data:
+    //     }));
+    //     Self {
+    //         tl,
+    //         state: Arc::new(Mutex::new(state)),
+    //         op: Arc::new(op),
+    //     }
+    // }
+
     /// Takes the values of any remaining linked thread-local-variables and aggregates those values
     /// with this object's accumulator, replacing those values with the evaluation of the `make_data` function
     /// passed to [`Holder::new`].
@@ -202,21 +245,6 @@ where
             (self.op)(data, &mut acc_clone, *tid);
         }
         acc_clone
-    }
-
-    fn node(&self) -> Node<T> {
-        self.tl.with(|h| Node {
-            data: h.data.clone(),
-            make_data: h.make_data,
-        })
-    }
-
-    pub fn with_data<V>(&self, f: impl FnOnce(&T) -> V) -> V {
-        self.with_data_node(f, Self::node)
-    }
-
-    pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut T) -> V) -> V {
-        self.with_data_mut_node(f, Self::node)
     }
 }
 
