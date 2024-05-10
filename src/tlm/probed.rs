@@ -114,7 +114,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use super::common::{HldrParam, WithNodeFn};
+use super::common::{CtrlStateG, CtrlStateParam, HldrParam};
 
 //=================
 // Core implementation based on common module
@@ -137,11 +137,27 @@ pub struct Node<T> {
     make_data: fn() -> T,
 }
 
-impl<T, U> NodeParam for P<T, U> {
+impl<T, U> NodeParam for P<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
     type Node = Node<T>;
+    type NodeFnArg = Control<T, U>;
+
+    fn node_fn(arg: &Self::NodeFnArg) -> Self::Node {
+        arg.tl.with(|h| Node {
+            data: h.data.clone(),
+            make_data: h.make_data,
+        })
+    }
 }
 
-impl<T, U> SubStateParam for P<T, U> {
+impl<T, U> SubStateParam for P<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
     type SubState = TmapD<Self>;
 }
 
@@ -149,7 +165,7 @@ impl<T, U> GDataParam for P<T, U> {
     type GData = Arc<Mutex<T>>;
 }
 
-impl<T, U> HldrParam for TmapD<P<T, U>>
+impl<T, U> HldrParam for P<T, U>
 where
     T: 'static,
     U: 'static,
@@ -157,60 +173,28 @@ where
     type Hldr = Holder<T, U>;
 }
 
-// type CtrlState<T, U> = CtrlStateG<TmapD<P<T, U>>>;
+type CtrlState<T, U> = CtrlStateG<P<T, U>, TmapD<P<T, U>>>;
 
-// impl<T, U> WithAcc for CtrlState<T, U> {
-//     type Acc = U;
-
-//     fn acc(&self) -> &U {
-//         CtrlStateG::acc_priv(self)
-//     }
-
-//     fn acc_mut(&mut self) -> &mut U {
-//         CtrlStateG::acc_mut_priv(self)
-//     }
-// }
+impl<T, U> CtrlStateParam for P<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
+    type CtrlState = CtrlState<T, U>;
+}
 
 /// Specialization of [`ControlG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
 ///
 /// `T` is the type of the thread-local values and `U` is the type of the accumulated value.
 /// The data values are held in thread-locals of type [`Holder<T, U>`].
-pub type Control<T, U> = ControlG<TmapD<P<T, U>>, WithNode>;
-
-impl<T, U> WithNodeFn<TmapD<P<T, U>>> for Control<T, U> {
-    type NodeFnArg = Self;
-
-    fn node_fn(this: &Self) -> Node<T> {
-        this.tl.with(|h| Node {
-            data: h.data.clone(),
-            make_data: h.make_data,
-        })
-    }
-}
+pub type Control<T, U> = ControlG<P<T, U>, WithNode>;
 
 impl<T, U> Control<T, U>
 where
     T: 'static,
     U: 'static,
 {
-    // /// Instantiates a *control* object.
-    // pub fn new(
-    //     tl: &'static LocalKey<Holder<T, U>>,
-    //     acc_base: U,
-    //     op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
-    // ) -> Self {
-    //     let state = CtrlState::new((acc_base, |gdata| Node {
-    //         data: gdata.clone(),
-    //         make_data:
-    //     }));
-    //     Self {
-    //         tl,
-    //         state: Arc::new(Mutex::new(state)),
-    //         op: Arc::new(op),
-    //     }
-    // }
-
     /// Takes the values of any remaining linked thread-local-variables and aggregates those values
     /// with this object's accumulator, replacing those values with the evaluation of the `make_data` function
     /// passed to [`Holder::new`].
@@ -258,7 +242,7 @@ where
 /// Specialization of [`HolderG`] for this module.
 /// Holds thread-local data of type `T` and a smart pointer to a [`Control<T, U>`], enabling the linkage of
 /// the held data with the control object.
-pub type Holder<T, U> = HolderG<TmapD<P<T, U>>, WithNode>;
+pub type Holder<T, U> = HolderG<P<T, U>, WithNode>;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

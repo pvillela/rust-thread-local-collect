@@ -85,12 +85,11 @@
 //! See another example at [`examples/tlm_simple_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlm_simple_joined_map_accumulator.rs).
 
 use crate::tlm::common::{
-    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, New, NoNode,
-    SubStateParam, UseCtrlStateGDefault,
+    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, New, SubStateParam,
 };
 use std::{cell::RefCell, marker::PhantomData};
 
-use super::common::HldrParam;
+use super::common::{DefaultDiscr, HldrParam};
 
 //=================
 // Core implementation based on common module
@@ -110,8 +109,6 @@ impl<T, U> CoreParam for P<T, U> {
 impl<T, U> SubStateParam for P<T, U> {
     type SubState = Self;
 }
-
-impl<T, U> UseCtrlStateGDefault for P<T, U> {}
 
 impl<T, U> GDataParam for P<T, U> {
     type GData = RefCell<T>;
@@ -136,7 +133,7 @@ where
     type Hldr = Holder<T, U>;
 }
 
-type CtrlState<T, U> = CtrlStateG<P<T, U>>;
+type CtrlState<T, U> = CtrlStateG<P<T, U>, DefaultDiscr>;
 
 impl<T, U> CtrlStateParam for P<T, U> {
     type CtrlState = CtrlState<T, U>;
@@ -147,12 +144,12 @@ impl<T, U> CtrlStateParam for P<T, U> {
 ///
 /// `T` is the type of the thread-local values and `U` is the type of the accumulated value.
 /// The data values are held in thread-locals of type [`Holder<T, U>`].
-pub type Control<T, U> = ControlG<P<T, U>, NoNode>;
+pub type Control<T, U> = ControlG<P<T, U>, DefaultDiscr>;
 
 /// Specialization of [`HolderG`] for this module.
 /// Holds thread-local data of type `T` and a smart pointer to a [`Control<T, U>`], enabling the linkage of
 /// the held data with the control object.
-pub type Holder<T, U> = HolderG<P<T, U>, NoNode>;
+pub type Holder<T, U> = HolderG<P<T, U>, DefaultDiscr>;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

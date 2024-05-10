@@ -50,6 +50,9 @@ pub trait SubStateParam {
 /// in the state of a [`ControlG`].
 pub trait NodeParam {
     type Node;
+    type NodeFnArg;
+
+    fn node_fn(arg: &Self::NodeFnArg) -> Self::Node;
 }
 
 // pub trait NodeFnParam {
@@ -62,12 +65,15 @@ pub trait GDataParam {
     type GData;
 }
 
+#[doc(hidden)]
+/// Used in conjunction with [`Hldr`] to bstract the [`HolderG`] type to reduce circular dependencies between
+/// [`ControlG`] and [`HolderG`].
+pub trait HldrParam {
+    type Hldr;
+}
+
 //=================
 // Hidden non-param traits
-
-#[doc(hidden)]
-/// Used to tag an instantiation of [`CtrlStateG`] and enable it to inherit default [`CtrlStateG`] functionality.
-pub trait UseCtrlStateGDefault {}
 
 #[doc(hidden)]
 /// Abstracts a type's ability to construct itself.
@@ -125,17 +131,23 @@ where
     fn register_node(&mut self, node: P::Node, tid: ThreadId);
 }
 
-pub trait WithNodeFn<P>
-where
-    P: NodeParam,
-{
-    type NodeFnArg;
-
-    fn node_fn(arg: &Self::NodeFnArg) -> P::Node;
-}
+#[doc(hidden)]
+/// Used in conjunction with [`HldrParam`] to bstract the [`HolderG`] type to reduce circular dependencies between
+/// [`ControlG`] and [`HolderG`].
+pub trait Hldr {}
 
 //=================
 // Core structs and impls
+
+#[doc(hidden)]
+/// Type used to discriminate default `impl`s. Could have used `()` instead.
+#[derive(Debug)]
+pub struct DefaultDiscr;
+
+#[doc(hidden)]
+/// Type used to discriminate `impl`s that use [`NodeParam`] and do not need to be further discriminated.
+#[derive(Debug)]
+pub struct WithNode;
 
 /// Guard that dereferences to the accumulator type. A lock is held during the guard's lifetime.
 struct AccGuardG<'a, S> {
@@ -162,16 +174,16 @@ where
 #[doc(hidden)]
 /// Data structure that can be used as the state of a [`ControlG`].
 #[derive(Debug)]
-pub struct CtrlStateG<P>
+pub struct CtrlStateG<P, D>
 where
     P: CoreParam + SubStateParam,
 {
     pub(crate) acc: P::Acc,
     pub(crate) s: P::SubState,
-    // pub(crate) state_arg: P::StateArg,
+    _d: PhantomData<D>,
 }
 
-impl<P> CtrlStateG<P>
+impl<P, D> CtrlStateG<P, D>
 where
     P: CoreParam + SubStateParam,
 {
@@ -184,9 +196,10 @@ where
     }
 }
 
-impl<P> New<Self> for CtrlStateG<P>
+impl<P, D> New<Self> for CtrlStateG<P, D>
 where
     P: CoreParam + SubStateParam,
+
     P::SubState: New<P::SubState, Arg = ()>,
 {
     type Arg = P::Acc;
@@ -195,11 +208,12 @@ where
         Self {
             acc: acc_base,
             s: P::SubState::new(()),
+            _d: PhantomData,
         }
     }
 }
 
-impl<P> WithAcc for CtrlStateG<P>
+impl<P, D> WithAcc for CtrlStateG<P, D>
 where
     P: CoreParam + SubStateParam,
 {
@@ -214,9 +228,9 @@ where
     }
 }
 
-impl<P> CtrlStateCore<P> for CtrlStateG<P>
+impl<P> CtrlStateCore<P> for CtrlStateG<P, DefaultDiscr>
 where
-    P: CoreParam + SubStateParam + UseCtrlStateGDefault,
+    P: CoreParam + SubStateParam,
 {
     /// Indirectly used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
     ///
@@ -235,12 +249,6 @@ where
         op(data, acc, tid);
     }
 }
-
-pub trait HldrParam {
-    type Hldr;
-}
-
-pub trait Hldr {}
 
 /// Controls the collection and accumulation of thread-local values linked to this object.
 /// Such values, of type [`CoreParam::Dat`], must be held in thread-locals of type [`HolderG<P>`].
@@ -337,11 +345,9 @@ where
     }
 }
 
-pub struct NoNode;
-
-impl<P> ControlG<P, NoNode>
+impl<P> ControlG<P, DefaultDiscr>
 where
-    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, NoNode>>,
+    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, DefaultDiscr>>,
 
     P: CtrlStateParam + GDataParam,
     P::CtrlState: CtrlStateCore<P>,
@@ -366,8 +372,6 @@ where
     }
 }
 
-pub struct WithNode;
-
 impl<P> ControlG<P, WithNode>
 where
     P: CoreParam + CtrlStateParam + HldrParam,
@@ -388,14 +392,13 @@ impl<P> ControlG<P, WithNode>
 where
     P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, WithNode>>,
 
-    P: NodeParam + CtrlStateParam + GDataParam,
+    P: NodeParam<NodeFnArg = Self> + CtrlStateParam + GDataParam,
     P::CtrlState: CtrlStateCore<P>,
     P::GData: GuardedData<P::Dat, Arg = P::Dat>,
     P::CtrlState: CtrlStateWithNode<P>,
-    Self: WithNodeFn<P, NodeFnArg = Self>,
 {
     fn node(&self) -> P::Node {
-        Self::node_fn(self)
+        P::node_fn(self)
     }
 
     /// Invokes `f` on the held data.
@@ -565,20 +568,20 @@ where
     }
 }
 
-impl<P> HolderG<P, NoNode>
+impl<P> HolderG<P, DefaultDiscr>
 where
     P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
     P::GData: GuardedData<P::Dat, Arg = P::Dat>,
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Initializes the `control` field in [`HolderG`].
-    fn link(&self, control: &ControlG<P, NoNode>) {
+    fn link(&self, control: &ControlG<P, DefaultDiscr>) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
     }
 
     /// Ensures `self` is linkded with `control`.
-    pub(crate) fn ensure_linked(&self, control: &ControlG<P, NoNode>) {
+    pub(crate) fn ensure_linked(&self, control: &ControlG<P, DefaultDiscr>) {
         if self.control().as_ref().is_none() {
             self.link(control);
         }
@@ -648,52 +651,16 @@ where
 #[derive(Debug)]
 pub struct TmapD<P>
 where
-    P: CoreParam + NodeParam + GDataParam,
+    P: NodeParam,
 {
-    // pub(crate) node: fn(&P::GData) -> P::Node,
     pub(crate) tmap: HashMap<ThreadId, P::Node>,
-}
-
-impl<P> CoreParam for TmapD<P>
-where
-    P: CoreParam + NodeParam + GDataParam,
-{
-    type Acc = P::Acc;
-    type Dat = P::Dat;
-}
-
-impl<P> NodeParam for TmapD<P>
-where
-    P: CoreParam + NodeParam + GDataParam,
-{
-    type Node = P::Node;
-}
-
-impl<P> CtrlStateParam for TmapD<P>
-where
-    P: CoreParam + NodeParam + GDataParam,
-{
-    type CtrlState = CtrlStateG<Self>;
-    // type StateArg = fn(&P::GData) -> P::Node;
-}
-
-impl<P> SubStateParam for TmapD<P>
-where
-    P: CoreParam + NodeParam + GDataParam,
-{
-    type SubState = Self;
-}
-
-impl<P> GDataParam for TmapD<P>
-where
-    P: CoreParam + NodeParam + GDataParam,
-{
-    type GData = P::GData;
 }
 
 impl<P> New<Self> for TmapD<P>
 where
-    P: CoreParam + NodeParam + GDataParam,
+    P: NodeParam,
+
+    P: CoreParam,
 {
     type Arg = ();
 
@@ -704,9 +671,11 @@ where
     }
 }
 
-impl<P> CtrlStateCore<TmapD<P>> for CtrlStateG<TmapD<P>>
+impl<P> CtrlStateCore<P> for CtrlStateG<P, TmapD<P>>
 where
-    P: CoreParam + NodeParam + GDataParam,
+    P: NodeParam,
+
+    P: CoreParam + SubStateParam<SubState = TmapD<P>>,
 {
     fn tl_data_dropped(
         &mut self,
@@ -720,9 +689,11 @@ where
     }
 }
 
-impl<P> CtrlStateWithNode<TmapD<P>> for CtrlStateG<TmapD<P>>
+impl<P> CtrlStateWithNode<P> for CtrlStateG<P, TmapD<P>>
 where
-    P: CoreParam + NodeParam + GDataParam,
+    P: NodeParam,
+
+    P: CoreParam + SubStateParam<SubState = TmapD<P>>,
 {
     fn register_node(&mut self, node: <P as NodeParam>::Node, tid: ThreadId) {
         self.s.tmap.insert(tid, node);
