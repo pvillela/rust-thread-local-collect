@@ -15,13 +15,13 @@ struct Foo(String);
 
 type Data = HashMap<u32, Foo>;
 
-type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
+type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_TL: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
+    static MY_TL: Holder<Data, AccValue> = Holder::new(HashMap::new);
 }
 
-fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
+fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
     control.with_data_mut(|data| {
         data.insert(k, v);
     });
@@ -38,7 +38,7 @@ fn print_tl(prefix: &str) {
     });
 }
 
-fn op(data: Data, acc: &mut AccumulatorMap, tid: ThreadId) {
+fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
     println!(
         "`op` called from {:?} with data {:?}",
         thread::current().id(),

@@ -3,6 +3,8 @@ use super::common::{
     GDataParam, GuardedData, Hldr, HldrParam, HolderG, New, NodeParam, WithNode,
 };
 use std::{
+    mem::replace,
+    ops::Deref,
     sync::Arc,
     thread::{self, LocalKey, ThreadId},
 };
@@ -16,39 +18,48 @@ pub struct ActiveThreadLocalsError;
 
 pub trait SentDataParam {
     type SDat;
+    type AccDat;
 }
 
 pub struct ControlSendG<P, D>
 where
-    P: CoreParam + CtrlStateParam + HldrParam + SentDataParam,
+    P: CoreParam<Acc = P::AccDat, Dat = P::AccDat> + CtrlStateParam + HldrParam + SentDataParam,
     P::Hldr: Hldr,
 
     P: 'static,
 {
-    pub(crate) control: ControlG<P, D>,
+    control: ControlG<P, D>,
     /// Produces a zero value of type `P::Dat`, which is needed to obtain consistent aggregation results.
     acc_zero: Arc<dyn Fn() -> P::Acc + Send + Sync>,
     /// Operation that combines the stored thead-local value with data sent from threads.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(P::SDat, &mut P::Dat, ThreadId) + Send + Sync>,
+    // /// Binary operation that combines thread-local stored value with accumulated value.
+    // op_r: Arc<dyn Fn(P::Dat, P::Acc) -> P::Acc + Send + Sync>,
 }
 
 impl<P, D> ControlSendG<P, D>
 where
-    P: CoreParam + CtrlStateParam + HldrParam + SentDataParam,
+    P: CoreParam<Acc = P::AccDat, Dat = P::AccDat> + CtrlStateParam + HldrParam + SentDataParam,
     P::Hldr: Hldr,
 
     P::CtrlState: CtrlStateCore<P> + New<P::CtrlState, Arg = P::Acc>,
 {
-    pub(crate) fn new_priv(
+    pub fn new(
         tl: &'static LocalKey<P::Hldr>,
-        acc_zero: impl Fn() -> P::Acc + 'static + Send + Sync,
+        acc_zero: impl Fn() -> P::Acc + 'static + Send + Sync + Clone,
         op: impl Fn(P::SDat, &mut P::Dat, ThreadId) + 'static + Send + Sync,
-        op_inner: impl Fn(P::Dat, &mut P::Acc, ThreadId) + 'static + Send + Sync,
+        op_r: impl Fn(P::Dat, P::Acc) -> P::Acc + 'static + Send + Sync,
     ) -> Self {
+        // Clone below is typically very cheap because `acc_zero` is typically a function pointer.
+        let acc_zero1 = acc_zero.clone();
         Self {
-            control: ControlG::new(tl, acc_zero(), op_inner),
-            acc_zero: Arc::new(acc_zero),
+            control: ControlG::new(tl, acc_zero(), move |data: P::Dat, acc: &mut P::Acc, _| {
+                let zero = acc_zero();
+                let acc0 = replace(acc, zero);
+                *acc = op_r(data, acc0);
+            }),
+            acc_zero: Arc::new(acc_zero1),
             op: Arc::new(op),
         }
     }
@@ -56,10 +67,9 @@ where
 
 impl<P, D> ControlSendG<P, D>
 where
-    P: CoreParam + CtrlStateParam + HldrParam + SentDataParam,
+    P: CoreParam<Acc = P::AccDat, Dat = P::AccDat> + CtrlStateParam + HldrParam + SentDataParam,
     P::Hldr: Hldr,
 
-    P: CtrlStateParam,
     P::CtrlState: CtrlStateCore<P>,
 {
     pub fn drain_tls(&mut self) -> Result<P::Acc, ActiveThreadLocalsError> {
@@ -74,9 +84,12 @@ where
 
 impl<P> ControlSendG<P, DefaultDiscr>
 where
-    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, DefaultDiscr>> + SentDataParam,
+    P: CoreParam<Acc = P::AccDat, Dat = P::AccDat>
+        + CtrlStateParam
+        + HldrParam<Hldr = HolderG<P, DefaultDiscr>>
+        + SentDataParam,
 
-    P: CtrlStateParam + GDataParam,
+    P: GDataParam,
     P::CtrlState: CtrlStateCore<P>,
     P::GData: GuardedData<P::Dat, Arg = P::Dat>,
 {
@@ -88,10 +101,13 @@ where
 
 impl<P> ControlSendG<P, WithNode>
 where
-    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, WithNode>> + SentDataParam,
+    P: CoreParam<Acc = P::AccDat, Dat = P::AccDat>
+        + CtrlStateParam
+        + HldrParam<Hldr = HolderG<P, WithNode>>
+        + SentDataParam,
 
+    P: GDataParam,
     P: NodeParam<NodeFnArg = ControlG<P, WithNode>>,
-    P: CtrlStateParam + GDataParam,
     P::CtrlState: CtrlStateWithNode<P>,
     P::GData: GuardedData<P::Dat, Arg = P::Dat>,
 {
@@ -99,4 +115,42 @@ where
         self.control
             .with_data_mut(|data| (self.op)(sent_data, data, thread::current().id()))
     }
+}
+
+impl<P, D> Deref for ControlSendG<P, D>
+where
+    P: CoreParam<Acc = P::AccDat, Dat = P::AccDat> + CtrlStateParam + HldrParam + SentDataParam,
+    P::Hldr: Hldr,
+{
+    type Target = ControlG<P, D>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.control
+    }
+}
+
+/// Can't use `#[derive(Clone)]` because it doesn't work due to `Deref` impl.
+impl<P, D> Clone for ControlSendG<P, D>
+where
+    P: CoreParam<Acc = P::AccDat, Dat = P::AccDat> + CtrlStateParam + HldrParam + SentDataParam,
+    P::Hldr: Hldr,
+{
+    fn clone(&self) -> Self {
+        Self {
+            control: self.control.clone(),
+            acc_zero: self.acc_zero.clone(),
+            op: self.op.clone(),
+        }
+    }
+}
+
+/// Comment out the manual clone implementation above and see what happens below.
+#[allow(unused)]
+fn demonstrate_need_for_manual_clone<P, D>(x: ControlSendG<P, D>, y: &ControlSendG<P, D>)
+where
+    P: CoreParam<Acc = P::AccDat, Dat = P::AccDat> + CtrlStateParam + HldrParam + SentDataParam,
+    P::Hldr: Hldr,
+{
+    let x1: ControlSendG<P, D> = x.clone();
+    let y1: ControlSendG<P, D> = y.clone();
 }
