@@ -96,7 +96,10 @@ use std::{
     thread::{self, ThreadId},
 };
 
-use super::common::{DefaultDiscr, HldrParam};
+use super::{
+    common::{DefaultDiscr, HldrParam},
+    control_send::ControlSendG,
+};
 
 //=================
 // Core implementation based on common module
@@ -210,6 +213,8 @@ where
 /// Holds thread-local data of type `T` and a smart pointer to a [`Control<T, U>`], enabling the linkage of
 /// the held data with the control object.
 pub type Holder<T, U> = HolderG<P<T, U>, WithNode>;
+
+pub type ControlSend<T, U> = ControlSendG<P<U, U>, WithNode, T, U>;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
