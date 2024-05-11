@@ -98,7 +98,7 @@ use std::{
 
 use super::{
     common::{DefaultDiscr, HldrParam},
-    control_send::ControlSendG,
+    control_send::{ControlSendG, WithTakeTls},
 };
 
 //=================
@@ -213,6 +213,16 @@ where
 /// Holds thread-local data of type `T` and a smart pointer to a [`Control<T, U>`], enabling the linkage of
 /// the held data with the control object.
 pub type Holder<T, U> = HolderG<P<T, U>, WithNode>;
+
+impl<T, U> WithTakeTls<P<T, U>, WithNode> for P<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
+    fn take_tls(control: &Control<T, U>) {
+        control.take_own_tl();
+    }
+}
 
 pub type ControlSend<T, U> = ControlSendG<P<U, U>, WithNode, T, U>;
 

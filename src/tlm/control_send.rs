@@ -5,17 +5,9 @@ use super::common::{
 use std::{
     fmt::Debug,
     mem::replace,
-    ops::Deref,
     sync::Arc,
     thread::{self, LocalKey, ThreadId},
 };
-use thiserror::Error;
-
-/// Errors returned by [`Control::drain_tls`].
-#[derive(Error, Debug)]
-/// Method was called while some thread that sent a value for accumulation was still active.
-#[error("method called while thread-locals were arctive")]
-pub struct ActiveThreadLocalsError;
 
 pub struct ControlSendG<P, D, T, U>
 where
@@ -59,20 +51,26 @@ where
     }
 }
 
+pub trait WithTakeTls<P, D>
+where
+    P: CoreParam + CtrlStateParam + HldrParam,
+    P::Hldr: Hldr,
+{
+    fn take_tls(control: &ControlG<P, D>);
+}
+
 impl<P, D, T, U> ControlSendG<P, D, T, U>
 where
     P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 
+    P: WithTakeTls<P, D>,
     P::CtrlState: CtrlStateCore<P>,
 {
-    pub fn drain_tls(&mut self) -> Result<P::Acc, ActiveThreadLocalsError> {
-        if Arc::strong_count(&self.control.state) > 0 {
-            Err(ActiveThreadLocalsError)
-        } else {
-            let acc = self.control.take_acc((self.acc_zero)());
-            Ok(acc)
-        }
+    pub fn drain_tls(&mut self) -> U {
+        P::take_tls(&self.control);
+        let acc = self.control.take_acc((self.acc_zero)());
+        acc
     }
 }
 
@@ -107,19 +105,6 @@ where
     }
 }
 
-impl<P, D, T, U> Deref for ControlSendG<P, D, T, U>
-where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
-{
-    type Target = ControlG<P, D>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.control
-    }
-}
-
-/// Can't use `#[derive(Clone)]` because it doesn't work due to `Deref` impl.
 impl<P, D, T, U> Clone for ControlSendG<P, D, T, U>
 where
     P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,

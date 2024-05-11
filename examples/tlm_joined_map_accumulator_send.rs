@@ -4,7 +4,6 @@ use std::{
     collections::HashMap,
     env::set_var,
     fmt::Debug,
-    ops::Deref,
     thread::{self, ThreadId},
     time::Duration,
 };
@@ -53,7 +52,7 @@ fn main() {
     set_var("RUST_LOG", "trace");
     _ = env_logger::try_init();
 
-    let control = ControlSend::new(&MY_TL, HashMap::new, op, op_r);
+    let mut control = ControlSend::new(&MY_TL, HashMap::new, op, op_r);
 
     control.send_data((1, Foo("a".to_owned())));
     control.send_data((2, Foo("b".to_owned())));
@@ -70,23 +69,10 @@ fn main() {
     println!("After spawned thread join: control={:?}", control);
 
     {
-        // Take and accumulate the thread-local value from the main thread.
-        control.take_own_tl();
+        // Get accumulated value.
+        let acc = control.drain_tls();
+        println!("accumulated from drain_tls={:?}", acc);
 
         println!("After call to `take_tls`: control={:?}", control);
-
-        // Different ways to print the accumulated value
-
-        let acc = control.acc();
-        println!("accumulated={:?}", acc.deref());
-        drop(acc);
-
-        control.with_acc(|acc| println!("accumulated={:?}", acc));
-
-        let acc = control.clone_acc();
-        println!("accumulated={:?}", acc);
-
-        let acc = control.take_acc(HashMap::new());
-        println!("accumulated={:?}", acc);
     }
 }
