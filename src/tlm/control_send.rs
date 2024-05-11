@@ -51,9 +51,9 @@ where
     }
 }
 
-pub trait WithTakeTls<P, D>
+pub trait WithTakeTls<P, D, U>
 where
-    P: CoreParam + CtrlStateParam + HldrParam,
+    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 {
     fn take_tls(control: &ControlG<P, D>);
@@ -64,11 +64,11 @@ where
     P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 
-    P: WithTakeTls<P, D>,
     P::CtrlState: CtrlStateCore<P>,
+    Self: WithTakeTls<P, D, U>,
 {
     pub fn drain_tls(&mut self) -> U {
-        P::take_tls(&self.control);
+        Self::take_tls(&self.control);
         let acc = self.control.take_acc((self.acc_zero)());
         acc
     }

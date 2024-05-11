@@ -68,11 +68,9 @@ fn main() {
 
     println!("After spawned thread join: control={:?}", control);
 
-    {
-        // Get accumulated value.
-        let acc = control.drain_tls();
-        println!("accumulated from drain_tls={:?}", acc);
+    // Get accumulated value.
+    let acc = control.drain_tls();
+    println!("accumulated from drain_tls={:?}", acc);
 
-        println!("After call to `take_tls`: control={:?}", control);
-    }
+    println!("After call to `drain_tls`: control={:?}", control);
 }
