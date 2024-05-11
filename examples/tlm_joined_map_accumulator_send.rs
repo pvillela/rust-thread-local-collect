@@ -7,7 +7,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::tlm::joined::{ControlSend, Holder};
+use thread_local_collect::tlm::joined::{ControlSend, HolderSend};
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
@@ -17,7 +17,7 @@ type Data = (u32, Foo);
 type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_TL: Holder<AccValue, AccValue> = Holder::new(HashMap::new);
+    static MY_TL: HolderSend<AccValue> = HolderSend::new(HashMap::new);
 }
 
 fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {

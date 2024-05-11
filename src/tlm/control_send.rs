@@ -4,21 +4,21 @@ use super::common::{
 };
 use std::{
     fmt::Debug,
-    mem::replace,
+    mem::take,
     sync::Arc,
     thread::{self, LocalKey, ThreadId},
 };
 
 pub struct ControlSendG<P, D, T, U>
 where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
+    P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 
     P: 'static,
 {
     control: ControlG<P, D>,
     /// Produces a zero value of type `P::Dat`, which is needed to obtain consistent aggregation results.
-    acc_zero: Arc<dyn Fn() -> P::Acc + Send + Sync>,
+    acc_zero: Arc<dyn Fn() -> Option<U> + Send + Sync>,
     /// Operation that combines the stored thead-local value with data sent from threads.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
@@ -26,24 +26,25 @@ where
 
 impl<P, D, T, U> ControlSendG<P, D, T, U>
 where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
+    P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 
     P::CtrlState: CtrlStateCore<P> + New<P::CtrlState, Arg = P::Acc>,
 {
     pub fn new(
         tl: &'static LocalKey<P::Hldr>,
-        acc_zero: impl Fn() -> P::Acc + 'static + Send + Sync + Clone,
+        acc_zero: impl Fn() -> U + 'static + Send + Sync,
         op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
         op_r: impl Fn(U, U) -> U + 'static + Send + Sync,
     ) -> Self {
-        // Clone below is typically very cheap because `acc_zero` is typically a function pointer.
-        let acc_zero1 = acc_zero.clone();
+        let acc_zero1 = move || Some(acc_zero());
         Self {
-            control: ControlG::new(tl, acc_zero(), move |data: P::Dat, acc: &mut P::Acc, _| {
-                let zero = acc_zero();
-                let acc0 = replace(acc, zero);
-                *acc = op_r(data, acc0);
+            control: ControlG::new(tl, acc_zero1(), move |data: U, acc: &mut Option<U>, _| {
+                let acc0 = take(acc);
+                // By construction above and assignment below, `acc0` will never be `None`.
+                if let Some(acc0) = acc0 {
+                    *acc = Some(op_r(data, acc0));
+                }
             }),
             acc_zero: Arc::new(acc_zero1),
             op: Arc::new(op),
@@ -53,7 +54,7 @@ where
 
 pub trait WithTakeTls<P, D, U>
 where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
+    P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 {
     fn take_tls(control: &ControlG<P, D>);
@@ -61,7 +62,7 @@ where
 
 impl<P, D, T, U> ControlSendG<P, D, T, U>
 where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
+    P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 
     P::CtrlState: CtrlStateCore<P>,
@@ -70,13 +71,15 @@ where
     pub fn drain_tls(&mut self) -> U {
         Self::take_tls(&self.control);
         let acc = self.control.take_acc((self.acc_zero)());
-        acc
+        acc.expect("acc is never None")
     }
 }
 
 impl<P, T, U> ControlSendG<P, DefaultDiscr, T, U>
 where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam<Hldr = HolderG<P, DefaultDiscr>>,
+    P: CoreParam<Acc = Option<U>, Dat = U>
+        + CtrlStateParam
+        + HldrParam<Hldr = HolderG<P, DefaultDiscr>>,
 
     P: GDataParam,
     P::CtrlState: CtrlStateCore<P>,
@@ -91,7 +94,9 @@ where
 
 impl<P, T, U> ControlSendG<P, WithNode, T, U>
 where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam<Hldr = HolderG<P, WithNode>>,
+    P: CoreParam<Acc = Option<U>, Dat = U>
+        + CtrlStateParam
+        + HldrParam<Hldr = HolderG<P, WithNode>>,
 
     P: GDataParam,
     P: NodeParam<NodeFnArg = ControlG<P, WithNode>>,
@@ -107,7 +112,7 @@ where
 
 impl<P, D, T, U> Clone for ControlSendG<P, D, T, U>
 where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
+    P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 {
     fn clone(&self) -> Self {
@@ -121,7 +126,7 @@ where
 
 impl<P, D, T, U> Debug for ControlSendG<P, D, T, U>
 where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
+    P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 
     P::CtrlState: Debug,
@@ -137,7 +142,7 @@ fn demonstrate_need_for_manual_clone<P, D, T, U>(
     x: ControlSendG<P, D, T, U>,
     y: &ControlSendG<P, D, T, U>,
 ) where
-    P: CoreParam<Acc = U, Dat = U> + CtrlStateParam + HldrParam,
+    P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
     P::Hldr: Hldr,
 {
     let x1: ControlSendG<P, D, T, U> = x.clone();

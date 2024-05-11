@@ -214,16 +214,18 @@ where
 /// the held data with the control object.
 pub type Holder<T, U> = HolderG<P<T, U>, WithNode>;
 
-pub type ControlSend<T, U> = ControlSendG<P<U, U>, WithNode, T, U>;
+pub type ControlSend<T, U> = ControlSendG<P<U, Option<U>>, WithNode, T, U>;
 
-impl<T, U> WithTakeTls<P<U, U>, WithNode, U> for ControlSend<T, U>
+impl<T, U> WithTakeTls<P<U, Option<U>>, WithNode, U> for ControlSend<T, U>
 where
     U: 'static,
 {
-    fn take_tls(control: &Control<U, U>) {
+    fn take_tls(control: &Control<U, Option<U>>) {
         control.take_own_tl();
     }
 }
+
+pub type HolderSend<U> = Holder<U, Option<U>>;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
