@@ -92,8 +92,8 @@ pub enum DrainTlsError {
     ActiveThreadLocalsError,
 
     /// There were no threads that sent values for accumulation.
-    #[error("there were no thread-locals to aggregate")]
-    NoThreadLocalsUsed,
+    #[error("there is nothing accumulated")]
+    NothingAccumulated,
 }
 
 /// Controls the collection and accumulation of thread-local values.
@@ -191,7 +191,7 @@ where
             .into_iter()
             .map(|x| x.into_inner())
             .reduce(self.op_r.as_ref());
-        res.ok_or(DrainTlsError::NoThreadLocalsUsed)
+        res.ok_or(DrainTlsError::NothingAccumulated)
     }
 }
 
@@ -318,6 +318,10 @@ mod tests {
         let map = HashMap::from([(tid_own, map_own)]);
 
         let acc = control.drain_tls().unwrap();
+        assert_eq_and_println(acc, map.clone(), "Accumulator check");
+
+        // Repeat.
+        let acc = control.drain_tls().unwrap();
         assert_eq_and_println(acc, map, "Accumulator check");
     }
 
@@ -326,7 +330,7 @@ mod tests {
         let mut control = Control::new(HashMap::new, op, op_r);
         let acc = control.drain_tls();
         match acc {
-            Err(super::DrainTlsError::NoThreadLocalsUsed) => (),
+            Err(super::DrainTlsError::NothingAccumulated) => (),
             _ => panic!("unexpected result {acc:?}"),
         };
     }

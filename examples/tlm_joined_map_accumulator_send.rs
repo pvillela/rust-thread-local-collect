@@ -72,5 +72,9 @@ fn main() {
     let acc = control.drain_tls();
     println!("accumulated from drain_tls={:?}", acc);
 
+    // Repeat.
+    let acc = control.drain_tls();
+    println!("accumulated from drain_tls={:?}", acc);
+
     println!("After call to `drain_tls`: control={:?}", control);
 }

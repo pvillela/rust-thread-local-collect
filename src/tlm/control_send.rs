@@ -8,6 +8,12 @@ use std::{
     sync::Arc,
     thread::{self, LocalKey, ThreadId},
 };
+use thiserror::Error;
+
+/// Errors returned by [`ControlSendG::drain_tls`].
+#[derive(Error, Debug)]
+#[error("there is nothing accumulated")]
+pub struct NothingAccumulatedError;
 
 pub struct ControlSendG<P, D, T, U>
 where
@@ -18,7 +24,7 @@ where
 {
     control: ControlG<P, D>,
     /// Produces a zero value of type `P::Dat`, which is needed to obtain consistent aggregation results.
-    acc_zero: Arc<dyn Fn() -> Option<U> + Send + Sync>,
+    acc_zero: Arc<dyn Fn() -> U + Send + Sync>,
     /// Operation that combines the stored thead-local value with data sent from threads.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
@@ -37,16 +43,19 @@ where
         op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
         op_r: impl Fn(U, U) -> U + 'static + Send + Sync,
     ) -> Self {
-        let acc_zero1 = move || Some(acc_zero());
         Self {
-            control: ControlG::new(tl, acc_zero1(), move |data: U, acc: &mut Option<U>, _| {
-                let acc0 = take(acc);
-                // By construction above and assignment below, `acc0` will never be `None`.
-                if let Some(acc0) = acc0 {
-                    *acc = Some(op_r(data, acc0));
-                }
-            }),
-            acc_zero: Arc::new(acc_zero1),
+            control: ControlG::new(
+                tl,
+                Some(acc_zero()),
+                move |data: U, acc: &mut Option<U>, _| {
+                    let acc0 = take(acc);
+                    // By construction above and assignment below, `acc0` will never be `None`.
+                    if let Some(acc0) = acc0 {
+                        *acc = Some(op_r(data, acc0));
+                    }
+                },
+            ),
+            acc_zero: Arc::new(acc_zero),
             op: Arc::new(op),
         }
     }
@@ -68,10 +77,10 @@ where
     P::CtrlState: CtrlStateCore<P>,
     Self: WithTakeTls<P, D, U>,
 {
-    pub fn drain_tls(&mut self) -> U {
+    pub fn drain_tls(&mut self) -> Result<U, NothingAccumulatedError> {
         Self::take_tls(&self.control);
-        let acc = self.control.take_acc((self.acc_zero)());
-        acc.expect("acc is never None")
+        let acc = self.control.take_acc(None);
+        acc.ok_or(NothingAccumulatedError)
     }
 }
 
