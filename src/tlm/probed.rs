@@ -103,9 +103,12 @@
 //!
 //! See another example at [`examples/tlm_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlm_probed_map_accumulator.rs).
 
-use crate::tlm::common::{
-    ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, TmapD, WithNode,
-    POISONED_GUARDED_DATA_MUTEX,
+use crate::tlm::{
+    common::{
+        ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, WithNode,
+        POISONED_GUARDED_DATA_MUTEX,
+    },
+    tmap_d::TmapD,
 };
 use std::{
     marker::PhantomData,
