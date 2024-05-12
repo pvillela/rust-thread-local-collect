@@ -209,10 +209,11 @@ where
         if state.s.own_tl_used {
             self.tl.with(|h| {
                 let mut data_guard = h.data_guard();
-                let data = take(data_guard.deref_mut())
-                    .expect("Holder data is always initialized before use");
-                log::trace!("`take_tls`: executing `op`");
-                (self.op)(data, &mut state.acc, thread::current().id());
+                let data = take(data_guard.deref_mut());
+                if let Some(data) = data {
+                    log::trace!("`take_tls`: executing `op`");
+                    (self.op)(data, &mut state.acc, thread::current().id());
+                }
             });
         }
     }
@@ -262,6 +263,7 @@ mod tests {
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
+        println!("****** insert_tl_entry");
         control.with_data_mut(|data| data.insert(k, v));
     }
 
@@ -279,11 +281,16 @@ mod tests {
         });
     }
 
+    fn make_data() -> HashMap<u32, Foo> {
+        println!("***** executed make_data");
+        HashMap::new()
+    }
+
     #[test]
     fn explicit_joins_no_take_tls() {
         // These are directly defined as references to prevent the move closure below from moving
         // `control` and `spawned_tids`values. The closure has to be `move` because it needs to own `i`.
-        let control = &Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
+        let control = &Control::new(&MY_TL, HashMap::new(), make_data, op);
         let spawned_tids = &RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
         thread::scope(|s| {

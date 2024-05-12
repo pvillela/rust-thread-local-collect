@@ -116,12 +116,10 @@ where
     }
 }
 
-/// Comment out the manual clone implementation above and see what happens below.
+/// Comment out the manual Clone implementation above, deribe Clone, and see what happens below.
 #[allow(unused)]
-fn demonstrate_need_for_manual_clone<P, D, T, U>(
-    x: ControlSendG<P, T, U>,
-    y: &ControlSendG<P, T, U>,
-) where
+fn demonstrate_need_for_manual_clone<P, T, U>(x: ControlSendG<P, T, U>, y: &ControlSendG<P, T, U>)
+where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 {
     let x1: ControlSendG<P, T, U> = x.clone();

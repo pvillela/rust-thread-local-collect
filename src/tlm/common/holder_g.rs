@@ -46,7 +46,10 @@ impl<T: 'static> GuardedData<T> for Arc<Mutex<Option<T>>> {
     type Guard<'a> = MutexGuard<'a, Option<T>>;
 
     fn guard(&self) -> Self::Guard<'_> {
-        self.lock().expect(POISONED_GUARDED_DATA_MUTEX)
+        println!("****** in guard()");
+        let res = self.lock().expect(POISONED_GUARDED_DATA_MUTEX);
+        println!("****** returning guard()");
+        res
     }
 }
 
@@ -55,18 +58,18 @@ trait Unwrap<T> {
     fn unwrap_mut(&mut self) -> &mut T;
 }
 
+const UNWRAP_MSG: &str = "must only be called after ensuring Holder is initialized";
+
 impl<T, R> Unwrap<T> for R
 where
     R: DerefMut<Target = Option<T>>,
 {
     fn unwrap(&self) -> &T {
-        self.as_ref()
-            .expect("must only be called after ensuring Holder is initialized")
+        self.as_ref().expect(UNWRAP_MSG)
     }
 
     fn unwrap_mut(&mut self) -> &mut T {
-        self.as_mut()
-            .expect("must only be called after ensuring Holder is initialized")
+        self.as_mut().expect(UNWRAP_MSG)
     }
 }
 
@@ -104,18 +107,22 @@ where
         self.control.borrow()
     }
 
+    fn is_linked(&self) -> bool {
+        self.control().as_ref().is_some()
+    }
+
     /// Returns data guard for the held data, ensuring the data is initialized.
     pub(crate) fn data_guard(&self) -> <P::GData as GuardedData<P::Dat>>::Guard<'_> {
-        let mut data_guard = self.data.guard();
-        let data = data_guard.deref_mut();
-        if data.is_none() {
-            let control_ref = self.control();
-            let control = control_ref
+        let mut guard = self.data.guard();
+        if guard.is_none() {
+            let control_guard = self.control();
+            let control = control_guard
                 .as_ref()
-                .expect("only called after ensure_linked");
+                .expect("holder must be linked to control");
+            let data = guard.deref_mut();
             *data = Some(control.make_data());
         }
-        data_guard
+        guard
     }
 
     /// Used by [`Drop`] trait impl.
@@ -125,10 +132,9 @@ where
             Some(control) => {
                 let mut data_guard = self.data_guard();
                 let data = take(data_guard.deref_mut());
-                control.tl_data_dropped(
-                    data.expect("Holder data guaranteed to be initialized on first use."),
-                    thread::current().id(),
-                );
+                if let Some(data) = data {
+                    control.tl_data_dropped(data, thread::current().id())
+                };
             }
         }
     }
@@ -169,7 +175,7 @@ where
     }
 
     fn is_linked(&self) -> bool {
-        self.control().as_ref().is_none()
+        Self::is_linked(self)
     }
 }
 
@@ -185,11 +191,11 @@ where
     fn link(&self, control: &P::Ctrl) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
-        control.register_node(P::node_fn(control), thread::current().id())
+        control.register_node(P::node_fn(control), thread::current().id());
     }
 
     fn is_linked(&self) -> bool {
-        self.control().as_ref().is_none()
+        Self::is_linked(self)
     }
 }
 

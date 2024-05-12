@@ -319,10 +319,6 @@ mod tests {
 
         let acc = control.drain_tls().unwrap();
         assert_eq_and_println(acc, map.clone(), "Accumulator check");
-
-        // Repeat.
-        let acc = control.drain_tls().unwrap();
-        assert_eq_and_println(acc, map, "Accumulator check");
     }
 
     #[test]

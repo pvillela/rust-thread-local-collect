@@ -140,7 +140,9 @@ where
     fn is_linked(&self) -> bool;
 
     fn ensure_linked(&self, control: &P::Ctrl) {
-        if self.is_linked() {
+        println!("****** ensure_linked");
+        if !self.is_linked() {
+            println!("****** !self.is_linked()");
             self.link(control);
         }
     }

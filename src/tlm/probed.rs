@@ -217,11 +217,12 @@ where
         for (tid, node) in state.s.tmap.iter() {
             log::trace!("executing `take_tls` for key={:?}", tid);
             let mut data_guard = node.data.lock().expect(POISONED_GUARDED_DATA_MUTEX);
-            let data =
-                take(data_guard.deref_mut()).expect("Holder data is always initialized before use");
-            log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
-            log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
-            (self.op)(data, &mut state.acc, *tid);
+            let data = take(data_guard.deref_mut());
+            if let Some(data) = data {
+                log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
+                log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
+                (self.op)(data, &mut state.acc, *tid);
+            }
         }
     }
 
@@ -240,15 +241,11 @@ where
         let mut acc_clone = state.acc.clone();
         for (tid, node) in state.s.tmap.iter() {
             log::trace!("executing `probe_tls` for key={:?}", tid);
-            let data = node
-                .data
-                .lock()
-                .expect(POISONED_GUARDED_DATA_MUTEX)
-                .clone()
-                .expect("node guaranteed never to be None");
-            log::trace!("executed `clone` -- `probe_tls` for key={:?}", tid);
-            log::trace!("executing `op` -- `probe_tls` for key={:?}", tid);
-            (self.op)(data, &mut acc_clone, *tid);
+            let data = node.data.lock().expect(POISONED_GUARDED_DATA_MUTEX).clone();
+            if let Some(data) = data {
+                log::trace!("executing `op` -- `probe_tls` for key={:?}", tid);
+                (self.op)(data, &mut acc_clone, *tid);
+            }
         }
         acc_clone
     }
