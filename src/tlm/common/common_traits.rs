@@ -52,6 +52,10 @@ pub trait HldrParam {
     type Hldr;
 }
 
+pub trait CtrlParam {
+    type Ctrl;
+}
+
 //=================
 // Hidden non-param traits
 
@@ -111,10 +115,45 @@ where
     fn register_node(&mut self, node: P::Node, tid: ThreadId);
 }
 
-#[doc(hidden)]
-/// Used in conjunction with [`HldrParam`] to bstract the [`HolderG`] type to reduce circular dependencies between
-/// [`ControlG`] and [`HolderG`].
-pub trait Hldr {}
+pub trait Ctrl<P>
+where
+    P: CoreParam,
+{
+    fn make_data(&self) -> P::Dat;
+    fn tl_data_dropped(&self, data: P::Dat, tid: ThreadId);
+}
+
+pub trait CtrlNode<P>
+where
+    P: NodeParam,
+{
+    fn register_node(&self, node: P::Node, tid: ThreadId);
+}
+
+pub trait HldrLink<P>
+where
+    P: CoreParam + CtrlParam,
+    P::Ctrl: Ctrl<P>,
+{
+    fn link(&self, control: &P::Ctrl);
+
+    fn is_linked(&self) -> bool;
+
+    fn ensure_linked(&self, control: &P::Ctrl) {
+        if self.is_linked() {
+            self.link(control);
+        }
+    }
+}
+
+pub trait HldrData<P>
+where
+    P: CoreParam,
+{
+    fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V;
+
+    fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V;
+}
 
 #[doc(hidden)]
 /// Abstraction of data wrappers used by [`HolderG`] specializations for different modules.

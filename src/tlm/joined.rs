@@ -97,7 +97,7 @@ use std::{
 };
 
 use super::{
-    common::{DefaultDiscr, HldrParam},
+    common::{CtrlParam, DefaultDiscr, HldrParam},
     control_send::{ControlSendG, WithTakeTls},
 };
 
@@ -150,6 +150,14 @@ impl<T, U> New<P<T, U>> for P<T, U> {
     }
 }
 
+impl<T, U> CtrlParam for P<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
+    type Ctrl = Control<T, U>;
+}
+
 impl<T, U> HldrParam for P<T, U>
 where
     T: 'static,
@@ -181,7 +189,7 @@ where
 ///
 /// `T` is the type of the thread-local values and `U` is the type of the accumulated value.
 /// The data values are held in thread-locals of type [`Holder<T, U>`].
-pub type Control<T, U> = ControlG<P<T, U>, WithNode>;
+pub type Control<T, U> = ControlG<P<T, U>>;
 
 impl<T, U> Control<T, U>
 where
@@ -215,9 +223,9 @@ where
 /// the held data with the control object.
 pub type Holder<T, U> = HolderG<P<T, U>, WithNode>;
 
-pub type ControlSend<T, U> = ControlSendG<P<U, Option<U>>, WithNode, T, U>;
+pub type ControlSend<T, U> = ControlSendG<P<U, Option<U>>, T, U>;
 
-impl<T, U> WithTakeTls<P<U, Option<U>>, WithNode, U> for ControlSend<T, U>
+impl<T, U> WithTakeTls<P<U, Option<U>>, U> for ControlSend<T, U>
 where
     U: 'static,
 {

@@ -2,7 +2,7 @@
 //! Module [`super::channeled`] implements the [core conepts](crate#core-concepts) directly and
 //! makes minimal use of this module.
 
-use super::{common_traits::*, holder_g::HolderG};
+use super::common_traits::*;
 
 use std::{
     fmt::Debug,
@@ -134,10 +134,9 @@ where
 
 /// Controls the collection and accumulation of thread-local values linked to this object.
 /// Such values, of type [`CoreParam::Dat`], must be held in thread-locals of type [`HolderG<P>`].
-pub struct ControlG<P, D>
+pub struct ControlG<P>
 where
     P: CoreParam + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 
     P: 'static,
 {
@@ -150,15 +149,14 @@ where
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
     pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync>,
-    _d: PhantomData<D>,
+    // _d: PhantomData<D>,
 }
 
-impl<P, D> ControlG<P, D>
+impl<P> ControlG<P>
 where
     P: CoreParam + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 
-    P::CtrlState: CtrlStateCore<P> + New<P::CtrlState, Arg = P::Acc>,
+    P::CtrlState: New<P::CtrlState, Arg = P::Acc>,
 {
     /// Instantiates a *control* object.
     pub fn new(
@@ -173,15 +171,14 @@ where
             state: Arc::new(Mutex::new(state)),
             make_data,
             op: Arc::new(op),
-            _d: PhantomData,
+            // _d: PhantomData,
         }
     }
 }
 
-impl<P, D> ControlG<P, D>
+impl<P> ControlG<P>
 where
     P: CoreParam + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 
     P::CtrlState: CtrlStateCore<P>,
 {
@@ -222,22 +219,33 @@ where
         let acc = lock.acc_mut();
         replace(acc, replacement)
     }
+}
+
+impl<P> Ctrl<P> for ControlG<P>
+where
+    P: CoreParam + CtrlStateParam + HldrParam,
+
+    P::CtrlState: CtrlStateCore<P>,
+{
+    fn make_data(&self) -> P::Dat {
+        (self.make_data)()
+    }
 
     /// Used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
     /// Panics if `self`'s mutex is poisoned.
-    pub(super) fn tl_data_dropped(&self, data: P::Dat, tid: ThreadId) {
+    fn tl_data_dropped(&self, data: <P as CoreParam>::Dat, tid: ThreadId) {
         let mut lock = self.lock();
         lock.tl_data_dropped(self.op.deref(), data, tid);
     }
 }
 
-impl<P> ControlG<P, DefaultDiscr>
+impl<P> ControlG<P>
 where
-    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, DefaultDiscr>>,
+    P: CoreParam + CtrlStateParam + HldrParam,
 
-    P: CtrlStateParam + GDataParam,
     P::CtrlState: CtrlStateCore<P>,
-    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
+    P: CtrlParam<Ctrl = Self>,
+    P::Hldr: HldrLink<P> + HldrData<P>,
 {
     /// Invokes `f` on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
@@ -258,58 +266,24 @@ where
     }
 }
 
-impl<P> ControlG<P, WithNode>
+impl<P> CtrlNode<P> for ControlG<P>
 where
     P: CoreParam + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 
     P: NodeParam,
     P::CtrlState: CtrlStateWithNode<P>,
 {
     /// Called by [`HolderG`] when a thread-local variable starts being used.
     /// Panics if `self`'s mutex is poisoned.
-    pub(super) fn register_node(&self, node: P::Node, tid: ThreadId) {
+    fn register_node(&self, node: P::Node, tid: ThreadId) {
         let mut lock = self.lock();
         lock.register_node(node, tid)
     }
 }
 
-impl<P> ControlG<P, WithNode>
-where
-    P: CoreParam + CtrlStateParam + HldrParam<Hldr = HolderG<P, WithNode>>,
-
-    P: NodeParam<NodeFnArg = Self> + CtrlStateParam + GDataParam,
-    P::CtrlState: CtrlStateCore<P>,
-    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
-    P::CtrlState: CtrlStateWithNode<P>,
-{
-    fn node(&self) -> P::Node {
-        P::node_fn(self)
-    }
-
-    /// Invokes `f` on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
-        self.tl.with(|h| {
-            h.ensure_linked(self, Self::node);
-            h.with_data(f)
-        })
-    }
-
-    /// Invokes `f` mutably on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
-        self.tl.with(|h| {
-            h.ensure_linked(self, Self::node);
-            h.with_data_mut(f)
-        })
-    }
-}
-
-impl<P, D> Clone for ControlG<P, D>
+impl<P> Clone for ControlG<P>
 where
     P: CoreParam + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 {
     fn clone(&self) -> Self {
         Self {
@@ -317,15 +291,14 @@ where
             state: self.state.clone(),
             make_data: self.make_data,
             op: self.op.clone(),
-            _d: PhantomData,
+            // _d: PhantomData,
         }
     }
 }
 
-impl<P, D> Debug for ControlG<P, D>
+impl<P> Debug for ControlG<P>
 where
     P: CoreParam + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 
     P::CtrlState: Debug,
 {

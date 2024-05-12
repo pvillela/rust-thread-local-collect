@@ -1,6 +1,6 @@
 use super::{
     common_traits::*,
-    control_g::{ControlG, DefaultDiscr, WithNode},
+    control_g::{DefaultDiscr, WithNode},
 };
 
 use std::{
@@ -74,28 +74,20 @@ where
 /// with the control object.
 pub struct HolderG<P, D>
 where
-    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlParam + 'static,
     P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
-    P::CtrlState: CtrlStateCore<P>,
+    P::Ctrl: Ctrl<P>,
 {
     pub(crate) data: P::GData,
-    pub(crate) control: RefCell<Option<ControlG<P, D>>>,
+    pub(crate) control: RefCell<Option<P::Ctrl>>,
     _d: PhantomData<D>,
-}
-
-impl<P, D> Hldr for HolderG<P, D>
-where
-    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
-    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
-    P::CtrlState: CtrlStateCore<P>,
-{
 }
 
 impl<P, D> HolderG<P, D>
 where
-    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlParam + 'static,
     P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
-    P::CtrlState: CtrlStateCore<P>,
+    P::Ctrl: Ctrl<P>,
 {
     /// Instantiates a holder object. The `make_data` function produces the value used to initialize the
     /// held data.
@@ -108,7 +100,7 @@ where
     }
 
     /// Returns reference to `control` field.
-    pub(crate) fn control(&self) -> Ref<'_, Option<ControlG<P, D>>> {
+    pub(crate) fn control(&self) -> Ref<'_, Option<P::Ctrl>> {
         self.control.borrow()
     }
 
@@ -121,23 +113,9 @@ where
             let control = control_ref
                 .as_ref()
                 .expect("only called after ensure_linked");
-            *data = Some((control.make_data)());
+            *data = Some(control.make_data());
         }
         data_guard
-    }
-
-    /// Invokes `f` on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub(crate) fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
-        let guard = self.data_guard();
-        f(guard.unwrap())
-    }
-
-    /// Invokes `f` mutably on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
-    pub(crate) fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
-        let mut guard = self.data_guard();
-        f(guard.unwrap_mut())
     }
 
     /// Used by [`Drop`] trait impl.
@@ -156,59 +134,70 @@ where
     }
 }
 
-impl<P> HolderG<P, DefaultDiscr>
+impl<P, D> HldrData<P> for HolderG<P, D>
 where
-    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlParam + 'static,
     P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
-    P::CtrlState: CtrlStateCore<P>,
+    P::Ctrl: Ctrl<P>,
 {
-    /// Initializes the `control` field in [`HolderG`].
-    fn link(&self, control: &ControlG<P, DefaultDiscr>) {
-        let mut ctrl_ref = self.control.borrow_mut();
-        *ctrl_ref = Some(control.clone());
+    /// Invokes `f` on the held data.
+    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
+    fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
+        let guard = self.data_guard();
+        f(guard.unwrap())
     }
 
-    /// Ensures `self` is linkded with `control`.
-    pub(crate) fn ensure_linked(&self, control: &ControlG<P, DefaultDiscr>) {
-        if self.control().as_ref().is_none() {
-            self.link(control);
-        }
+    /// Invokes `f` mutably on the held data.
+    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
+    fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
+        let mut guard = self.data_guard();
+        f(guard.unwrap_mut())
     }
 }
 
-impl<P> HolderG<P, WithNode>
+impl<P> HldrLink<P> for HolderG<P, DefaultDiscr>
 where
-    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlParam + 'static,
     P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
-    P::CtrlState: CtrlStateCore<P>,
 
-    P: NodeParam,
-    P::CtrlState: CtrlStateWithNode<P>,
+    P::Ctrl: Ctrl<P> + Clone,
 {
-    /// Initializes the `control` field in [`HolderG`] when a node type is used.
-    fn link(&self, control: &ControlG<P, WithNode>, node: P::Node) {
+    /// Initializes the `control` field in [`HolderG`].
+    fn link(&self, control: &P::Ctrl) {
         let mut ctrl_ref = self.control.borrow_mut();
         *ctrl_ref = Some(control.clone());
-        control.register_node(node, thread::current().id())
     }
 
-    /// Ensures `self` is linked to `control` when a node type is used.
-    pub(crate) fn ensure_linked(
-        &self,
-        control: &ControlG<P, WithNode>,
-        node: fn(&ControlG<P, WithNode>) -> P::Node,
-    ) {
-        if self.control().as_ref().is_none() {
-            self.link(control, node(control));
-        }
+    fn is_linked(&self) -> bool {
+        self.control().as_ref().is_none()
+    }
+}
+
+impl<P> HldrLink<P> for HolderG<P, WithNode>
+where
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlParam + 'static,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
+
+    P: NodeParam<NodeFnArg = P::Ctrl>,
+    P::Ctrl: Ctrl<P> + CtrlNode<P> + Clone,
+{
+    /// Initializes the `control` field in [`HolderG`] when a node type is used.
+    fn link(&self, control: &P::Ctrl) {
+        let mut ctrl_ref = self.control.borrow_mut();
+        *ctrl_ref = Some(control.clone());
+        control.register_node(P::node_fn(control), thread::current().id())
+    }
+
+    fn is_linked(&self) -> bool {
+        self.control().as_ref().is_none()
     }
 }
 
 impl<P, D> Debug for HolderG<P, D>
 where
-    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlParam + 'static,
     P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
-    P::CtrlState: CtrlStateCore<P>,
+    P::Ctrl: Ctrl<P>,
 
     P::GData: Debug,
 {
@@ -219,9 +208,9 @@ where
 
 impl<P, D> Drop for HolderG<P, D>
 where
-    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
+    P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlParam + 'static,
     P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
-    P::CtrlState: CtrlStateCore<P>,
+    P::Ctrl: Ctrl<P>,
 {
     fn drop(&mut self) {
         self.drop_data()

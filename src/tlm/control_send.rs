@@ -1,6 +1,6 @@
 use super::common::{
-    ControlG, CoreParam, CtrlStateCore, CtrlStateParam, CtrlStateWithNode, DefaultDiscr,
-    GDataParam, GuardedData, Hldr, HldrParam, HolderG, New, NodeParam, WithNode,
+    ControlG, CoreParam, CtrlParam, CtrlStateCore, CtrlStateParam, HldrData, HldrLink, HldrParam,
+    New,
 };
 use std::{
     fmt::Debug,
@@ -15,23 +15,21 @@ use thiserror::Error;
 #[error("there is nothing accumulated")]
 pub struct NothingAccumulatedError;
 
-pub struct ControlSendG<P, D, T, U>
+pub struct ControlSendG<P, T, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 
     P: 'static,
 {
-    control: ControlG<P, D>,
+    control: ControlG<P>,
     /// Operation that combines the stored thead-local value with data sent from threads.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
 }
 
-impl<P, D, T, U> ControlSendG<P, D, T, U>
+impl<P, T, U> ControlSendG<P, T, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 
     P::CtrlState: CtrlStateCore<P> + New<P::CtrlState, Arg = P::Acc>,
 {
@@ -60,21 +58,19 @@ where
     }
 }
 
-pub trait WithTakeTls<P, D, U>
+pub trait WithTakeTls<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 {
-    fn take_tls(control: &ControlG<P, D>);
+    fn take_tls(control: &ControlG<P>);
 }
 
-impl<P, D, T, U> ControlSendG<P, D, T, U>
+impl<P, T, U> ControlSendG<P, T, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 
+    Self: WithTakeTls<P, U>,
     P::CtrlState: CtrlStateCore<P>,
-    Self: WithTakeTls<P, D, U>,
 {
     pub fn drain_tls(&mut self) -> Result<U, NothingAccumulatedError> {
         Self::take_tls(&self.control);
@@ -83,45 +79,23 @@ where
     }
 }
 
-impl<P, T, U> ControlSendG<P, DefaultDiscr, T, U>
-where
-    P: CoreParam<Acc = Option<U>, Dat = U>
-        + CtrlStateParam
-        + HldrParam<Hldr = HolderG<P, DefaultDiscr>>,
-
-    P: GDataParam,
-    P::CtrlState: CtrlStateCore<P>,
-    P::GData: GuardedData<U, Arg = Option<U>>,
-    U: 'static,
-{
-    pub fn send_data(&self, sent_data: T) {
-        self.control
-            .with_data_mut(|data| (self.op)(sent_data, data, thread::current().id()))
-    }
-}
-
-impl<P, T, U> ControlSendG<P, WithNode, T, U>
-where
-    P: CoreParam<Acc = Option<U>, Dat = U>
-        + CtrlStateParam
-        + HldrParam<Hldr = HolderG<P, WithNode>>,
-
-    P: GDataParam,
-    P: NodeParam<NodeFnArg = ControlG<P, WithNode>>,
-    P::CtrlState: CtrlStateWithNode<P>,
-    P::GData: GuardedData<U, Arg = Option<U>>,
-    U: 'static,
-{
-    pub fn send_data(&self, sent_data: T) {
-        self.control
-            .with_data_mut(|data| (self.op)(sent_data, data, thread::current().id()))
-    }
-}
-
-impl<P, D, T, U> Clone for ControlSendG<P, D, T, U>
+impl<P, T, U> ControlSendG<P, T, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
+
+    P::CtrlState: CtrlStateCore<P>,
+    P: CtrlParam<Ctrl = ControlG<P>>,
+    P::Hldr: HldrLink<P> + HldrData<P>,
+{
+    pub fn send_data(&self, sent_data: T) {
+        self.control
+            .with_data_mut(|data| (self.op)(sent_data, data, thread::current().id()))
+    }
+}
+
+impl<P, T, U> Clone for ControlSendG<P, T, U>
+where
+    P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 {
     fn clone(&self) -> Self {
         Self {
@@ -131,10 +105,9 @@ where
     }
 }
 
-impl<P, D, T, U> Debug for ControlSendG<P, D, T, U>
+impl<P, T, U> Debug for ControlSendG<P, T, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 
     P::CtrlState: Debug,
 {
@@ -146,12 +119,11 @@ where
 /// Comment out the manual clone implementation above and see what happens below.
 #[allow(unused)]
 fn demonstrate_need_for_manual_clone<P, D, T, U>(
-    x: ControlSendG<P, D, T, U>,
-    y: &ControlSendG<P, D, T, U>,
+    x: ControlSendG<P, T, U>,
+    y: &ControlSendG<P, T, U>,
 ) where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
-    P::Hldr: Hldr,
 {
-    let x1: ControlSendG<P, D, T, U> = x.clone();
-    let y1: ControlSendG<P, D, T, U> = y.clone();
+    let x1: ControlSendG<P, T, U> = x.clone();
+    let y1: ControlSendG<P, T, U> = y.clone();
 }

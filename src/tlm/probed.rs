@@ -117,7 +117,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use super::common::{CtrlStateG, CtrlStateParam, HldrParam};
+use super::common::{CtrlParam, CtrlStateG, CtrlStateParam, HldrParam};
 
 //=================
 // Core implementation based on common module
@@ -166,6 +166,14 @@ impl<T, U> GDataParam for P<T, U> {
     type GData = Arc<Mutex<Option<T>>>;
 }
 
+impl<T, U> CtrlParam for P<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
+    type Ctrl = Control<T, U>;
+}
+
 impl<T, U> HldrParam for P<T, U>
 where
     T: 'static,
@@ -189,7 +197,7 @@ where
 ///
 /// `T` is the type of the thread-local values and `U` is the type of the accumulated value.
 /// The data values are held in thread-locals of type [`Holder<T, U>`].
-pub type Control<T, U> = ControlG<P<T, U>, WithNode>;
+pub type Control<T, U> = ControlG<P<T, U>>;
 
 impl<T, U> Control<T, U>
 where
