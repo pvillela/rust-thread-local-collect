@@ -33,7 +33,7 @@
 //!
 //! // Define your thread-local:
 //! thread_local! {
-//!     static MY_TL: Holder<Data, AccValue> = Holder::new(|| 0);
+//!     static MY_TL: Holder<Data, AccValue> = Holder::new();
 //! }
 //!
 //! // Define your accumulation operation.
@@ -111,7 +111,7 @@ impl<T, U> SubStateParam for P<T, U> {
 }
 
 impl<T, U> GDataParam for P<T, U> {
-    type GData = RefCell<T>;
+    type GData = RefCell<Option<T>>;
 }
 
 impl<T, U> New<P<T, U>> for P<T, U> {
@@ -173,7 +173,7 @@ mod tests {
     type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
 
     thread_local! {
-        static MY_TL: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
+        static MY_TL: Holder<Data, AccumulatorMap> = Holder::new();
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_all() {
-        let control = Control::new(&MY_TL, HashMap::new(), op);
+        let control = Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
         let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
         thread::scope(|s| {

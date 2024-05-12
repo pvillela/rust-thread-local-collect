@@ -30,7 +30,7 @@
 //!
 //! // Define your thread-local:
 //! thread_local! {
-//!     static MY_TL: Holder<Data, AccValue> = Holder::new(|| 0);
+//!     static MY_TL: Holder<Data, AccValue> = Holder::new();
 //! }
 //!
 //! // Define your accumulation operation.
@@ -109,7 +109,7 @@ use crate::tlm::common::{
 };
 use std::{
     marker::PhantomData,
-    mem::replace,
+    mem::take,
     ops::DerefMut,
     sync::{Arc, Mutex},
 };
@@ -133,8 +133,7 @@ impl<T, U> CoreParam for P<T, U> {
 
 #[doc(hidden)]
 pub struct Node<T> {
-    data: Arc<Mutex<T>>,
-    make_data: fn() -> T,
+    data: Arc<Mutex<Option<T>>>,
 }
 
 impl<T, U> NodeParam for P<T, U>
@@ -148,7 +147,6 @@ where
     fn node_fn(arg: &Self::NodeFnArg) -> Self::Node {
         arg.tl.with(|h| Node {
             data: h.data.clone(),
-            make_data: h.make_data,
         })
     }
 }
@@ -162,7 +160,7 @@ where
 }
 
 impl<T, U> GDataParam for P<T, U> {
-    type GData = Arc<Mutex<T>>;
+    type GData = Arc<Mutex<Option<T>>>;
 }
 
 impl<T, U> HldrParam for P<T, U>
@@ -208,7 +206,8 @@ where
         for (tid, node) in state.s.tmap.iter() {
             log::trace!("executing `take_tls` for key={:?}", tid);
             let mut data_guard = node.data.lock().expect(POISONED_GUARDED_DATA_MUTEX);
-            let data = replace(data_guard.deref_mut(), (node.make_data)());
+            let data =
+                take(data_guard.deref_mut()).expect("Holder data is always initialized before use");
             log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
             log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
             (self.op)(data, &mut state.acc, *tid);
@@ -230,7 +229,12 @@ where
         let mut acc_clone = state.acc.clone();
         for (tid, node) in state.s.tmap.iter() {
             log::trace!("executing `probe_tls` for key={:?}", tid);
-            let data = node.data.lock().expect(POISONED_GUARDED_DATA_MUTEX).clone();
+            let data = node
+                .data
+                .lock()
+                .expect(POISONED_GUARDED_DATA_MUTEX)
+                .clone()
+                .expect("node guaranteed never to be None");
             log::trace!("executed `clone` -- `probe_tls` for key={:?}", tid);
             log::trace!("executing `op` -- `probe_tls` for key={:?}", tid);
             (self.op)(data, &mut acc_clone, *tid);
@@ -265,7 +269,7 @@ mod tests {
     type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
     thread_local! {
-        static MY_TL: Holder<Data, AccValue> = Holder::new(HashMap::new);
+        static MY_TL: Holder<Data, AccValue> = Holder::new();
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
@@ -293,7 +297,7 @@ mod tests {
 
     #[test]
     fn own_thread_and_explicit_join() {
-        let control = Control::new(&MY_TL, HashMap::new(), op);
+        let control = Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
 
         let main_tid = thread::current().id();
         println!("main_tid={:?}", main_tid);

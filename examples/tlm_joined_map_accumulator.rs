@@ -18,7 +18,7 @@ type Data = HashMap<u32, Foo>;
 type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_TL: Holder<Data, AccValue> = Holder::new(HashMap::new);
+    static MY_TL: Holder<Data, AccValue> = Holder::new();
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
@@ -56,7 +56,7 @@ fn main() {
     set_var("RUST_LOG", "trace");
     _ = env_logger::try_init();
 
-    let control = Control::new(&MY_TL, HashMap::new(), op);
+    let control = Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
 
     insert_tl_entry(1, Foo("a".to_owned()), &control);
     insert_tl_entry(2, Foo("b".to_owned()), &control);

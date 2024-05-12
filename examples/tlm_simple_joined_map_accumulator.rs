@@ -22,7 +22,7 @@ type Data = HashMap<u32, Foo>;
 type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_TL: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
+    static MY_TL: Holder<Data, AccumulatorMap> = Holder::new();
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
@@ -54,7 +54,7 @@ fn test() {
 }
 
 fn main() {
-    let control = Control::new(&MY_TL, HashMap::new(), op);
+    let control = Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
     let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
     thread::scope(|s| {

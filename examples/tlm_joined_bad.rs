@@ -19,7 +19,7 @@ type Data = HashMap<u32, Foo>;
 type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_TL: Holder<Data, AccumulatorMap> = Holder::new(HashMap::new);
+    static MY_TL: Holder<Data, AccumulatorMap> = Holder::new();
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
@@ -41,7 +41,7 @@ fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccumulatorMap>) {
 
 /// Demonstrates race condition in [thread_local_collect::tlm::joined::Control::take_own_tl]
 fn own_thread_and_implicit_joins() {
-    let control = Control::new(&MY_TL, HashMap::new(), op);
+    let control = Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
 
     let own_tid = thread::current().id();
     println!("main_tid={:?}", own_tid);

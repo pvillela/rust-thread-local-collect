@@ -16,7 +16,7 @@ mod map_bench {
     type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
     thread_local! {
-        static MY_TL: Holder<Data, AccValue> = Holder::new(HashMap::new);
+        static MY_TL: Holder<Data, AccValue> = Holder::new();
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
@@ -46,7 +46,7 @@ mod map_bench {
     }
 
     pub(super) fn control() -> Control<Data, AccValue> {
-        Control::new(&MY_TL, HashMap::new(), op)
+        Control::new(&MY_TL, HashMap::new(), HashMap::new, op)
     }
 }
 
@@ -58,7 +58,7 @@ mod u32_bench {
     type AccValue = u32;
 
     thread_local! {
-        static MY_TL: Holder<Data, AccValue> = Holder::new(||0);
+        static MY_TL: Holder<Data, AccValue> = Holder::new();
     }
 
     fn update_tl(value: Data, control: &Control<Data, AccValue>) {
@@ -87,7 +87,7 @@ mod u32_bench {
     }
 
     pub(super) fn control() -> Control<Data, AccValue> {
-        Control::new(&MY_TL, 0, op)
+        Control::new(&MY_TL, 0, || 0, op)
     }
 }
 

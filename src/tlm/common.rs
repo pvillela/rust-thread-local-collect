@@ -3,12 +3,11 @@
 //! makes minimal use of this module.
 
 use std::{
-    borrow::BorrowMut,
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
     fmt::Debug,
     marker::PhantomData,
-    mem::replace,
+    mem::{replace, take},
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex, MutexGuard},
     thread::{self, LocalKey, ThreadId},
@@ -263,6 +262,8 @@ where
     pub(crate) tl: &'static LocalKey<P::Hldr>,
     /// Keeps track of linked thread-locals and accumulated value.
     pub(crate) state: Arc<Mutex<P::CtrlState>>,
+    /// Constructs initial data for [`HolderG`].
+    pub(crate) make_data: fn() -> P::Dat,
     /// Binary operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
     pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync>,
@@ -280,12 +281,14 @@ where
     pub fn new(
         tl: &'static LocalKey<P::Hldr>,
         acc_base: P::Acc,
+        make_data: fn() -> P::Dat,
         op: impl Fn(P::Dat, &mut P::Acc, ThreadId) + 'static + Send + Sync,
     ) -> Self {
         let state = P::CtrlState::new(acc_base);
         Self {
             tl,
             state: Arc::new(Mutex::new(state)),
+            make_data,
             op: Arc::new(op),
             _d: PhantomData,
         }
@@ -351,7 +354,7 @@ where
 
     P: CtrlStateParam + GDataParam,
     P::CtrlState: CtrlStateCore<P>,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
 {
     /// Invokes `f` on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
@@ -394,7 +397,7 @@ where
 
     P: NodeParam<NodeFnArg = Self> + CtrlStateParam + GDataParam,
     P::CtrlState: CtrlStateCore<P>,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
     P::CtrlState: CtrlStateWithNode<P>,
 {
     fn node(&self) -> P::Node {
@@ -429,6 +432,7 @@ where
         Self {
             tl: self.tl,
             state: self.state.clone(),
+            make_data: self.make_data,
             op: self.op.clone(),
             _d: PhantomData,
         }
@@ -449,27 +453,27 @@ where
 
 #[doc(hidden)]
 /// Abstraction of data wrappers used by [`HolderG`] specializations for different modules.
-pub trait GuardedData<S: 'static>: New<Self>
+pub trait GuardedData<T: 'static>: New<Self>
 where
     Self: Sized,
 {
-    type Guard<'a>: DerefMut<Target = S> + 'a
+    type Guard<'a>: DerefMut<Target = Option<T>> + 'a
     where
         Self: 'a;
 
     fn guard(&self) -> Self::Guard<'_>;
 }
 
-impl<T> New<Self> for RefCell<T> {
-    type Arg = T;
+impl<S> New<Self> for RefCell<S> {
+    type Arg = S;
 
     fn new(t: Self::Arg) -> Self {
         RefCell::new(t)
     }
 }
 
-impl<T: 'static> GuardedData<T> for RefCell<T> {
-    type Guard<'a> = RefMut<'a, T>;
+impl<T: 'static> GuardedData<T> for RefCell<Option<T>> {
+    type Guard<'a> = RefMut<'a, Option<T>>;
 
     fn guard(&self) -> Self::Guard<'_> {
         self.borrow_mut()
@@ -484,11 +488,31 @@ impl<T> New<Self> for Arc<Mutex<T>> {
     }
 }
 
-impl<T: 'static> GuardedData<T> for Arc<Mutex<T>> {
-    type Guard<'a> = MutexGuard<'a, T>;
+impl<T: 'static> GuardedData<T> for Arc<Mutex<Option<T>>> {
+    type Guard<'a> = MutexGuard<'a, Option<T>>;
 
     fn guard(&self) -> Self::Guard<'_> {
         self.lock().expect(POISONED_GUARDED_DATA_MUTEX)
+    }
+}
+
+trait Unwrap<T> {
+    fn unwrap(&self) -> &T;
+    fn unwrap_mut(&mut self) -> &mut T;
+}
+
+impl<T, R> Unwrap<T> for R
+where
+    R: DerefMut<Target = Option<T>>,
+{
+    fn unwrap(&self) -> &T {
+        self.as_ref()
+            .expect("must only be called after ensuring Holder is initialized")
+    }
+
+    fn unwrap_mut(&mut self) -> &mut T {
+        self.as_mut()
+            .expect("must only be called after ensuring Holder is initialized")
     }
 }
 
@@ -497,19 +521,18 @@ impl<T: 'static> GuardedData<T> for Arc<Mutex<T>> {
 pub struct HolderG<P, D>
 where
     P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
     P::CtrlState: CtrlStateCore<P>,
 {
     pub(crate) data: P::GData,
     pub(crate) control: RefCell<Option<ControlG<P, D>>>,
-    pub(crate) make_data: fn() -> P::Dat,
     _d: PhantomData<D>,
 }
 
 impl<P, D> Hldr for HolderG<P, D>
 where
     P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
     P::CtrlState: CtrlStateCore<P>,
 {
 }
@@ -517,16 +540,15 @@ where
 impl<P, D> HolderG<P, D>
 where
     P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Instantiates a holder object. The `make_data` function produces the value used to initialize the
     /// held data.
-    pub fn new(make_data: fn() -> P::Dat) -> Self {
+    pub fn new() -> Self {
         Self {
-            data: P::GData::new(make_data()),
+            data: P::GData::new(None),
             control: RefCell::new(None),
-            make_data,
             _d: PhantomData,
         }
     }
@@ -536,33 +558,45 @@ where
         self.control.borrow()
     }
 
-    /// Returns data guard for the held data.
+    /// Returns data guard for the held data, ensuring the data is initialized.
     pub(crate) fn data_guard(&self) -> <P::GData as GuardedData<P::Dat>>::Guard<'_> {
-        self.data.guard()
+        let mut data_guard = self.data.guard();
+        let data = data_guard.deref_mut();
+        if data.is_none() {
+            let control_ref = self.control();
+            let control = control_ref
+                .as_ref()
+                .expect("only called after ensure_linked");
+            *data = Some((control.make_data)());
+        }
+        data_guard
     }
 
     /// Invokes `f` on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
     pub(crate) fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
         let guard = self.data_guard();
-        f(&guard)
+        f(guard.unwrap())
     }
 
     /// Invokes `f` mutably on the held data.
     /// Returns an error if [`HolderG`] not linked with [`ControlG`].
     pub(crate) fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
         let mut guard = self.data_guard();
-        f(&mut guard)
+        f(guard.unwrap_mut())
     }
 
     /// Used by [`Drop`] trait impl.
     fn drop_data(&self) {
-        match self.control.borrow().deref() {
+        match self.control().deref() {
             None => (),
             Some(control) => {
                 let mut data_guard = self.data_guard();
-                let data = replace(data_guard.borrow_mut().deref_mut(), (self.make_data)());
-                control.tl_data_dropped(data, thread::current().id());
+                let data = take(data_guard.deref_mut());
+                control.tl_data_dropped(
+                    data.expect("Holder data guaranteed to be initialized on first use."),
+                    thread::current().id(),
+                );
             }
         }
     }
@@ -571,7 +605,7 @@ where
 impl<P> HolderG<P, DefaultDiscr>
 where
     P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Initializes the `control` field in [`HolderG`].
@@ -591,7 +625,7 @@ where
 impl<P> HolderG<P, WithNode>
 where
     P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
     P::CtrlState: CtrlStateCore<P>,
 
     P: NodeParam,
@@ -619,7 +653,7 @@ where
 impl<P, D> Debug for HolderG<P, D>
 where
     P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
     P::CtrlState: CtrlStateCore<P>,
 
     P::GData: Debug,
@@ -632,7 +666,7 @@ where
 impl<P, D> Drop for HolderG<P, D>
 where
     P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlStateParam + 'static,
-    P::GData: GuardedData<P::Dat, Arg = P::Dat>,
+    P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
     P::CtrlState: CtrlStateCore<P>,
 {
     fn drop(&mut self) {

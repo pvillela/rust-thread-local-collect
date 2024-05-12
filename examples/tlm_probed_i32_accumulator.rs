@@ -15,7 +15,7 @@ type AccValue = i32;
 
 // Define your thread-local:
 thread_local! {
-    static MY_TL: Holder<Data, AccValue> = Holder::new(|| 0);
+    static MY_TL: Holder<Data, AccValue> = Holder::new();
 }
 
 // Define your accumulation operation.
@@ -31,7 +31,7 @@ fn update_tl(value: Data, control: &Control<Data, AccValue>) {
 }
 
 fn main() {
-    let control = Control::new(&MY_TL, 0, op);
+    let control = Control::new(&MY_TL, 0, || 0, op);
 
     update_tl(1, &control);
 

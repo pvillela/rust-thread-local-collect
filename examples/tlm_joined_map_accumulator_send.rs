@@ -17,7 +17,7 @@ type Data = (u32, Foo);
 type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_TL: HolderSend<AccValue> = HolderSend::new(HashMap::new);
+    static MY_TL: HolderSend<AccValue> = HolderSend::new();
 }
 
 fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {

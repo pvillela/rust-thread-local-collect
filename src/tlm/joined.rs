@@ -30,7 +30,7 @@
 //!
 //! // Define your thread-local:
 //! thread_local! {
-//!     static MY_TL: Holder<Data, AccValue> = Holder::new(|| 0);
+//!     static MY_TL: Holder<Data, AccValue> = Holder::new();
 //! }
 //!
 //! // Define your accumulation operation.
@@ -91,7 +91,7 @@ use crate::tlm::common::{
 use std::{
     cell::RefCell,
     marker::PhantomData,
-    mem::replace,
+    mem::take,
     ops::DerefMut,
     thread::{self, ThreadId},
 };
@@ -134,7 +134,7 @@ impl<T, U> SubStateParam for P<T, U> {
 }
 
 impl<T, U> GDataParam for P<T, U> {
-    type GData = RefCell<T>;
+    type GData = RefCell<Option<T>>;
 }
 
 impl<T, U> New<P<T, U>> for P<T, U> {
@@ -201,7 +201,8 @@ where
         if state.s.own_tl_used {
             self.tl.with(|h| {
                 let mut data_guard = h.data_guard();
-                let data = replace(data_guard.deref_mut(), (h.make_data)());
+                let data = take(data_guard.deref_mut())
+                    .expect("Holder data is always initialized before use");
                 log::trace!("`take_tls`: executing `op`");
                 (self.op)(data, &mut state.acc, thread::current().id());
             });
@@ -249,7 +250,7 @@ mod tests {
     type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
     thread_local! {
-        static MY_TL: Holder<Data, AccValue> = Holder::new(HashMap::new);
+        static MY_TL: Holder<Data, AccValue> = Holder::new();
     }
 
     fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
@@ -274,7 +275,7 @@ mod tests {
     fn explicit_joins_no_take_tls() {
         // These are directly defined as references to prevent the move closure below from moving
         // `control` and `spawned_tids`values. The closure has to be `move` because it needs to own `i`.
-        let control = &Control::new(&MY_TL, HashMap::new(), op);
+        let control = &Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
         let spawned_tids = &RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
         thread::scope(|s| {
@@ -332,7 +333,7 @@ mod tests {
 
     #[test]
     fn own_thread_and_explicit_joins() {
-        let control = Control::new(&MY_TL, HashMap::new(), op);
+        let control = Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
 
         let own_tid = thread::current().id();
         println!("main_tid={:?}", own_tid);

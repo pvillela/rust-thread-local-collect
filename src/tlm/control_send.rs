@@ -23,8 +23,6 @@ where
     P: 'static,
 {
     control: ControlG<P, D>,
-    /// Produces a zero value of type `P::Dat`, which is needed to obtain consistent aggregation results.
-    acc_zero: Arc<dyn Fn() -> U + Send + Sync>,
     /// Operation that combines the stored thead-local value with data sent from threads.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
@@ -39,7 +37,8 @@ where
 {
     pub fn new(
         tl: &'static LocalKey<P::Hldr>,
-        acc_zero: impl Fn() -> U + 'static + Send + Sync,
+        // Produces a zero value of type `P::Dat`, which is needed to obtain consistent aggregation results.
+        acc_zero: fn() -> U,
         op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
         op_r: impl Fn(U, U) -> U + 'static + Send + Sync,
     ) -> Self {
@@ -47,6 +46,7 @@ where
             control: ControlG::new(
                 tl,
                 Some(acc_zero()),
+                acc_zero,
                 move |data: U, acc: &mut Option<U>, _| {
                     let acc0 = take(acc);
                     // By construction above and assignment below, `acc0` will never be `None`.
@@ -55,7 +55,6 @@ where
                     }
                 },
             ),
-            acc_zero: Arc::new(acc_zero),
             op: Arc::new(op),
         }
     }
@@ -92,7 +91,7 @@ where
 
     P: GDataParam,
     P::CtrlState: CtrlStateCore<P>,
-    P::GData: GuardedData<U, Arg = U>,
+    P::GData: GuardedData<U, Arg = Option<U>>,
     U: 'static,
 {
     pub fn send_data(&self, sent_data: T) {
@@ -110,7 +109,7 @@ where
     P: GDataParam,
     P: NodeParam<NodeFnArg = ControlG<P, WithNode>>,
     P::CtrlState: CtrlStateWithNode<P>,
-    P::GData: GuardedData<U, Arg = U>,
+    P::GData: GuardedData<U, Arg = Option<U>>,
     U: 'static,
 {
     pub fn send_data(&self, sent_data: T) {
@@ -127,7 +126,6 @@ where
     fn clone(&self) -> Self {
         Self {
             control: self.control.clone(),
-            acc_zero: self.acc_zero.clone(),
             op: self.op.clone(),
         }
     }

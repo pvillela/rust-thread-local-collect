@@ -21,7 +21,7 @@ type Data = HashMap<u32, Foo>;
 type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_TL: Holder<Data, AccValue> = Holder::new(HashMap::new);
+    static MY_TL: Holder<Data, AccValue> = Holder::new();
 }
 
 fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
@@ -53,7 +53,7 @@ fn test() {
 }
 
 fn main() {
-    let control = Control::new(&MY_TL, HashMap::new(), op);
+    let control = Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
 
     let main_tid = thread::current().id();
     println!("main_tid={:?}", main_tid);
