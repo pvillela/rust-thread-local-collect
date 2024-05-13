@@ -85,7 +85,7 @@ use thiserror::Error;
 use thread_local::ThreadLocal;
 
 /// Errors returned by [`Control::drain_tls`].
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum DrainTlsError {
     /// Method was called while some thread that sent a value for accumulation was still active.
     #[error("method called while thread-locals were arctive")]
@@ -300,7 +300,7 @@ mod tests {
 
             {
                 let acc = control.drain_tls().unwrap();
-                assert_eq_and_println(acc, map, "Accumulator check");
+                assert_eq_and_println(&acc, &map, "Accumulator check");
             }
         }
     }
@@ -318,7 +318,7 @@ mod tests {
         let map = HashMap::from([(tid_own, map_own)]);
 
         let acc = control.drain_tls().unwrap();
-        assert_eq_and_println(acc, map.clone(), "Accumulator check");
+        assert_eq_and_println(&acc, &map.clone(), "Accumulator check");
     }
 
     #[test]

@@ -11,7 +11,7 @@ use std::{
 use thiserror::Error;
 
 /// Errors returned by [`ControlSendG::drain_tls`].
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 #[error("there is nothing accumulated")]
 pub struct NothingAccumulatedError;
 
