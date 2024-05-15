@@ -7,7 +7,7 @@ use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::tlm::joined::{ControlSend, HolderSend};
+use thread_local_collect::tlm::send::joined::{Control, Holder};
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
@@ -17,7 +17,7 @@ type Data = (u32, Foo);
 type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
 thread_local! {
-    static MY_TL: HolderSend<AccValue> = HolderSend::new();
+    static MY_TL: Holder<AccValue> = Holder::new();
 }
 
 fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
@@ -52,7 +52,7 @@ fn main() {
     set_var("RUST_LOG", "trace");
     _ = env_logger::try_init();
 
-    let mut control = ControlSend::new(&MY_TL, HashMap::new, op, op_r);
+    let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
 
     control.send_data((1, Foo("a".to_owned())));
     control.send_data((2, Foo("b".to_owned())));

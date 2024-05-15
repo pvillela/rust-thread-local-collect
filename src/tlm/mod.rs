@@ -1,7 +1,7 @@
 //! Modules that use the [`std::thread_local`] macro.
 
 pub mod common;
-pub mod control_send;
+pub mod send;
 pub mod tmap_d;
 
 pub mod channeled;
