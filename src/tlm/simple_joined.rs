@@ -243,7 +243,7 @@ mod tests {
                         }
                     })
                 })
-                .collect::<Vec<_>>();
+                .collect::<Vec<_>>(); // needed to force threads to launch because iter is lazy
 
             thread::sleep(Duration::from_millis(50));
 
@@ -255,17 +255,34 @@ mod tests {
             println!("after hs join: {:?}", control);
         });
 
-        {
-            let spawned_tids = spawned_tids.try_read().unwrap();
-            let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
-            let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
-            let map = HashMap::from([(spawned_tids[0], map_0), (spawned_tids[1], map_1)]);
+        let spawned_tids = spawned_tids.try_read().unwrap();
+        let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
+        let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
+        let map = HashMap::from([(spawned_tids[0], map_0), (spawned_tids[1], map_1)]);
 
-            {
-                let guard = control.acc();
-                let acc = guard.deref();
-                assert_eq_and_println(acc, &map, "Accumulator check: acc={acc:?}, map={map:?}");
-            }
+        {
+            let guard = control.acc();
+            let acc = guard.deref();
+            assert_eq_and_println(acc, &map, "Accumulator check: acc={acc:?}, map={map:?}");
+        }
+
+        // Different ways to get the accumulated value
+
+        {
+            let acc = control.with_acc(|acc| acc.clone());
+            assert_eq_and_println(&acc, &map, "with_acc");
+
+            let acc = control.clone_acc();
+            assert_eq_and_println(&acc, &map, "clone_acc");
+        }
+
+        // take_acc
+        {
+            let acc = control.take_acc(HashMap::new());
+            assert_eq_and_println(&acc, &map, "take_acc");
+
+            let acc = control.take_acc(HashMap::new());
+            assert_eq_and_println(&acc, &HashMap::new(), "2nd take_acc");
         }
     }
 }

@@ -264,7 +264,6 @@ mod tests {
     use std::{
         collections::HashMap,
         fmt::Debug,
-        ops::Deref,
         sync::Mutex,
         thread::{self, ThreadId},
     };
@@ -315,11 +314,10 @@ mod tests {
 
         let expected_acc_mutex = Mutex::new(HashMap::new());
 
-        let assert_acc = |acc: &AccValue, msg: &str| {
-            let exp_guard = expected_acc_mutex.try_lock().unwrap();
-            let exp = exp_guard.deref();
-
-            assert_eq_and_println(acc, exp, msg);
+        let assert_acc = |acc: AccValue, msg: &str| {
+            // Use clone to avoid possible assert panic while owing Mutex lock.
+            let exp = expected_acc_mutex.try_lock().unwrap().clone();
+            assert_eq_and_println(&acc, &exp, msg);
         };
 
         thread::scope(|s| {
@@ -339,8 +337,9 @@ mod tests {
                     my_map.insert(k, v);
                     assert_tl(my_map, assert_tl_msg, &control);
 
-                    let mut exp = expected_acc_mutex.try_lock().unwrap();
-                    op(my_map.clone(), &mut exp, spawned_tid);
+                    let mut exp_acc = expected_acc_mutex.try_lock().unwrap();
+                    op(my_map.clone(), &mut exp_acc, spawned_tid);
+                    drop(exp_acc);
 
                     spawned_thread_gater.open(gate);
                 };
@@ -387,10 +386,11 @@ mod tests {
 
                 let mut map = expected_acc_mutex.try_lock().unwrap();
                 map.insert(main_tid, my_map);
+                let map = map.clone();
                 let acc = control.probe_tls();
                 assert_eq_and_println(
                     &acc,
-                    map.deref(),
+                    &map,
                     "Accumulator after main thread inserts and probe_tls",
                 );
                 main_thread_gater.open(0);
@@ -400,7 +400,7 @@ mod tests {
                 spawned_thread_gater.wait_for(0);
                 let acc = control.probe_tls();
                 assert_acc(
-                    &acc,
+                    acc,
                     "Accumulator after 1st spawned thread insert and probe_tls",
                 );
                 main_thread_gater.open(1);
@@ -409,8 +409,9 @@ mod tests {
             {
                 spawned_thread_gater.wait_for(1);
                 control.take_tls();
+                let acc = control.clone_acc();
                 assert_acc(
-                    control.acc().deref(),
+                    acc,
                     "Accumulator after 2nd spawned thread insert and take_tls",
                 );
                 main_thread_gater.open(2);
@@ -420,69 +421,66 @@ mod tests {
                 spawned_thread_gater.wait_for(2);
                 let acc = control.probe_tls();
                 assert_acc(
-                    &acc,
+                    acc,
                     "Accumulator after 3rd spawned thread insert and probe_tls",
                 );
                 main_thread_gater.open(3);
             }
 
-            {
-                // done with thread gaters
-                h.join().unwrap();
-
-                {
-                    control.take_tls();
-                    assert_acc(
-                        control.acc().deref(),
-                        "Accumulator after 4th spawned thread insert and take_tls",
-                    );
-                }
-
-                {
-                    control.take_tls();
-                    assert_acc(control.acc().deref(), "Idempotency of control.take_tls()");
-                }
-
-                {
-                    let acc = control.probe_tls();
-                    assert_acc(&acc, "After take_tls(), probe_tls() the same acc value");
-                }
-
-                {
-                    control.with_acc(|acc| {
-                        assert_acc(
-                            acc,
-                            "Accumulator after 4th spawned thread insert, using control.with_acc()",
-                        );
-                    });
-                }
-
-                {
-                    let acc = control.clone_acc();
-                    assert_acc(
-                        &acc,
-                        "Accumulator after 4th spawned thread insert, using control.clone_acc()",
-                    );
-                }
-
-                {
-                    let acc = control.take_acc(HashMap::new());
-                    assert_acc(
-                        &acc,
-                        "Accumulator after 4th spawned thread insert, using control.take_acc()",
-                    );
-                }
-
-                {
-                    control.with_acc(|acc| {
-                        assert_eq_and_println(
-                            acc,
-                            &HashMap::new(),
-                            "Accumulator after control.take_acc()",
-                        );
-                    });
-                }
-            }
+            // done with thread gaters
+            h.join().unwrap();
         });
+
+        {
+            control.take_tls();
+            assert_acc(
+                control.clone_acc(),
+                "Accumulator after 4th spawned thread insert and take_tls",
+            );
+        }
+
+        {
+            control.take_tls();
+            assert_acc(control.clone_acc(), "Idempotency of control.take_tls()");
+        }
+
+        {
+            let acc = control.probe_tls();
+            assert_acc(acc, "After take_tls(), probe_tls() the same acc value");
+        }
+
+        // Different ways to get the accumulated value
+
+        {
+            let acc = control.with_acc(|acc| acc.clone());
+            assert_acc(
+                acc,
+                "Accumulator after 4th spawned thread insert, using control.with_acc()",
+            );
+        }
+
+        {
+            let acc = control.clone_acc();
+            assert_acc(
+                acc,
+                "Accumulator after 4th spawned thread insert, using control.clone_acc()",
+            );
+        }
+
+        // take_acc
+        {
+            let acc = control.take_acc(HashMap::new());
+            assert_acc(
+                acc,
+                "Accumulator after 4th spawned thread insert, using control.take_acc()",
+            );
+
+            let acc = control.with_acc(|acc| acc.clone());
+            assert_eq_and_println(
+                &acc,
+                &HashMap::new(),
+                "Accumulator after control.take_acc()",
+            );
+        }
     }
 }

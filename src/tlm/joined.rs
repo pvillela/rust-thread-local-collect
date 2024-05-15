@@ -235,6 +235,9 @@ mod tests {
         time::Duration,
     };
 
+    // Avoid using active lock in an assertion. Otherwise, if the assertion fails,
+    // we abort with a Mutex poison error without knowing what exactly went wrong.
+
     #[derive(Debug, Clone, PartialEq)]
     struct Foo(String);
 
@@ -260,9 +263,8 @@ mod tests {
     }
 
     fn assert_tl(other: &Data, msg: &str, control: &Control<Data, AccValue>) {
-        control.with_data(|map| {
-            assert_eq!(map, other, "{msg}");
-        });
+        let data = control.with_data(|data| data.clone());
+        assert_eq!(&data, other, "{msg}");
     }
 
     fn make_data() -> HashMap<u32, Foo> {
@@ -348,40 +350,46 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
 
         let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-        let map = Mutex::new(HashMap::from([(own_tid, map_own)]));
+        let expected_acc_mutex = Mutex::new(HashMap::from([(own_tid, map_own)]));
 
         thread::scope(|s| {
-            let hs = (0..2).map(|i| {
-                let value1 = Foo("a".to_owned() + &i.to_string());
-                let value2 = Foo("a".to_owned() + &i.to_string());
-                let map_i = HashMap::from([(1, value1.clone()), (2, value2.clone())]);
+            let hs = (0..2)
+                .map(|i| {
+                    let value1 = Foo("a".to_owned() + &i.to_string());
+                    let value2 = Foo("a".to_owned() + &i.to_string());
+                    let map_i = HashMap::from([(1, value1.clone()), (2, value2.clone())]);
 
-                s.spawn(|| {
-                    insert_tl_entry(1, value1.clone(), &control);
-                    let other = HashMap::from([(1, value1)]);
-                    assert_tl(&other, "After 1st insert", &control);
+                    s.spawn(|| {
+                        insert_tl_entry(1, value1.clone(), &control);
+                        let other = HashMap::from([(1, value1)]);
+                        assert_tl(&other, "After 1st insert", &control);
 
-                    insert_tl_entry(2, value2, &control);
-                    assert_tl(&map_i, "After 2nd insert", &control);
+                        insert_tl_entry(2, value2, &control);
+                        assert_tl(&map_i, "After 2nd insert", &control);
 
-                    let spawned_tid = thread::current().id();
-                    let mut lock = map.lock().unwrap();
-                    lock.insert(spawned_tid, map_i);
-                    drop(lock);
+                        let spawned_tid = thread::current().id();
+                        let mut lock = expected_acc_mutex.lock().unwrap();
+                        lock.insert(spawned_tid, map_i);
+                        drop(lock);
+                    })
                 })
-            });
-            hs.for_each(|h| h.join().unwrap());
+                .collect::<Vec<_>>(); // needed to force threads to launch because iter is lazy
+            hs.into_iter().for_each(|h| h.join().unwrap());
         });
 
-        control.take_own_tl();
-        println!("After take_own_tl: control={control:?}");
+        {
+            control.take_own_tl();
+            let acc1 = control.clone_acc();
+
+            control.take_own_tl();
+            let acc2 = control.clone_acc();
+
+            assert_eq_and_println(&acc1, &acc2, "Idempotency of control.take_tls()");
+        }
 
         // Different ways to get the accumulated value
 
-        // Avoid using active lock in an assertion. Otherwise, if the assertion fails,
-        // we abort with a Mutex poison error without knowing what exactly went wrong.
-
-        let map = map.lock().unwrap();
+        let map = expected_acc_mutex.lock().unwrap();
 
         {
             let acc = control.with_acc(|acc| acc.clone());
