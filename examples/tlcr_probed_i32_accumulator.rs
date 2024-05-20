@@ -49,14 +49,14 @@ fn main() {
 
     // Probe the thread-local values and get the accuulated value computed from
     // current thread-local values.
-    let acc = control.probe_tls().unwrap();
+    let acc = control.probe_tls();
     println!("non-final accumulated from probe_tls(): {}", acc);
 
     h.join().unwrap();
 
     // Probe the thread-local variables and get the accuulated value computed from
     // final thread-local values.
-    let acc = control.probe_tls().unwrap();
+    let acc = control.probe_tls();
     println!("final accumulated from probe_tls(): {}", acc);
 
     // Drain the final thread-local values.

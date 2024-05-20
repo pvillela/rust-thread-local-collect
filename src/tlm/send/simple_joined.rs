@@ -1,7 +1,7 @@
-//! Variant of module [`crate::tlm::joined`] with a `send` API similar to that of [`crate::tlcr`] sub-modules.
+//! Variant of module [`crate::tlm::simple_joined`] with a `send` API similar to that of [`crate::tlcr`] sub-modules.
 
 use super::control_send::{ControlSendG, WithTakeTls};
-use crate::tlm::joined::{Control as ControlInner, Holder as HolderInner, P as POrig};
+use crate::tlm::simple_joined::{Control as ControlOrig, Holder as HolderOrig, P as POrig};
 
 pub type Control<T, U> = ControlSendG<POrig<U, Option<U>>, T, U>;
 
@@ -9,12 +9,10 @@ impl<T, U> WithTakeTls<POrig<U, Option<U>>, U> for Control<T, U>
 where
     U: 'static,
 {
-    fn take_tls(control: &ControlInner<U, Option<U>>) {
-        control.take_own_tl();
-    }
+    fn take_tls(_control: &ControlOrig<U, Option<U>>) {}
 }
 
-pub type Holder<U> = HolderInner<U, Option<U>>;
+pub type Holder<U> = HolderOrig<U, Option<U>>;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
@@ -67,16 +65,8 @@ mod tests {
     const NTHREADS: usize = 5;
 
     #[test]
-    fn own_thread_and_explicit_joins() {
+    fn explicit_joins() {
         let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
-
-        {
-            control.send_data((1, Foo("a".to_owned())));
-            control.send_data((2, Foo("b".to_owned())));
-        }
-
-        let tid_own = thread::current().id();
-        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
 
         // This is directly defined as a reference to prevent the move closure below from moving the
         // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
@@ -118,12 +108,11 @@ mod tests {
                     (tid_i, map_i)
                 })
                 .collect::<Vec<_>>();
-            let mut map = maps.into_iter().collect::<HashMap<_, _>>();
-            map.insert(tid_own, map_own);
+            let map = maps.into_iter().collect::<HashMap<_, _>>();
 
             {
                 let acc = control.drain_tls();
-                assert_eq_and_println(&acc, &map, "Accumulator check");
+                assert_eq_and_println(&acc, &map, "after drain_tls");
             }
 
             // drain_tls again
@@ -135,25 +124,9 @@ mod tests {
     }
 
     #[test]
-    fn own_thread_only() {
-        let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
-
-        control.send_data((1, Foo("a".to_owned())));
-        control.send_data((2, Foo("b".to_owned())));
-
-        let tid_own = thread::current().id();
-        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-
-        let map = HashMap::from([(tid_own, map_own)]);
-
-        let acc = control.drain_tls();
-        assert_eq_and_println(&acc, &map, "Accumulator check");
-    }
-
-    #[test]
     fn no_thread() {
         let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
         let acc = control.drain_tls();
-        assert_eq_and_println(&acc, &HashMap::new(), "empty accumulatore expected");
+        assert_eq_and_println(&acc, &HashMap::new(), "after drain_tls");
     }
 }

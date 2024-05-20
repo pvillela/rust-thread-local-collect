@@ -63,14 +63,14 @@
 //!
 //!     // Probe the thread-local values and get the accuulated value computed from
 //!     // current thread-local values.
-//!     let acc = control.probe_tls().unwrap();
+//!     let acc = control.probe_tls();
 //!     println!("non-final accumulated from probe_tls(): {}", acc);
 //!
 //!     h.join().unwrap();
 //!
 //!     // Probe the thread-local variables and get the accuulated value computed from
 //!     // final thread-local values.
-//!     let acc = control.probe_tls().unwrap();
+//!     let acc = control.probe_tls();
 //!     println!("final accumulated from probe_tls(): {}", acc);
 //!
 //!     // Drain the final thread-local values.
@@ -98,17 +98,10 @@ use thread_local::ThreadLocal;
 /// Error message.
 const POISONED_CONTROL_MUTEX: &str = "poisoned control mutex";
 
-/// Errors returned by [`Control::drain_tls`].
 #[derive(Error, Debug, PartialEq)]
-pub enum DrainTlsError {
-    /// Method was called while some thread that sent a value for accumulation was still active.
-    #[error("method called while thread-locals were arctive")]
-    ActiveThreadLocalsError,
-
-    /// There were no threads that sent values for accumulation.
-    #[error("there is nothing accumulated")]
-    NothingAccumulated,
-}
+/// Method was called while some thread that sent a value for accumulation was still active.
+#[error("method called while thread-locals were arctive")]
+pub struct ActiveThreadLocalsError;
 
 /// Controls the collection and accumulation of thread-local values.
 ///
@@ -192,13 +185,13 @@ where
     /// using `self`, other than the thread where this function is called from, has not yet terminated and explicitly
     /// joined, directly or indirectly, the thread where this function is called from. In this case, the state of
     /// `self` is left unchanged.
-    pub fn drain_tls(&mut self) -> Result<U, DrainTlsError> {
+    pub fn drain_tls(&mut self) -> Result<U, ActiveThreadLocalsError> {
         let state = replace(&mut self.state, Arc::new(ThreadLocal::new()));
         let unwr_state = match Arc::try_unwrap(state) {
             Ok(unwr_state) => unwr_state,
             Err(state) => {
                 _ = replace(&mut self.state, state); // put it back
-                return Err(DrainTlsError::ActiveThreadLocalsError);
+                return Err(ActiveThreadLocalsError);
             }
         };
         let res = unwr_state
@@ -208,31 +201,30 @@ where
                 let data = replace(data_guard.deref_mut(), (self.acc_zero)());
                 data
             })
-            .reduce(self.op_r.as_ref());
-        res.ok_or(DrainTlsError::NothingAccumulated)
+            .fold((self.acc_zero)(), self.op_r.as_ref());
+        Ok(res)
     }
 
     /// Returns the current accumulation of the thread-local values, without changing the state of `self`,
     /// or `None` is no values have been sent by threads for accumulation.
-    pub fn probe_tls(&self) -> Option<U>
+    pub fn probe_tls(&self) -> U
     where
         U: Clone,
     {
         let iter = self.state.iter();
         iter.map(|x| x.lock().expect(POISONED_CONTROL_MUTEX).clone())
-            .reduce(self.op_r.as_ref())
+            .fold((self.acc_zero)(), self.op_r.as_ref())
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::Control;
+    use super::{ActiveThreadLocalsError, Control};
     use crate::test_support::{assert_eq_and_println, ThreadGater};
     use std::{
         collections::HashMap,
         fmt::Debug,
-        ops::Deref,
         sync::{Mutex, RwLock},
         thread::{self, ThreadId},
     };
@@ -329,8 +321,8 @@ mod tests {
             map.insert(tid_own, map_own);
 
             {
-                let acc = control.drain_tls().unwrap();
-                assert_eq_and_println(&acc, &map, "Accumulator check");
+                let acc = control.drain_tls();
+                assert_eq_and_println(&acc, &Ok(map), "Accumulator check");
             }
         }
     }
@@ -347,8 +339,8 @@ mod tests {
 
         let map = HashMap::from([(tid_own, map_own)]);
 
-        let acc = control.drain_tls().unwrap();
-        assert_eq_and_println(&acc, &map, "Accumulator check");
+        let acc = control.drain_tls();
+        assert_eq_and_println(&acc, &Ok(map), "Accumulator check");
     }
 
     #[test]
@@ -363,11 +355,9 @@ mod tests {
 
         let expected_acc_mutex = Mutex::new(HashMap::new());
 
-        let assert_acc = |acc: &AccValue, msg: &str| {
-            let exp_guard = expected_acc_mutex.try_lock().unwrap();
-            let exp = exp_guard.deref();
-
-            assert_eq_and_println(acc, exp, msg);
+        let assert_acc = |acc: &Result<AccValue, ActiveThreadLocalsError>, msg: &str| {
+            let exp = expected_acc_mutex.try_lock().unwrap().clone();
+            assert_eq_and_println(acc, &Ok(exp), msg);
         };
 
         thread::scope(|s| {
@@ -401,10 +391,11 @@ mod tests {
 
                 let mut map = expected_acc_mutex.try_lock().unwrap();
                 map.insert(main_tid, my_map);
-                let acc = control.probe_tls().unwrap();
+                let map = map.clone(); // Mutex guard dropped here
+                let acc = control.probe_tls();
                 assert_eq_and_println(
                     &acc,
-                    map.deref(),
+                    &map,
                     "Accumulator after main thread inserts and probe_tls",
                 );
                 main_thread_gater.open(0);
@@ -412,9 +403,9 @@ mod tests {
 
             {
                 spawned_thread_gater.wait_for(0);
-                let acc = control.probe_tls().unwrap();
+                let acc = control.probe_tls();
                 assert_acc(
-                    &acc,
+                    &Ok(acc),
                     "Accumulator after 1st spawned thread insert and probe_tls",
                 );
                 main_thread_gater.open(1);
@@ -422,9 +413,9 @@ mod tests {
 
             {
                 spawned_thread_gater.wait_for(1);
-                let acc = control.probe_tls().unwrap();
+                let acc = control.probe_tls();
                 assert_acc(
-                    &acc,
+                    &Ok(acc),
                     "Accumulator after 2nd spawned thread insert and take_tls",
                 );
                 main_thread_gater.open(2);
@@ -432,9 +423,9 @@ mod tests {
 
             {
                 spawned_thread_gater.wait_for(2);
-                let acc = control.probe_tls().unwrap();
+                let acc = control.probe_tls();
                 assert_acc(
-                    &acc,
+                    &Ok(acc),
                     "Accumulator after 3rd spawned thread insert and probe_tls",
                 );
                 main_thread_gater.open(3);
@@ -447,11 +438,17 @@ mod tests {
         });
 
         {
-            let acc = control.drain_tls().unwrap();
+            let acc = control.drain_tls();
             assert_acc(
                 &acc,
                 "Accumulator after 4th spawned thread insert and drain_tls",
             );
+        }
+
+        // drain_tls again
+        {
+            let acc = control.drain_tls();
+            assert_eq_and_println(&acc, &Ok(HashMap::new()), "empty accumulatore expected");
         }
     }
 
@@ -459,10 +456,7 @@ mod tests {
     fn no_thread() {
         let mut control = Control::new(HashMap::new, op, op_r);
         let acc = control.drain_tls();
-        match acc {
-            Err(super::DrainTlsError::NothingAccumulated) => (),
-            _ => panic!("unexpected result {acc:?}"),
-        };
+        assert_eq!(acc, Ok(HashMap::new()), "empty accumulator expected");
     }
 
     #[test]
@@ -478,9 +472,10 @@ mod tests {
         });
 
         let acc = control.drain_tls();
-        match acc {
-            Err(super::DrainTlsError::ActiveThreadLocalsError) => (),
-            _ => panic!("unexpected result {acc:?}"),
-        };
+        assert_eq!(
+            acc,
+            Err(ActiveThreadLocalsError),
+            "error expected due to active thread(s)"
+        );
     }
 }

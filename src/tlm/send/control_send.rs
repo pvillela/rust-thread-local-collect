@@ -8,12 +8,6 @@ use std::{
     sync::Arc,
     thread::{self, LocalKey, ThreadId},
 };
-use thiserror::Error;
-
-/// Errors returned by [`ControlSendG::drain_tls`].
-#[derive(Error, Debug, PartialEq)]
-#[error("there is nothing accumulated")]
-pub struct NothingAccumulatedError;
 
 pub struct ControlSendG<P, T, U>
 where
@@ -21,10 +15,12 @@ where
 
     P: 'static,
 {
-    control: ControlG<P>,
+    pub(super) control: ControlG<P>,
     /// Operation that combines the stored thead-local value with data sent from threads.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
+    /// Produces a zero value of type `P::Dat`, which is needed to obtain consistent aggregation results.
+    acc_zero: fn() -> U,
 }
 
 impl<P, T, U> ControlSendG<P, T, U>
@@ -37,6 +33,7 @@ where
         tl: &'static LocalKey<P::Hldr>,
         // Produces a zero value of type `P::Dat`, which is needed to obtain consistent aggregation results.
         acc_zero: fn() -> U,
+        // Operation that combines the stored thead-local value with data sent from threads.
         op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
         op_r: impl Fn(U, U) -> U + 'static + Send + Sync,
     ) -> Self {
@@ -47,12 +44,13 @@ where
                 acc_zero,
                 move |data: U, acc: &mut Option<U>, _| {
                     let acc0 = take(acc);
-                    // By construction above and assignment below, `acc0` will never be `None`.
+                    // By the construction of acc_base above and assignment below, `acc0` will never be `None`.
                     if let Some(acc0) = acc0 {
                         *acc = Some(op_r(data, acc0));
                     }
                 },
             ),
+            acc_zero,
             op: Arc::new(op),
         }
     }
@@ -72,10 +70,10 @@ where
     Self: WithTakeTls<P, U>,
     P::CtrlState: CtrlStateCore<P>,
 {
-    pub fn drain_tls(&mut self) -> Result<U, NothingAccumulatedError> {
+    pub fn drain_tls(&mut self) -> U {
         Self::take_tls(&self.control);
-        let acc = self.control.take_acc(None);
-        acc.ok_or(NothingAccumulatedError)
+        let acc = self.control.take_acc(Some((self.acc_zero)()));
+        acc.expect("accumulator is never None")
     }
 }
 
@@ -101,6 +99,7 @@ where
         Self {
             control: self.control.clone(),
             op: self.op.clone(),
+            acc_zero: self.acc_zero,
         }
     }
 }

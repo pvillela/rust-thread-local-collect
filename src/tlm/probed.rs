@@ -135,6 +135,7 @@ impl<T, U> CoreParam for P<T, U> {
 }
 
 #[doc(hidden)]
+#[derive(Debug)]
 pub struct Node<T> {
     data: Arc<Mutex<Option<T>>>,
 }

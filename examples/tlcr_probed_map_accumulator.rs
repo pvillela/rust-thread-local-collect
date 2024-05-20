@@ -98,7 +98,7 @@ fn main() {
 
             let mut map = expected_acc_mutex.try_lock().unwrap();
             map.insert(main_tid, my_map);
-            let acc = control.probe_tls().unwrap();
+            let acc = control.probe_tls();
             assert_eq_and_println(
                 &acc,
                 map.deref(),
@@ -109,7 +109,7 @@ fn main() {
 
         {
             spawned_thread_gater.wait_for(0);
-            let acc = control.probe_tls().unwrap();
+            let acc = control.probe_tls();
             assert_acc(
                 &acc,
                 "Accumulator after 1st spawned thread insert and probe_tls",
@@ -119,7 +119,7 @@ fn main() {
 
         {
             spawned_thread_gater.wait_for(1);
-            let acc = control.probe_tls().unwrap();
+            let acc = control.probe_tls();
             assert_acc(
                 &acc,
                 "Accumulator after 2nd spawned thread insert and take_tls",
@@ -129,7 +129,7 @@ fn main() {
 
         {
             spawned_thread_gater.wait_for(2);
-            let acc = control.probe_tls().unwrap();
+            let acc = control.probe_tls();
             assert_acc(
                 &acc,
                 "Accumulator after 3rd spawned thread insert and probe_tls",

@@ -84,17 +84,10 @@ use std::{
 use thiserror::Error;
 use thread_local::ThreadLocal;
 
-/// Errors returned by [`Control::drain_tls`].
 #[derive(Error, Debug, PartialEq)]
-pub enum DrainTlsError {
-    /// Method was called while some thread that sent a value for accumulation was still active.
-    #[error("method called while thread-locals were arctive")]
-    ActiveThreadLocalsError,
-
-    /// There were no threads that sent values for accumulation.
-    #[error("there is nothing accumulated")]
-    NothingAccumulated,
-}
+/// Method was called while some thread that sent a value for accumulation was still active.
+#[error("method called while thread-locals were arctive")]
+pub struct ActiveThreadLocalsError;
 
 /// Controls the collection and accumulation of thread-local values.
 ///
@@ -178,27 +171,27 @@ where
     /// using `self`, other than the thread where this function is called from, has not yet terminated and explicitly
     /// joined, directly or indirectly, the thread where this function is called from. In this case, the state of
     /// `self` is left unchanged.
-    pub fn drain_tls(&mut self) -> Result<U, DrainTlsError> {
+    pub fn drain_tls(&mut self) -> Result<U, ActiveThreadLocalsError> {
         let state = replace(&mut self.state, Arc::new(ThreadLocal::new()));
         let unwr_state = match Arc::try_unwrap(state) {
             Ok(unwr_state) => unwr_state,
             Err(state) => {
                 _ = replace(&mut self.state, state); // put it back
-                return Err(DrainTlsError::ActiveThreadLocalsError);
+                return Err(ActiveThreadLocalsError);
             }
         };
         let res = unwr_state
             .into_iter()
             .map(|x| x.into_inner())
-            .reduce(self.op_r.as_ref());
-        res.ok_or(DrainTlsError::NothingAccumulated)
+            .fold((self.acc_zero)(), self.op_r.as_ref());
+        Ok(res)
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::Control;
+    use super::{ActiveThreadLocalsError, Control};
     use crate::test_support::assert_eq_and_println;
     use std::{
         collections::HashMap,
@@ -299,8 +292,14 @@ mod tests {
             map.insert(tid_own, map_own);
 
             {
-                let acc = control.drain_tls().unwrap();
-                assert_eq_and_println(&acc, &map, "Accumulator check");
+                let acc = control.drain_tls();
+                assert_eq_and_println(&acc, &Ok(map), "Accumulator check");
+            }
+
+            // drain_tls again
+            {
+                let acc = control.drain_tls();
+                assert_eq_and_println(&acc, &Ok(HashMap::new()), "empty accumulatore expected");
             }
         }
     }
@@ -317,18 +316,15 @@ mod tests {
 
         let map = HashMap::from([(tid_own, map_own)]);
 
-        let acc = control.drain_tls().unwrap();
-        assert_eq_and_println(&acc, &map.clone(), "Accumulator check");
+        let acc = control.drain_tls();
+        assert_eq_and_println(&acc, &Ok(map), "Accumulator check");
     }
 
     #[test]
     fn no_thread() {
         let mut control = Control::new(HashMap::new, op, op_r);
         let acc = control.drain_tls();
-        match acc {
-            Err(super::DrainTlsError::NothingAccumulated) => (),
-            _ => panic!("unexpected result {acc:?}"),
-        };
+        assert_eq_and_println(&acc, &Ok(HashMap::new()), "empty accumulatore expected");
     }
 
     #[test]
@@ -344,9 +340,10 @@ mod tests {
         });
 
         let acc = control.drain_tls();
-        match acc {
-            Err(super::DrainTlsError::ActiveThreadLocalsError) => (),
-            _ => panic!("unexpected result {acc:?}"),
-        };
+        assert_eq!(
+            acc,
+            Err(ActiveThreadLocalsError),
+            "error expected due to active thread(s)"
+        );
     }
 }
