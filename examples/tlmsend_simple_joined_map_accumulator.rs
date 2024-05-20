@@ -1,4 +1,4 @@
-//! Simple example usage of [`thread_local_collect::tlcr::joined`].
+//! Example usage of [`thread_local_collect::tlm::send::simple_joined`].
 
 use std::{
     collections::HashMap,
@@ -6,7 +6,10 @@ use std::{
     sync::RwLock,
     thread::{self, ThreadId},
 };
-use thread_local_collect::{test_support::assert_eq_and_println, tlcr::joined::Control};
+use thread_local_collect::{
+    test_support::assert_eq_and_println,
+    tlm::send::simple_joined::{Control, Holder},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
@@ -42,6 +45,10 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
     acc
 }
 
+thread_local! {
+    static MY_TL: Holder<AccValue> = Holder::new();
+}
+
 const NTHREADS: usize = 5;
 
 #[test]
@@ -50,15 +57,7 @@ fn test() {
 }
 
 fn main() {
-    let mut control = Control::new(HashMap::new, op, op_r);
-
-    {
-        control.send_data((1, Foo("a".to_owned())));
-        control.send_data((2, Foo("b".to_owned())));
-    }
-
-    let tid_own = thread::current().id();
-    let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
+    let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
 
     // This is directly defined as a reference to prevent the move closure below from moving the
     // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
@@ -100,18 +99,17 @@ fn main() {
                 (tid_i, map_i)
             })
             .collect::<Vec<_>>();
-        let mut map = maps.into_iter().collect::<HashMap<_, _>>();
-        map.insert(tid_own, map_own);
+        let map = maps.into_iter().collect::<HashMap<_, _>>();
 
         {
             let acc = control.drain_tls();
-            assert_eq_and_println(&acc, &Ok(map), "Accumulator check");
+            assert_eq_and_println(&acc, &map, "Accumulator check");
         }
 
         // drain_tls again
         {
             let acc = control.drain_tls();
-            assert_eq_and_println(&acc, &Ok(HashMap::new()), "empty accumulatore expected");
+            assert_eq_and_println(&acc, &HashMap::new(), "empty accumulatore expected");
         }
     }
 }

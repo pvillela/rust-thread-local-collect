@@ -16,11 +16,8 @@
 //! Here's an outline of how this little framework can be used:
 //!
 //! ```rust
-//! use std::{
-//!     ops::Deref,
-//!     thread::{self, ThreadId},
-//! };
-//! use thread_local_collect::tlm::joined::{Control, Holder};
+//! use std::thread::{self, ThreadId};
+//! use thread_local_collect::tlcr::joined::Control;
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -28,9 +25,9 @@
 //! // Define your accumulated value type.
 //! type AccValue = i32;
 //!
-//! // Define your thread-local:
-//! thread_local! {
-//!     static MY_TL: Holder<Data, AccValue> = Holder::new();
+//! // Define your zero accumulated value function.
+//! fn acc_zero() -> AccValue {
+//!     0
 //! }
 //!
 //! // Define your accumulation operation.
@@ -38,45 +35,41 @@
 //!     *acc += data;
 //! }
 //!
-//! // Create a function to update the thread-local value:
-//! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     control.with_data_mut(|data| {
-//!         *data = value;
-//!     });
+//! // Define your accumulor reduction operation.
+//! fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
+//!     acc1 + acc2
 //! }
 //!
+//! const NTHREADS: i32 = 5;
+//!
 //! fn main() {
-//!     let control = Control::new(&MY_TL, 0, op);
+//!     // Instantiate the control object.
+//!     let mut control = Control::new(acc_zero, op, op_r);
 //!
-//!     update_tl(1, &control);
+//!     // Send data to control from main thread if desired.
+//!     control.send_data(100);
 //!
-//!     let h = thread::spawn({
-//!         // Clone control for the new thread.
-//!         let control = control.clone();
-//!         move || {
-//!             update_tl(10, &control);
-//!         }
-//!     });
-//!     h.join().unwrap();
+//!     let hs = (0..NTHREADS)
+//!         .map(|i| {
+//!             // Clone control for use in the new thread.
+//!             let control = control.clone();
+//!             thread::spawn({
+//!                 move || {
+//!                     // Send data from thread to control object.
+//!                     control.send_data(i);
+//!                 }
+//!             })
+//!         })
+//!         .collect::<Vec<_>>();
 //!
-//!     // Take and accumulate the thread-local value from the main thread.
-//!     control.take_own_tl();
+//!     // Join all threads.
+//!     hs.into_iter().for_each(|h| h.join().unwrap());
 //!
-//!     // Different ways to print the accumulated value
+//!     // Drain thread-local values.
+//!     let acc = control.drain_tls().unwrap();
 //!
-//!     println!("accumulated={}", control.acc().deref());
-//!
-//!     let acc = control.acc();
-//!     println!("accumulated={}", acc.deref());
-//!     drop(acc);
-//!
-//!     control.with_acc(|acc| println!("accumulated={}", acc));
-//!
-//!     let acc = control.clone_acc();
-//!     println!("accumulated={}", acc);
-//!
-//!     let acc = control.take_acc(0);
-//!     println!("accumulated={}", acc);
+//!     // Print the accumulated value
+//!     println!("accumulated={acc}");
 //! }
 //! ```
 //!

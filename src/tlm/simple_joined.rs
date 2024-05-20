@@ -49,7 +49,7 @@
 //! }
 //!
 //! fn main() {
-//!     let control = Control::new(&MY_TL, 0, op);
+//!     let control = Control::new(&MY_TL, 0, || 0, op);
 //!
 //!     update_tl(1, &control);
 //!

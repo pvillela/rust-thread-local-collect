@@ -1,4 +1,82 @@
 //! Variant of module [`crate::tlm::simple_joined`] with a `send` API similar to that of [`crate::tlcr`] sub-modules.
+//!
+//! This module supports the collection and aggregation of values across threads (see package
+//! [overview and core concepts](crate)). The following features and constraints apply ...
+//! - The designated thread-local variable should NOT be used in the thread responsible for
+//! collection/aggregation. If this condition is violated, the thread-local value on that thread will NOT
+//! be collected and aggregated.
+//! - The participating threads *send* data to a clonable `control` object instance that aggregates the values.
+//! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
+//! threads have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
+//!
+//! ## Usage pattern
+//!
+//! Here's an outline of how this little framework can be used:
+//!
+//! ```rust
+//! use std::thread::{self, ThreadId};
+//! use thread_local_collect::tlm::send::simple_joined::{Control, Holder};
+//!
+//! // Define your data type, e.g.:
+//! type Data = i32;
+//!
+//! // Define your accumulated value type.
+//! type AccValue = i32;
+//!
+//! // Define your zero accumulated value function.
+//! fn acc_zero() -> AccValue {
+//!     0
+//! }
+//!
+//! // Define your accumulation operation.
+//! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
+//!     *acc += data;
+//! }
+//!
+//! // Define your accumulor reduction operation.
+//! fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
+//!     acc1 + acc2
+//! }
+//!
+//! thread_local! {
+//!     static MY_TL: Holder<AccValue> = Holder::new();
+//! }
+//!
+//! const NTHREADS: i32 = 5;
+//!
+//! fn main() {
+//!     // Instantiate the control object.
+//!     let mut control = Control::new(&MY_TL, acc_zero, op, op_r);
+//!
+//!     // So NOT send data to control from main thread as it will not be accumulated.
+//!
+//!     let hs = (0..NTHREADS)
+//!         .map(|i| {
+//!             // Clone control for use in the new thread.
+//!             let control = control.clone();
+//!             thread::spawn({
+//!                 move || {
+//!                     // Send data from thread to control object.
+//!                     control.send_data(i);
+//!                 }
+//!             })
+//!         })
+//!         .collect::<Vec<_>>();
+//!
+//!     // Join all threads.
+//!     hs.into_iter().for_each(|h| h.join().unwrap());
+//!
+//!     // Drain thread-local values.
+//!     let acc = control.drain_tls();
+//!
+//!     // Print the accumulated value
+//!     println!("accumulated={acc}");
+//! }
+//! ``````
+//!
+//! ## Other examples
+//!
+//! See another example at [`examples/tlmsend_simple_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlmsend_simple_joined_map_accumulator.rs).
 
 use super::control_send::{ControlSendG, WithTakeTls};
 use crate::tlm::simple_joined::{Control as ControlOrig, Holder as HolderOrig, P as POrig};

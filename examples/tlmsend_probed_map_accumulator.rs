@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::tlcr::probed`].
+//! Example usage of [`thread_local_collect::tlm::send::probed`].
 
 use std::{
     collections::HashMap,
@@ -9,7 +9,7 @@ use std::{
 };
 use thread_local_collect::{
     test_support::{assert_eq_and_println, ThreadGater},
-    tlcr::probed::Control,
+    tlm::send::probed::{Control, Holder},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,13 +46,17 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
     acc
 }
 
+thread_local! {
+    static MY_TL: Holder<AccValue> = Holder::new();
+}
+
 #[test]
 fn test() {
     main();
 }
 
 fn main() {
-    let mut control = Control::new(HashMap::new, op, op_r);
+    let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
 
     let main_tid = thread::current().id();
     println!("main_tid={:?}", main_tid);
@@ -146,7 +150,7 @@ fn main() {
     });
 
     {
-        let acc = control.drain_tls().unwrap();
+        let acc = control.drain_tls();
         assert_acc(
             &acc,
             "Accumulator after 4th spawned thread insert and drain_tls",

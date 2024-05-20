@@ -1,4 +1,4 @@
-//! Simple example usage of [`thread_local_collect::tlcr::joined`].
+//! Example usage of [`thread_local_collect::tlm::send::joined`].
 
 use std::{
     collections::HashMap,
@@ -6,7 +6,10 @@ use std::{
     sync::RwLock,
     thread::{self, ThreadId},
 };
-use thread_local_collect::{test_support::assert_eq_and_println, tlcr::joined::Control};
+use thread_local_collect::{
+    test_support::assert_eq_and_println,
+    tlm::send::joined::{Control, Holder},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
@@ -42,6 +45,10 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
     acc
 }
 
+thread_local! {
+    static MY_TL: Holder<AccValue> = Holder::new();
+}
+
 const NTHREADS: usize = 5;
 
 #[test]
@@ -50,7 +57,7 @@ fn test() {
 }
 
 fn main() {
-    let mut control = Control::new(HashMap::new, op, op_r);
+    let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
 
     {
         control.send_data((1, Foo("a".to_owned())));
@@ -105,13 +112,13 @@ fn main() {
 
         {
             let acc = control.drain_tls();
-            assert_eq_and_println(&acc, &Ok(map), "Accumulator check");
+            assert_eq_and_println(&acc, &map, "Accumulator check");
         }
 
         // drain_tls again
         {
             let acc = control.drain_tls();
-            assert_eq_and_println(&acc, &Ok(HashMap::new()), "empty accumulatore expected");
+            assert_eq_and_println(&acc, &HashMap::new(), "empty accumulatore expected");
         }
     }
 }
