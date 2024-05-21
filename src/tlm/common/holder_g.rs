@@ -13,9 +13,6 @@ use std::{
     thread,
 };
 
-//=================
-// Errora
-
 pub(crate) const POISONED_GUARDED_DATA_MUTEX: &str = "poisoned guarded data mutex";
 
 impl<S> New<Self> for RefCell<S> {
@@ -73,8 +70,13 @@ where
     }
 }
 
-/// Holds thread-local data and a smart pointer to a [`ControlG`], enabling the linkage of the held data
+/// Holds thread-local data and a smart pointer to a [`super::ControlG`], enabling the linkage of the held data
 /// with the control object.
+///
+/// The trait bounds of type parameter `P` are used to customize `impl`s. The thread-local
+/// values are of type [`CoreParam::Dat`] and the accumulated value is of type [`CoreParam::Acc`].
+///
+/// Type parameter `D` is used as a discriminant to enable different implementations of the same method.
 pub struct HolderG<P, D>
 where
     P: CoreParam + GDataParam + HldrParam<Hldr = Self> + CtrlParam + 'static,
@@ -92,8 +94,7 @@ where
     P::GData: GuardedData<P::Dat, Arg = Option<P::Dat>>,
     P::Ctrl: Ctrl<P>,
 {
-    /// Instantiates a holder object. The `make_data` function produces the value used to initialize the
-    /// held data.
+    /// Instantiates a holder object.
     pub fn new() -> Self {
         Self {
             data: P::GData::new(None),
@@ -147,14 +148,14 @@ where
     P::Ctrl: Ctrl<P>,
 {
     /// Invokes `f` on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
+    /// Returns an error if [`HolderG`] not linked with [`super::ControlG`].
     fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
         let guard = self.data_guard();
         f(guard.unwrap())
     }
 
     /// Invokes `f` mutably on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
+    /// Returns an error if [`HolderG`] not linked with [`super::ControlG`].
     fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
         let mut guard = self.data_guard();
         f(guard.unwrap_mut())

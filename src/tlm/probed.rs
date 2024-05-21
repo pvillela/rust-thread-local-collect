@@ -1,14 +1,15 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
-//! across threads (see package [overview and core concepts](crate)). The following features and constraints apply ...
-//! - The designated thread-local variable may be defined and used in the thread responsible for
+//! across threads (see package [overview and core concepts](crate)), including the ability to inspect
+//! the accumulated value before participating threads have terminated. The following features and constraints apply ...
+//! - The designated thread-local variable may be used in the thread responsible for
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
 //! accumulated value when the thread-local variables are dropped following thread termination.
-//! - The [`Control`] object's collection/aggregation functions may be executed at any time as they ensure
-//! synchronization with the participating threads.
+//! - [`Control::probe_tls`] may be executed at any time to get a clone of the current accumulated value.
 //! - After all participating threads other than the thread responsible for collection/aggregation have
 //! terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection,
-//! a call to one of the collection/aggregation functions will result in the final aggregated value.
+//! a call to [`Control::take_tls`] followed by a call to one of the accumulator retrieval functions
+//! will return the final aggregated value.
 //!
 //! ## Usage pattern
 //!
@@ -207,10 +208,11 @@ where
 {
     /// Takes the values of any remaining linked thread-local-variables and aggregates those values
     /// with this object's accumulator, replacing those values with the evaluation of the `make_data` function
-    /// passed to [`Holder::new`].
+    /// passed to [`Control::new`].
     ///
-    /// Panics if `self`'s mutex is poisoned.
-    /// Panics if [`Holder`] guarded data mutex is poisoned.
+    /// # Panics
+    /// - If `self`'s mutex is poisoned.
+    /// - If [`Holder`] guarded data mutex is poisoned.
     pub fn take_tls(&self) {
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.
@@ -231,8 +233,9 @@ where
     /// aggregates those values with a clone of this object's accumulator, and returns the aggregate
     /// value. This object's accumulator remains unchanged.
     ///
-    /// Panics if `self`'s mutex is poisoned.
-    /// Panics if [`Holder`] guarded data mutex is poisoned.
+    /// # Panics
+    /// - If `self`'s mutex is poisoned.
+    /// - If [`Holder`] guarded data mutex is poisoned.
     pub fn probe_tls(&self) -> U
     where
         T: Clone,

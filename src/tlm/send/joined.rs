@@ -1,4 +1,4 @@
-//! Variant of module [`crate::tlm::joined`] with a `send` API similar to that of [`crate::tlcr`] sub-modules.
+//! Variant of module [`crate::tlm::joined`] with a `send` API similar to that of [`crate::tlcr::joined`].
 //!
 //! This module supports the collection and aggregation of values across threads (see package
 //! [overview and core concepts](crate)). The following features and constraints apply ...
@@ -80,6 +80,11 @@
 use super::control_send::{ControlSendG, WithTakeTls};
 use crate::tlm::joined::{Control as ControlInner, Holder as HolderInner, P as POrig};
 
+/// Specialization of [`ControlSendG`] for this module.
+/// Controls the collection and accumulation of thread-local values linked to this object.
+///
+/// `T` is the type of the data sent from threads for accumulation and `U` is the type of the accumulated value.
+/// Partially accumulated values are held in thread-locals of type [`Holder<U>`].
 pub type Control<T, U> = ControlSendG<POrig<U, Option<U>>, T, U>;
 
 impl<T, U> WithTakeTls<POrig<U, Option<U>>, U> for Control<T, U>
@@ -91,6 +96,9 @@ where
     }
 }
 
+/// Specialization of [`crate::tlm::joined::Holder`] for this module.
+/// Holds thread-local partially accumulated data of type `U` and a smart pointer to a [`Control<T, U>`],
+/// enabling the linkage of the held data with the control object.
 pub type Holder<U> = HolderInner<U, Option<U>>;
 
 #[cfg(test)]

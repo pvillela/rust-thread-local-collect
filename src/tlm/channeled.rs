@@ -1,6 +1,6 @@
 //! This module supports the collection and aggregation of the values from a designated thread-local variable
 //! across threads (see package [overfiew and core concepts](super)). The following features and constraints apply ...
-//! - The designated thread-local variable may be defined and used in the thread responsible for
+//! - The designated thread-local variable may be used in the thread responsible for
 //! collection/aggregation.
 //! - The linked thread-local variables hold a [`Sender`] that sends values to be aggregated into the
 //! [Control] object's accumulated value.
@@ -209,7 +209,7 @@ where
     state: Arc<Mutex<ChanneledState<T, U>>>,
     /// Sender on channel that is received by control.
     sender: Sender<ChannelItem<T>>,
-    /// Binary operation that combines data from thread-locals with accumulated value.
+    /// Operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
     op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
 }
@@ -227,6 +227,10 @@ impl<T, U> Clone for Control<T, U> {
 
 impl<T, U> Control<T, U> {
     /// Instantiates a [`Control`] object.
+    ///
+    /// - `tl` - reference to thread-local static.
+    /// - `acc_base` - initial value for accumulation.
+    /// - `op` - operation that combines data from thread-locals with accumulated value.
     pub fn new(
         tl: &'static LocalKey<Holder<T>>,
         acc_base: U,
@@ -242,27 +246,35 @@ impl<T, U> Control<T, U> {
     }
 
     /// Acquires a lock on [`Control`]'s internal mutex.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     fn lock(&self) -> MutexGuard<'_, ChanneledState<T, U>> {
         self.state.lock().expect(POISONED_CONTROL_MUTEX)
     }
 
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn acc(&self) -> impl Deref<Target = U> + '_ {
         AccGuard(self.lock())
     }
 
     /// Provides access to `self`'s accumulated value.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn with_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
         let acc = self.acc();
         f(&acc)
     }
 
     /// Returns a clone of `self`'s accumulated value.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn clone_acc(&self) -> U
     where
         U: Clone,
@@ -272,7 +284,9 @@ impl<T, U> Control<T, U> {
 
     /// Returns `self`'s accumulated value, using a value of the same type to replace
     /// the existing accumulated value.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn take_acc(&self, replacement: U) -> U {
         let mut lock = self.lock();
         let acc = lock.acc_mut();
@@ -282,6 +296,9 @@ impl<T, U> Control<T, U> {
     /// Spawns a background thread to receive thread-local values and aggregate them with this object's
     /// accumulated value.
     /// Returns an error if there is already an active background receiver thread.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn start_receiving_tls(&self) -> Result<(), MultipleReceiverThreadsError>
     where
         T: 'static + Send,
@@ -312,20 +329,24 @@ impl<T, U> Control<T, U> {
         Ok(())
     }
 
-    /// Terminate background thread receiving thread-local values.
+    /// Signals the background receiving thread to terminate itself.
     pub fn stop_receiving_tls(&self) {
         self.sender
             .send(ChannelItem::StopReceiving)
             .expect(RECEIVER_DISCONNECTED);
     }
 
-    /// Receive all pending messages in channel, terminating the background thread if it exists.
+    /// Receives all pending messages in channel, terminating the background thread if it exists.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn drain_tls(&self) {
         self.stop_receiving_tls();
         self.lock()
             .receive_tls(ReceiveMode::Drain, self.op.as_ref());
     }
 
+    /// Sends data from the thread where it is called to be accumulated by the [`Control`] instance;
     pub fn send_data(&self, data: T) {
         self.tl.with(|h| {
             h.ensure_linked(self);

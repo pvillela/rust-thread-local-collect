@@ -133,7 +133,9 @@ where
 }
 
 /// Controls the collection and accumulation of thread-local values linked to this object.
-/// Such values, of type [`CoreParam::Dat`], must be held in thread-locals of type [`HolderG<P>`].
+///
+/// The trait bounds of type parameter `P` are used to customize `impl`s. The thread-local
+/// values are of type [`CoreParam::Dat`] and the accumulated value is of type [`CoreParam::Acc`].
 pub struct ControlG<P>
 where
     P: CoreParam + CtrlStateParam + HldrParam,
@@ -146,10 +148,9 @@ where
     pub(crate) state: Arc<Mutex<P::CtrlState>>,
     /// Constructs initial data for [`HolderG`].
     pub(crate) make_data: fn() -> P::Dat,
-    /// Binary operation that combines data from thread-locals with accumulated value.
+    /// Operation that combines data from thread-locals with accumulated value.
     #[allow(clippy::type_complexity)]
     pub(crate) op: Arc<dyn Fn(P::Dat, &mut P::Acc, ThreadId) + Send + Sync>,
-    // _d: PhantomData<D>,
 }
 
 impl<P> ControlG<P>
@@ -159,6 +160,11 @@ where
     P::CtrlState: New<P::CtrlState, Arg = P::Acc>,
 {
     /// Instantiates a *control* object.
+    ///
+    /// - `tl` - reference to thread-local static.
+    /// - `acc_base` - initial value for accumulation.
+    /// - `make_data` - constructs initial data for [`super::HolderG`].
+    /// - `op` - operation that combines data from thread-locals with accumulated value.
     pub fn new(
         tl: &'static LocalKey<P::Hldr>,
         acc_base: P::Acc,
@@ -171,7 +177,6 @@ where
             state: Arc::new(Mutex::new(state)),
             make_data,
             op: Arc::new(op),
-            // _d: PhantomData,
         }
     }
 }
@@ -183,27 +188,35 @@ where
     P::CtrlState: CtrlStateCore<P>,
 {
     /// Acquires a lock on [`ControlG`]'s internal Mutex.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub(crate) fn lock(&self) -> MutexGuard<'_, P::CtrlState> {
         self.state.lock().expect(POISONED_CONTROL_MUTEX)
     }
 
     /// Returns a guard object that dereferences to `self`'s accumulated value. A lock is held during the guard's
     /// lifetime.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn acc(&self) -> impl Deref<Target = P::Acc> + '_ {
         AccGuardG::new(self.lock())
     }
 
     /// Provides access to `self`'s accumulated value.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn with_acc<V>(&self, f: impl FnOnce(&P::Acc) -> V) -> V {
         let acc = self.acc();
         f(&acc)
     }
 
     /// Returns a clone of `self`'s accumulated value.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn clone_acc(&self) -> P::Acc
     where
         P::Acc: Clone,
@@ -213,7 +226,9 @@ where
 
     /// Returns `self`'s accumulated value, using a value of the same type to replace
     /// the existing accumulated value.
-    /// Panics if `self`'s mutex is poisoned.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn take_acc(&self, replacement: P::Acc) -> P::Acc {
         let mut lock = self.lock();
         let acc = lock.acc_mut();
@@ -231,8 +246,10 @@ where
         (self.make_data)()
     }
 
-    /// Used by [`HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
-    /// Panics if `self`'s mutex is poisoned.
+    /// Used by [`super::HolderG`] to notify [`ControlG`] that the holder's data has been dropped.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     fn tl_data_dropped(&self, data: <P as CoreParam>::Dat, tid: ThreadId) {
         let mut lock = self.lock();
         lock.tl_data_dropped(self.op.deref(), data, tid);
@@ -248,7 +265,6 @@ where
     P::Hldr: HldrLink<P> + HldrData<P>,
 {
     /// Invokes `f` on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
     pub fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
         self.tl.with(|h| {
             h.ensure_linked(self);
@@ -257,7 +273,6 @@ where
     }
 
     /// Invokes `f` mutably on the held data.
-    /// Returns an error if [`HolderG`] not linked with [`ControlG`].
     pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
         println!("****** with_data_mut");
         self.tl.with(|h| {
@@ -278,8 +293,10 @@ where
     P: NodeParam,
     P::CtrlState: CtrlStateWithNode<P>,
 {
-    /// Called by [`HolderG`] when a thread-local variable starts being used.
-    /// Panics if `self`'s mutex is poisoned.
+    /// Called by [`super::HolderG`] when a thread-local variable starts being used.
+    ///
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     fn register_node(&self, node: P::Node, tid: ThreadId) {
         let mut lock = self.lock();
         lock.register_node(node, tid)
@@ -296,7 +313,6 @@ where
             state: self.state.clone(),
             make_data: self.make_data,
             op: self.op.clone(),
-            // _d: PhantomData,
         }
     }
 }

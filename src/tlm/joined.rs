@@ -1,23 +1,24 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
 //! across threads (see package [overview and core concepts](crate)). The following features and constraints apply ...
-//! - The designated thread-local variable may be defined and used in the thread responsible for
+//! - The designated thread-local variable may be used in the thread responsible for
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
 //! accumulated value when the thread-local variables are dropped following thread termination.
-//! - The [`Control`] object's collection/aggregation function is UNSAFE unless executed after all participating
-//! threads, other than the thread responsible for collection/aggregation, have
-//! terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
-//! - Implicit joins by scoped threads are NOT correctly handled as the aggregation relies on the destructors
-//! of thread-local variables and such a destructor is not guaranteed to have executed at the point of the
-//! implicit join of a scoped thread.
+//! - After all participating threads other than the thread responsible for collection/aggregation have
+//! terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection,
+//! a call to [`Control::take_own_tl`] followed by a call to one of the accumulator retrieval functions
+//! will return the final aggregated value.
 //!
 //! ## Usage pattern
 //!
 //! Here's an outline of how this little framework can be used:
 //!
 //! ```rust
-//! use std::thread::{self, ThreadId};
-//! use thread_local_collect::tlcr::joined::Control;
+//! use std::{
+//!     ops::Deref,
+//!     thread::{self, ThreadId},
+//! };
+//! use thread_local_collect::tlm::joined::{Control, Holder};
 //!
 //! // Define your data type, e.g.:
 //! type Data = i32;
@@ -25,9 +26,9 @@
 //! // Define your accumulated value type.
 //! type AccValue = i32;
 //!
-//! // Define your zero accumulated value function.
-//! fn acc_zero() -> AccValue {
-//!     0
+//! // Define your thread-local:
+//! thread_local! {
+//!     static MY_TL: Holder<Data, AccValue> = Holder::new();
 //! }
 //!
 //! // Define your accumulation operation.
@@ -35,41 +36,45 @@
 //!     *acc += data;
 //! }
 //!
-//! // Define your accumulor reduction operation.
-//! fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
-//!     acc1 + acc2
+//! // Create a function to update the thread-local value:
+//! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
+//!     control.with_data_mut(|data| {
+//!         *data = value;
+//!     });
 //! }
 //!
-//! const NTHREADS: i32 = 5;
-//!
 //! fn main() {
-//!     // Instantiate the control object.
-//!     let mut control = Control::new(acc_zero, op, op_r);
+//!     let control = Control::new(&MY_TL, 0, || 0, op);
 //!
-//!     // Send data to control from main thread if desired.
-//!     control.send_data(100);
+//!     update_tl(1, &control);
 //!
-//!     let hs = (0..NTHREADS)
-//!         .map(|i| {
-//!             // Clone control for use in the new thread.
-//!             let control = control.clone();
-//!             thread::spawn({
-//!                 move || {
-//!                     // Send data from thread to control object.
-//!                     control.send_data(i);
-//!                 }
-//!             })
-//!         })
-//!         .collect::<Vec<_>>();
+//!     let h = thread::spawn({
+//!         // Clone control for the new thread.
+//!         let control = control.clone();
+//!         move || {
+//!             update_tl(10, &control);
+//!         }
+//!     });
+//!     h.join().unwrap();
 //!
-//!     // Join all threads.
-//!     hs.into_iter().for_each(|h| h.join().unwrap());
+//!     // Take and accumulate the thread-local value from the main thread.
+//!     control.take_own_tl();
 //!
-//!     // Drain thread-local values.
-//!     let acc = control.drain_tls().unwrap();
+//!     // Different ways to print the accumulated value
 //!
-//!     // Print the accumulated value
-//!     println!("accumulated={acc}");
+//!     println!("accumulated={}", control.acc().deref());
+//!
+//!     let acc = control.acc();
+//!     println!("accumulated={}", acc.deref());
+//!     drop(acc);
+//!
+//!     control.with_acc(|acc| println!("accumulated={}", acc));
+//!
+//!     let acc = control.clone_acc();
+//!     println!("accumulated={}", acc);
+//!
+//!     let acc = control.take_acc(0);
+//!     println!("accumulated={}", acc);
 //! }
 //! ```
 //!
@@ -191,7 +196,8 @@ where
     /// with this object's accumulator, replacing that value with the evaluation of the `make_data` function
     /// passed to [`Holder::new`].
     ///
-    /// Panics if `self`'s mutex is poisoned.
+    /// # Panics
+    /// If `self`'s mutex is poisoned.
     pub fn take_own_tl(&self) {
         let mut guard = self.lock();
         // Need explicit deref_mut to avoid compilation error in for loop.

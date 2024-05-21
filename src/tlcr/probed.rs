@@ -1,13 +1,14 @@
 //! This module is supported on **`feature="tlcr"`** only.
 //! This module supports the collection and aggregation of values across threads (see package
-//! [overview and core concepts](crate)). The following features and constraints apply ...
+//! [overview and core concepts](crate)), including the ability to inspect
+//! the accumulated value before participating threads have terminated. The following features and constraints apply ...
 //! - Values may be collected from the thread responsible for collection/aggregation, provided that the `control`
 //! object of type [`Control`] is created on that thread and is not cloned by that thread.
 //! - The participating threads *send* data to a clonable `control` object which contains a
 //! [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance that aggregates the values.
 //! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
 //! threads have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
-//! - The [`Control::probe_tls`] function can be called at any time to return the current aggregated value.
+//! - The [`Control::probe_tls`] function can be called at any time to return a clone of the current aggregated value.
 //!
 //! ## Usage pattern
 //!
@@ -108,7 +109,7 @@ pub struct ActiveThreadLocalsError;
 /// `T` is the type of the values *sent* to this object and `U` is the type of the accumulated value.
 ///
 /// This type holds the following:
-/// - A state object based on [`ThreadLocal`].
+/// - A state object based on [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html).
 /// - A nullary closure that produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
 /// - An operation that combines the accumulated value with data sent from threads.
 /// - A binary operation that reduces two accumulated values into one.
@@ -172,7 +173,7 @@ where
         }
     }
 
-    /// Sends data to be aggregated.
+    /// Called from a thread to send data to be aggregated.
     pub fn send_data(&self, data: T) {
         let cell = self.state.get_or(|| Mutex::new((self.acc_zero)()));
         let mut u = cell.lock().expect(POISONED_CONTROL_MUTEX);
@@ -181,7 +182,7 @@ where
 
     /// Returns the accumulation of the thread-local values, replacing the state of `self` with an empty
     /// [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html).
-    /// Returns an error if `self` has not been used by any threads or any thread
+    /// Returns an error if any thread
     /// using `self`, other than the thread where this function is called from, has not yet terminated and explicitly
     /// joined, directly or indirectly, the thread where this function is called from. In this case, the state of
     /// `self` is left unchanged.
@@ -205,8 +206,7 @@ where
         Ok(res)
     }
 
-    /// Returns the current accumulation of the thread-local values, without changing the state of `self`,
-    /// or `None` is no values have been sent by threads for accumulation.
+    /// Returns a clone of the current accumulation of the thread-local values, without changing the state of `self`.
     pub fn probe_tls(&self) -> U
     where
         U: Clone,

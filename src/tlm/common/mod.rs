@@ -1,4 +1,4 @@
-//! Modules that use the [`std::thread_local`] macro.
+//! Common traits and structs that support the [`crate::tlm`] sub-modules.
 
 mod common_traits;
 pub use common_traits::*;

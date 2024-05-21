@@ -1,3 +1,6 @@
+//! Defines a struct containing a map from thread IDs to thread-local values for use as
+//! the sub-state of [`ControlG`]'s state.
+
 use std::{collections::HashMap, thread::ThreadId};
 
 use super::common::*;
@@ -5,11 +8,9 @@ use super::common::*;
 //=================
 // Control sub-state struct with a thread map.
 
-/// Type used by the specialization of [`ControlG`] for module [`super::probed`].
-//  Holds the thread map used by the [`ControlG`] specializations for module [`super::probed`].
-//  Used also for module [`super::joined_old`] which shows a previous more complex implementation of module
-//  [`super::joined`].
-//  Also used to partially discriminate common [`ControlG`] functionality used by those modules.
+/// Struct containing a map from thread IDs to thread-local values, used by the specialization of
+/// [`CtrlStateG`] for module [`super::probed`].
+/// Also used as the `D` discriminant parameter for [`CtrlStateG`] impls.
 #[derive(Debug)]
 pub struct TmapD<P>
 where

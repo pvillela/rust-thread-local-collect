@@ -1,9 +1,12 @@
+//! Common traits used by [`super::ControlG`], [`super::HolderG`], and their specializations.
+
 //=================
 // Param traits
 
 use std::{ops::DerefMut, thread::ThreadId};
 
-/// Encapsulates the core types used by [`ControlG`], [`HolderG`], and their specializations.
+/// Encapsulates the core types used by [`super::ControlG`], [`super::HolderG`], and their
+/// specializations.
 pub trait CoreParam {
     /// Type of data held in thread-local variable.
     type Dat;
@@ -35,10 +38,6 @@ pub trait NodeParam {
     fn node_fn(arg: &Self::NodeFnArg) -> Self::Node;
 }
 
-// pub trait NodeFnParam {
-//     type NodeFn;
-// }
-
 #[doc(hidden)]
 /// Abstracts the type of [`GuardedData`] used by [`HolderG`].
 pub trait GDataParam {
@@ -52,6 +51,7 @@ pub trait HldrParam {
     type Hldr;
 }
 
+#[doc(hidden)]
 pub trait CtrlParam {
     type Ctrl;
 }
@@ -115,6 +115,7 @@ where
     fn register_node(&mut self, node: P::Node, tid: ThreadId);
 }
 
+#[doc(hidden)]
 pub trait Ctrl<P>
 where
     P: CoreParam,
@@ -123,6 +124,7 @@ where
     fn tl_data_dropped(&self, data: P::Dat, tid: ThreadId);
 }
 
+#[doc(hidden)]
 pub trait CtrlNode<P>
 where
     P: NodeParam,
@@ -130,6 +132,7 @@ where
     fn register_node(&self, node: P::Node, tid: ThreadId);
 }
 
+#[doc(hidden)]
 pub trait HldrLink<P>
 where
     P: CoreParam + CtrlParam,
@@ -148,6 +151,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub trait HldrData<P>
 where
     P: CoreParam,

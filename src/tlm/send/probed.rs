@@ -1,12 +1,13 @@
-//! Variant of module [`crate::tlm::probed`] with a `send` API similar to that of [`crate::tlcr`] sub-modules.
+//! Variant of module [`crate::tlm::probed`] with a `send` API similar to that of [`crate::tlcr::probed`].
 //!
 //! This module supports the collection and aggregation of values across threads (see package
-//! [overview and core concepts](crate)). The following features and constraints apply ...
+//! [overview and core concepts](crate)), including the ability to inspect
+//! the accumulated value before participating threads have terminated. The following features and constraints apply ...
 //! - Values may be collected from the thread responsible for collection/aggregation.
 //! - The participating threads *send* data to a clonable `control` object instance that aggregates the values.
 //! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
 //! threads have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
-//! - The [`Control::probe_tls`] function can be called at any time to return the current aggregated value.
+//! - The [`Control::probe_tls`] function can be called at any time to return a clone of the current aggregated value.
 //!
 //! ## Usage pattern
 //!
@@ -91,6 +92,11 @@
 use super::control_send::{ControlSendG, WithTakeTls};
 use crate::tlm::probed::{Control as ControlInner, Holder as HolderInner, P};
 
+/// Specialization of [`ControlSendG`] for this module.
+/// Controls the collection and accumulation of thread-local values linked to this object.
+///
+/// `T` is the type of the data sent from threads for accumulation and `U` is the type of the accumulated value.
+/// Partially accumulated values are held in thread-locals of type [`Holder<U>`].
 pub type Control<T, U> = ControlSendG<P<U, Option<U>>, T, U>;
 
 impl<T, U> WithTakeTls<P<U, Option<U>>, U> for Control<T, U>
@@ -113,6 +119,9 @@ where
     }
 }
 
+/// Specialization of [`crate::tlm::joined::Holder`] for this module.
+/// Holds thread-local partially accumulated data of type `U` and a smart pointer to a [`Control<T, U>`],
+/// enabling the linkage of the held data with the control object.
 pub type Holder<U> = HolderInner<U, Option<U>>;
 
 #[cfg(test)]

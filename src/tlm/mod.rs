@@ -2,6 +2,8 @@
 
 pub mod common;
 pub mod send;
+
+#[doc(hidden)]
 pub mod tmap_d;
 
 pub mod channeled;
