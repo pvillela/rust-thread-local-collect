@@ -1,39 +1,26 @@
-//! Benchmark for [`thread_local_collect::tlm::simple_joined`].
+//! Benchmark for [`thread_local_collect::tlm::joined`].
 
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::tlm::simple_joined::{Control, Holder};
+use thread_local_collect::tlm::joined::{Control, Holder};
 
 mod map_bench {
+    pub use super::super::map_data::nosend::{op, AccValue, Data, Foo};
     use super::*;
-
-    #[derive(Debug, Clone)]
-    pub struct Foo(String);
-
-    type Data = HashMap<u32, Foo>;
-
-    type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
 
     thread_local! {
         static MY_TL: Holder<Data, AccValue> = Holder::new();
     }
 
-    fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
+    fn insert_tl_entry(k: i32, v: Foo, control: &Control<Data, AccValue>) {
         control.with_data_mut(|data| {
             data.insert(k, v);
         });
     }
 
-    pub(super) fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
-        acc.entry(tid).or_default();
-        for (k, v) in data {
-            acc.get_mut(&tid).unwrap().insert(k, v.clone());
-        }
-    }
-
     impl BenchTarget<Data, AccValue> for Control<Data, AccValue> {
-        fn add_value(&self, t_idx: u32, i_idx: u32) {
+        fn add_value(&self, t_idx: i32, i_idx: i32) {
             let si = black_box(t_idx.to_string());
             insert_tl_entry(i_idx, Foo("a".to_owned() + &si), self);
         }
@@ -50,12 +37,9 @@ mod map_bench {
     }
 }
 
-mod u32_bench {
+mod i32_bench {
+    pub use super::super::i32_data::nosend::{op, AccValue, Data};
     use super::*;
-
-    type Data = u32;
-
-    type AccValue = u32;
 
     thread_local! {
         static MY_TL: Holder<Data, AccValue> = Holder::new();
@@ -67,12 +51,8 @@ mod u32_bench {
         });
     }
 
-    pub fn op(data: Data, acc: &mut AccValue, _tid: ThreadId) {
-        *acc += data;
-    }
-
     impl BenchTarget<Data, AccValue> for Control<Data, AccValue> {
-        fn add_value(&self, t_idx: u32, i_idx: u32) {
+        fn add_value(&self, t_idx: i32, i_idx: i32) {
             update_tl(t_idx * i_idx, self);
         }
 
@@ -91,12 +71,12 @@ mod u32_bench {
     }
 }
 
-pub fn tlm_simple_joined_map_bench() {
+pub fn tlm_joined_map_bench() {
     use map_bench::*;
     bench(control());
 }
 
-pub fn tlm_simple_joined_u32_bench() {
-    use u32_bench::*;
+pub fn tlm_joined_i32_bench() {
+    use i32_bench::*;
     bench(control());
 }

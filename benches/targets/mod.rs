@@ -1,7 +1,7 @@
 #![allow(unused)] // needed due to linting bug in Rust Analyzer for benches
 
-mod common_bench;
-pub use common_bench::*;
+mod common;
+use common::*;
 
 mod tlm_joined_bench;
 pub use tlm_joined_bench::*;
@@ -15,8 +15,17 @@ pub use tlm_probed_bench::*;
 mod tlm_channeled_bench;
 pub use tlm_channeled_bench::*;
 
-mod tlcr_bench;
-pub use tlcr_bench::*;
+mod tlcr_joined_bench;
+pub use tlcr_joined_bench::*;
 
 mod tlcr_probed_bench;
 pub use tlcr_probed_bench::*;
+
+mod tlmsend_joined_bench;
+pub use tlmsend_joined_bench::*;
+
+mod tlmsend_probed_bench;
+pub use tlmsend_probed_bench::*;
+
+mod tlmsend_simple_joined_bench;
+pub use tlmsend_simple_joined_bench::*;

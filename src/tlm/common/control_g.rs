@@ -274,13 +274,9 @@ where
 
     /// Invokes `f` mutably on the held data.
     pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
-        println!("****** with_data_mut");
         self.tl.with(|h| {
-            println!("****** before ensure_linked");
             h.ensure_linked(self);
-            println!("****** after ensure_linked");
             let res = h.with_data_mut(f);
-            println!("****** after with_data_mut");
             res
         })
     }

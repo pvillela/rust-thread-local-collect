@@ -11,9 +11,9 @@ use thread_local_collect::{test_support::assert_eq_and_println, tlcr::joined::Co
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
 
-type Data = (u32, Foo);
+type Data = (i32, Foo);
 
-type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
+type AccValue = HashMap<ThreadId, HashMap<i32, Foo>>;
 
 fn op(data: Data, acc: &mut AccValue, tid: ThreadId) {
     println!(

@@ -13,15 +13,15 @@ use thread_local_collect::tlm::joined::{Control, Holder};
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
 
-type Data = HashMap<u32, Foo>;
+type Data = HashMap<i32, Foo>;
 
-type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
+type AccValue = HashMap<ThreadId, HashMap<i32, Foo>>;
 
 thread_local! {
     static MY_TL: Holder<Data, AccValue> = Holder::new();
 }
 
-fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
+fn insert_tl_entry(k: i32, v: Foo, control: &Control<Data, AccValue>) {
     control.with_data_mut(|data| {
         data.insert(k, v);
     });

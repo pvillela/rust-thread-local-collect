@@ -22,5 +22,5 @@ name = "benchmark"
 harness = false
 
 [[bench]]
-name = "u32_group_benchmark"
+name = "i32_group_benchmark"
 harness = false

@@ -420,9 +420,9 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     struct Foo(String);
 
-    type Data = (u32, Foo);
+    type Data = (i32, Foo);
 
-    type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
+    type AccValue = HashMap<ThreadId, HashMap<i32, Foo>>;
 
     thread_local! {
         static MY_TL: Holder<Data> = Holder::new();
@@ -464,9 +464,9 @@ mod tests {
                 let spawned_tid = thread::current().id();
                 println!("spawned tid={:?}", spawned_tid);
 
-                let mut my_map = HashMap::<u32, Foo>::new();
+                let mut my_map = HashMap::<i32, Foo>::new();
 
-                let mut process_value = |gate: u8, k: u32, v: Foo| {
+                let mut process_value = |gate: u8, k: i32, v: Foo| {
                     main_thread_gater.wait_for(gate);
                     control.send_data((k, v.clone()));
                     my_map.insert(k, v);

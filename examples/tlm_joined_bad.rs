@@ -14,19 +14,19 @@ use std::{
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
 
-type Data = HashMap<u32, Foo>;
+type Data = HashMap<i32, Foo>;
 
-type AccumulatorMap = HashMap<ThreadId, HashMap<u32, Foo>>;
+type AccumulatorMap = HashMap<ThreadId, HashMap<i32, Foo>>;
 
 thread_local! {
     static MY_TL: Holder<Data, AccumulatorMap> = Holder::new();
 }
 
-fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccumulatorMap>) {
+fn insert_tl_entry(k: i32, v: Foo, control: &Control<Data, AccumulatorMap>) {
     control.with_data_mut(|data| data.insert(k, v));
 }
 
-fn op(data: HashMap<u32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
+fn op(data: HashMap<i32, Foo>, acc: &mut AccumulatorMap, tid: ThreadId) {
     acc.entry(tid).or_default();
     for (k, v) in data {
         acc.get_mut(&tid).unwrap().insert(k, v.clone());

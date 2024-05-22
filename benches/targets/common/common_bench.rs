@@ -1,11 +1,11 @@
 use criterion::black_box;
 use std::{fmt::Debug, ops::Deref, thread};
 
-pub const NTHREADS: u32 = 100;
-pub const NENTRIES: u32 = 10;
+pub const NTHREADS: i32 = 100;
+pub const NENTRIES: i32 = 10;
 
 pub trait BenchTarget<T, U> {
-    fn add_value(&self, t_idx: u32, i_idx: u32);
+    fn add_value(&self, t_idx: i32, i_idx: i32);
     fn acc(&mut self) -> impl Deref<Target = U>;
 }
 
@@ -36,4 +36,13 @@ pub fn bench<T, U: Debug>(mut target: impl BenchTarget<T, U> + Sync) {
         }
     };
     bench()
+}
+
+pub struct Wrap<S>(pub S);
+
+impl<S> Deref for Wrap<S> {
+    type Target = S;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }

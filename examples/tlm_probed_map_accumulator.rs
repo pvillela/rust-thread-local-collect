@@ -16,19 +16,19 @@ use thread_local_collect::{
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);
 
-type Data = HashMap<u32, Foo>;
+type Data = HashMap<i32, Foo>;
 
-type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
+type AccValue = HashMap<ThreadId, HashMap<i32, Foo>>;
 
 thread_local! {
     static MY_TL: Holder<Data, AccValue> = Holder::new();
 }
 
-fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
+fn insert_tl_entry(k: i32, v: Foo, control: &Control<Data, AccValue>) {
     control.with_data_mut(|data| data.insert(k, v));
 }
 
-fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
+fn op(data: HashMap<i32, Foo>, acc: &mut AccValue, tid: ThreadId) {
     println!(
         "`op` called from {:?} with data {:?}",
         thread::current().id(),
@@ -75,10 +75,10 @@ fn main() {
             let spawned_tid = thread::current().id();
             println!("spawned tid={:?}", spawned_tid);
 
-            let mut my_map = HashMap::<u32, Foo>::new();
+            let mut my_map = HashMap::<i32, Foo>::new();
 
             let process_value =
-                |gate: u8, k: u32, v: Foo, my_map: &mut HashMap<u32, Foo>, assert_tl_msg: &str| {
+                |gate: u8, k: i32, v: Foo, my_map: &mut HashMap<i32, Foo>, assert_tl_msg: &str| {
                     main_thread_gater.wait_for(gate);
                     insert_tl_entry(k, v.clone(), &control);
                     my_map.insert(k, v);

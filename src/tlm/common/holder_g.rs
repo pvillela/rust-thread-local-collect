@@ -43,9 +43,7 @@ impl<T: 'static> GuardedData<T> for Arc<Mutex<Option<T>>> {
     type Guard<'a> = MutexGuard<'a, Option<T>>;
 
     fn guard(&self) -> Self::Guard<'_> {
-        println!("****** in guard()");
         let res = self.lock().expect(POISONED_GUARDED_DATA_MUTEX);
-        println!("****** returning guard()");
         res
     }
 }

@@ -240,20 +240,20 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     struct Foo(String);
 
-    type Data = HashMap<u32, Foo>;
+    type Data = HashMap<i32, Foo>;
 
-    type AccValue = HashMap<ThreadId, HashMap<u32, Foo>>;
+    type AccValue = HashMap<ThreadId, HashMap<i32, Foo>>;
 
     thread_local! {
         static MY_TL: Holder<Data, AccValue> = Holder::new();
     }
 
-    fn insert_tl_entry(k: u32, v: Foo, control: &Control<Data, AccValue>) {
+    fn insert_tl_entry(k: i32, v: Foo, control: &Control<Data, AccValue>) {
         println!("****** insert_tl_entry");
         control.with_data_mut(|data| data.insert(k, v));
     }
 
-    fn op(data: HashMap<u32, Foo>, acc: &mut AccValue, tid: ThreadId) {
+    fn op(data: HashMap<i32, Foo>, acc: &mut AccValue, tid: ThreadId) {
         println!("Executing `op` on data={data:?}");
         acc.entry(tid).or_default();
         for (k, v) in data {
@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(&data, other, "{msg}");
     }
 
-    fn make_data() -> HashMap<u32, Foo> {
+    fn make_data() -> HashMap<i32, Foo> {
         println!("***** executed make_data");
         HashMap::new()
     }
