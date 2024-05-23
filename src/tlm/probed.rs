@@ -104,10 +104,12 @@
 //!
 //! See another example at [`examples/tlm_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlm_probed_map_accumulator.rs).
 
+pub use crate::tlm::common::{ControlG, HolderG};
+
+use super::common::{CtrlParam, CtrlStateG, CtrlStateParam, HldrParam};
 use crate::tlm::{
     common::{
-        ControlG, CoreParam, GDataParam, HolderG, NodeParam, SubStateParam, WithNode,
-        POISONED_GUARDED_DATA_MUTEX,
+        CoreParam, GDataParam, NodeParam, SubStateParam, WithNode, POISONED_GUARDED_DATA_MUTEX,
     },
     tmap_d::TmapD,
 };
@@ -117,8 +119,6 @@ use std::{
     ops::DerefMut,
     sync::{Arc, Mutex},
 };
-
-use super::common::{CtrlParam, CtrlStateG, CtrlStateParam, HldrParam};
 
 //=================
 // Core implementation based on common module

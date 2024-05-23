@@ -1,6 +1,6 @@
-//! This module contains common traits and structs that are used by the other modules in this libray.
-//! Module [`super::channeled`] implements the [core conepts](crate#core-concepts) directly and
-//! makes minimal use of this module.
+//! This module implements [`ControlG`], a highly generic struct that controls the collection and accumulation of
+//! thread-local values linked to this object.
+//! The `Control`type alias in various modules is a specialization of this struct.
 
 use super::common_traits::*;
 
@@ -132,10 +132,12 @@ where
     }
 }
 
-/// Controls the collection and accumulation of thread-local values linked to this object.
+/// Highly generic struct that controls the collection and accumulation of thread-local values linked to this object.
+/// Used to implement [`crate::tlm::joined::Control`], [`crate::tlm::probed::Control`], and
+/// [`crate::tlm::simple_joined::Control`].
 ///
 /// The trait bounds of type parameter `P` are used to customize `impl`s. The thread-local
-/// values are of type [`CoreParam::Dat`] and the accumulated value is of type [`CoreParam::Acc`].
+/// values are of type `CoreParam::Dat` and the accumulated value is of type `CoreParam::Acc`.
 pub struct ControlG<P>
 where
     P: CoreParam + CtrlStateParam + HldrParam,

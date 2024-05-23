@@ -1,3 +1,7 @@
+//! This module implemnets [`HolderG`], a highly generic struct that holds thread-local data and enables the
+//! linkage of the held data with the control object of type [`super::ControlG`].
+//! The `Holder`type alias in various modules is a specialization of this struct.
+
 use super::{
     common_traits::*,
     control_g::{DefaultDiscr, WithNode},
@@ -68,11 +72,13 @@ where
     }
 }
 
-/// Holds thread-local data and a smart pointer to a [`super::ControlG`], enabling the linkage of the held data
-/// with the control object.
+/// Highly generic struct that holds thread-local data and a smart pointer to a [`super::ControlG`], enabling the
+/// linkage of the held data with the control object.
+/// Used to implement [`crate::tlm::joined::Holder`], [`crate::tlm::probed::Holder`], and
+/// [`crate::tlm::simple_joined::Holder`].
 ///
 /// The trait bounds of type parameter `P` are used to customize `impl`s. The thread-local
-/// values are of type [`CoreParam::Dat`] and the accumulated value is of type [`CoreParam::Acc`].
+/// values are of type `CoreParam::Dat` and the accumulated value is of type `CoreParam::Acc`.
 ///
 /// Type parameter `D` is used as a discriminant to enable different implementations of the same method.
 pub struct HolderG<P, D>

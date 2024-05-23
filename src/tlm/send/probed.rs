@@ -89,7 +89,9 @@
 //!
 //! See another example at [`examples/tlmsend_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlmsend_probed_map_accumulator.rs).
 
-use super::control_send::{ControlSendG, WithTakeTls};
+pub use super::control_send::ControlSendG;
+
+use super::control_send::WithTakeTls;
 use crate::tlm::probed::{Control as ControlInner, Holder as HolderInner, P};
 
 /// Specialization of [`ControlSendG`] for this module.
@@ -119,7 +121,7 @@ where
     }
 }
 
-/// Specialization of [`crate::tlm::joined::Holder`] for this module.
+/// Specialization of [`crate::tlm::probed::Holder`] for this module.
 /// Holds thread-local partially accumulated data of type `U` and a smart pointer to a [`Control<T, U>`],
 /// enabling the linkage of the held data with the control object.
 pub type Holder<U> = HolderInner<U, Option<U>>;

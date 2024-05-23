@@ -1,4 +1,4 @@
-//! Common traits and structs that support the [`crate::tlm`] sub-modules.
+//! Common traits and structs that support the [`crate::tlm`] sub-modules, except [`crate::tlm::channeled`].
 
 mod common_traits;
 pub use common_traits::*;

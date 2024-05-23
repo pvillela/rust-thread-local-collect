@@ -82,12 +82,11 @@
 //!
 //! See another example at [`examples/tlm_simple_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlm_simple_joined_map_accumulator.rs).
 
-use crate::tlm::common::{
-    ControlG, CoreParam, CtrlStateG, CtrlStateParam, GDataParam, HolderG, New, SubStateParam,
-};
-use std::{cell::RefCell, marker::PhantomData};
+pub use crate::tlm::common::{ControlG, HolderG};
 
 use super::common::{CtrlParam, DefaultDiscr, HldrParam};
+use crate::tlm::common::{CoreParam, CtrlStateG, CtrlStateParam, GDataParam, New, SubStateParam};
+use std::{cell::RefCell, marker::PhantomData};
 
 //=================
 // Core implementation based on common module

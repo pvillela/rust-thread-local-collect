@@ -78,7 +78,9 @@
 //!
 //! See another example at [`examples/tlmsend_simple_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlmsend_simple_joined_map_accumulator.rs).
 
-use super::control_send::{ControlSendG, WithTakeTls};
+pub use super::control_send::ControlSendG;
+
+use super::control_send::WithTakeTls;
 use crate::tlm::simple_joined::{Control as ControlOrig, Holder as HolderOrig, P as POrig};
 
 /// Specialization of [`ControlSendG`] for this module.
@@ -95,7 +97,7 @@ where
     fn take_tls(_control: &ControlOrig<U, Option<U>>) {}
 }
 
-/// Specialization of [`crate::tlm::joined::Holder`] for this module.
+/// Specialization of [`crate::tlm::simple_joined::Holder`] for this module.
 /// Holds thread-local partially accumulated data of type `U` and a smart pointer to a [`Control<T, U>`],
 /// enabling the linkage of the held data with the control object.
 pub type Holder<U> = HolderOrig<U, Option<U>>;

@@ -77,7 +77,9 @@
 //!
 //! See another example at [`examples/tlmsend_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlmsend_joined_map_accumulator.rs).
 
-use super::control_send::{ControlSendG, WithTakeTls};
+pub use super::control_send::ControlSendG;
+
+use super::control_send::WithTakeTls;
 use crate::tlm::joined::{Control as ControlInner, Holder as HolderInner, P as POrig};
 
 /// Specialization of [`ControlSendG`] for this module.
