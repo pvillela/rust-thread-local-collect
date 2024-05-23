@@ -9,6 +9,8 @@
 //! - After all participating threads other than the thread responsible for collection/aggregation have
 //! stopped sending values, a call to [`Control::drain_tls`] followed by a call to one of the accumulated
 //! value retrieval functions will result in the final aggregated value.
+//! - [`Control::start_receiving_tls`] and [`Control::drain_tls`] may be called at any time, followed by a call to
+//! [`Control::clone_acc`], to retrieve a partially accumulated value before all threads terminate.
 //!
 //! ## Usage pattern
 //!
@@ -294,7 +296,8 @@ impl<T, U> Control<T, U> {
     }
 
     /// Spawns a background thread to receive thread-local values and aggregate them with this object's
-    /// accumulated value.
+    /// accumulated value. May be called repeatedly, provided that there are intervening calls to
+    /// [`Self::stop_receiving_tls`] or [`Self::drain_tls`].
     /// Returns an error if there is already an active background receiver thread.
     ///
     /// # Panics
@@ -336,7 +339,9 @@ impl<T, U> Control<T, U> {
             .expect(RECEIVER_DISCONNECTED);
     }
 
-    /// Receives all pending messages in channel, terminating the background thread if it exists.
+    /// Receives all pending messages in channel and aggregates the corresponding values,
+    /// terminating the background thread if it exists.
+    /// May be called repeatedly, even before participating theads have terminated.
     ///
     /// # Panics
     /// If `self`'s mutex is poisoned.

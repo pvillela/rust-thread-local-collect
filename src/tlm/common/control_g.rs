@@ -276,8 +276,7 @@ where
     pub fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
         self.tl.with(|h| {
             h.ensure_linked(self);
-            let res = h.with_data_mut(f);
-            res
+            h.with_data_mut(f)
         })
     }
 }
