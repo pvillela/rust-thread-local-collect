@@ -10,73 +10,11 @@
 //! will return the final aggregated value.
 //!
 //! ## Usage pattern
-//!
-//! Here's an outline of how this little framework can be used:
-//!
+
 //! ```rust
-//! use std::{
-//!     ops::Deref,
-//!     thread::{self, ThreadId},
-//! };
-//! use thread_local_collect::tlm::joined::{Control, Holder};
-//!
-//! // Define your data type, e.g.:
-//! type Data = i32;
-//!
-//! // Define your accumulated value type.
-//! type AccValue = i32;
-//!
-//! // Define your thread-local:
-//! thread_local! {
-//!     static MY_TL: Holder<Data, AccValue> = Holder::new();
-//! }
-//!
-//! // Define your accumulation operation.
-//! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
-//!     *acc += data;
-//! }
-//!
-//! // Create a function to update the thread-local value:
-//! fn update_tl(value: Data, control: &Control<Data, AccValue>) {
-//!     control.with_data_mut(|data| {
-//!         *data = value;
-//!     });
-//! }
-//!
-//! fn main() {
-//!     let control = Control::new(&MY_TL, 0, || 0, op);
-//!
-//!     update_tl(1, &control);
-//!
-//!     let h = thread::spawn({
-//!         // Clone control for the new thread.
-//!         let control = control.clone();
-//!         move || {
-//!             update_tl(10, &control);
-//!         }
-//!     });
-//!     h.join().unwrap();
-//!
-//!     // Take and accumulate the thread-local value from the main thread.
-//!     control.take_own_tl();
-//!
-//!     // Different ways to print the accumulated value
-//!
-//!     println!("accumulated={}", control.acc().deref());
-//!
-//!     let acc = control.acc();
-//!     println!("accumulated={}", acc.deref());
-//!     drop(acc);
-//!
-//!     control.with_acc(|acc| println!("accumulated={}", acc));
-//!
-//!     let acc = control.clone_acc();
-//!     println!("accumulated={}", acc);
-//!
-//!     let acc = control.take_acc(0);
-//!     println!("accumulated={}", acc);
-//! }
-//! ```
+#![doc = include_str!("../../examples/tlm_joined_i32_accumulator.rs")]
+//! ````
+
 //!
 //! ## Other examples
 //!

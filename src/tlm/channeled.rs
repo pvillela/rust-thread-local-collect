@@ -13,91 +13,11 @@
 //! [`Control::clone_acc`], to retrieve a partially accumulated value before all threads terminate.
 //!
 //! ## Usage pattern
-//!
-//! Here's an outline of how this little framework can be used:
-//!
+
 //! ```rust
-//! use std::{
-//!     ops::Deref,
-//!     thread::{self, ThreadId},
-//!     time::Duration,
-//! };
-//! use thread_local_collect::tlm::channeled::{Control, Holder};
-//!
-//! // Define your data type, e.g.:
-//! type Data = i32;
-//!
-//! // Define your accumulated value type.
-//! type AccValue = i32;
-//!
-//! // Define your thread-local:
-//! thread_local! {
-//!     static MY_TL: Holder<Data> = Holder::new();
-//! }
-//!
-//! // Define your accumulation operation.
-//! fn op(data: Data, acc: &mut AccValue, _: ThreadId) {
-//!     *acc += data;
-//! }
-//!
-//! // Create a function to send the thread-local value:
-//! fn send_tl_data(value: Data, control: &Control<Data, AccValue>) {
-//!     control.send_data(value);
-//! }
-//!
-//! fn main() {
-//!     let control = Control::new(&MY_TL, 0, op);
-//!
-//!     let h = thread::spawn({
-//!         // Clone control for the new thread.
-//!         let control = control.clone();
-//!         move || {
-//!             for _ in 0..10 {
-//!                 send_tl_data(10, &control);
-//!                 thread::sleep(Duration::from_millis(10));
-//!             }
-//!         }
-//!     });
-//!
-//!     send_tl_data(1, &control);
-//!
-//!     control.start_receiving_tls().unwrap();
-//!
-//!     // Print current accumulated value.
-//!     thread::sleep(Duration::from_millis(30));
-//!     println!("accumulated={}", control.acc().deref());
-//!
-//!     send_tl_data(1, &control);
-//!
-//!     thread::sleep(Duration::from_millis(20));
-//!     control.stop_receiving_tls();
-//!
-//!     // Print current accumulated value.
-//!     println!("accumulated={}", control.acc().deref());
-//!     thread::sleep(Duration::from_millis(20));
-//!
-//!     h.join().unwrap();
-//!
-//!     // Drain channel.
-//!     control.drain_tls();
-//!
-//!     // Different ways to print the accumulated value
-//!
-//!     println!("accumulated={}", control.acc().deref());
-//!
-//!     let acc = control.acc();
-//!     println!("accumulated={}", acc.deref());
-//!     drop(acc);
-//!
-//!     control.with_acc(|acc| println!("accumulated={}", acc));
-//!
-//!     let acc = control.clone_acc();
-//!     println!("accumulated={}", acc);
-//!
-//!     let acc = control.take_acc(0);
-//!     println!("accumulated={}", acc);
-//! }
+#![doc = include_str!("../../examples/tlm_channeled_i32_accumulator.rs")]
 //! ````
+
 //!
 //! ## Other examples
 //!
