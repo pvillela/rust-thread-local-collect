@@ -43,7 +43,7 @@ fn main() {
             thread::spawn({
                 move || {
                     // Send data from thread to control object.
-                    control.send_data(i, op);
+                    control.aggregate_data(i, op);
                 }
             })
         })

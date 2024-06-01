@@ -4,10 +4,11 @@
 //! [overview and core concepts](crate)), including the ability to inspect
 //! the accumulated value before participating threads have terminated. The following features and constraints apply ...
 //! - Values may be collected from the thread responsible for collection/aggregation.
-//! - The participating threads *send* data to a clonable `control` object instance that aggregates the values.
-//! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
-//! threads have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
+//! - The participating threads update thread-local data via the clonable `control` object which is also
+//! used to aggregate the values.
 //! - The [`Control::probe_tls`] function can be called at any time to return a clone of the current aggregated value.
+//! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
+//! threads (other than the thread responsible for collection) have terminated.
 //!
 //! ## Usage pattern
 
@@ -28,7 +29,7 @@ use crate::tlm::probed::{Control as ControlInner, Holder as HolderInner, P};
 /// Specialization of [`ControlRestrG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
 ///
-/// `T` is the type of the data sent from threads for accumulation and `U` is the type of the accumulated value.
+/// `U` is the type of the accumulated value.
 /// Partially accumulated values are held in thread-locals of type [`Holder<U>`].
 pub type Control<U> = ControlRestrG<P<U, Option<U>>, U>;
 
@@ -112,8 +113,8 @@ mod tests {
         let mut control = Control::new(&MY_TL, HashMap::new, op_r);
 
         {
-            control.send_data((1, Foo("a".to_owned())), op);
-            control.send_data((2, Foo("b".to_owned())), op);
+            control.aggregate_data((1, Foo("a".to_owned())), op);
+            control.aggregate_data((2, Foo("b".to_owned())), op);
         }
 
         let tid_own = thread::current().id();
@@ -135,8 +136,8 @@ mod tests {
                             lock[i] = thread::current().id();
                             drop(lock);
 
-                            control.send_data((1, Foo("a".to_owned() + &si)), op);
-                            control.send_data((2, Foo("b".to_owned() + &si)), op);
+                            control.aggregate_data((1, Foo("a".to_owned() + &si)), op);
+                            control.aggregate_data((2, Foo("b".to_owned() + &si)), op);
                         }
                     })
                 })
@@ -173,8 +174,8 @@ mod tests {
     fn own_thread_only_no_probe() {
         let mut control = Control::new(&MY_TL, HashMap::new, op_r);
 
-        control.send_data((1, Foo("a".to_owned())), op);
-        control.send_data((2, Foo("b".to_owned())), op);
+        control.aggregate_data((1, Foo("a".to_owned())), op);
+        control.aggregate_data((2, Foo("b".to_owned())), op);
 
         let tid_own = thread::current().id();
         let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
@@ -211,7 +212,7 @@ mod tests {
 
                 let mut process_value = |gate: u8, k: i32, v: Foo| {
                     main_thread_gater.wait_for(gate);
-                    control.send_data((k, v.clone()), op);
+                    control.aggregate_data((k, v.clone()), op);
                     my_map.insert(k, v);
                     expected_acc_mutex
                         .try_lock()
@@ -227,8 +228,8 @@ mod tests {
             });
 
             {
-                control.send_data((1, Foo("a".to_owned())), op);
-                control.send_data((2, Foo("b".to_owned())), op);
+                control.aggregate_data((1, Foo("a".to_owned())), op);
+                control.aggregate_data((2, Foo("b".to_owned())), op);
                 let my_map = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
 
                 let mut map = expected_acc_mutex.try_lock().unwrap();

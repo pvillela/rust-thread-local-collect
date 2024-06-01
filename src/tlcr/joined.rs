@@ -3,8 +3,8 @@
 //! [overview and core concepts](crate)). The following features and constraints apply ...
 //! - Values may be collected from the thread responsible for collection/aggregation, provided that the `control`
 //! object of type [`Control`] is created on that thread and is not cloned by that thread.
-//! - The participating threads *send* data to a clonable `control` object which contains a
-//! [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance that aggregates the values.
+//! - The participating threads update thread-local data via the clonable `control` object which contains a
+//! [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance and aggregates the values.
 //! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
 //! threads have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
 //!
@@ -30,7 +30,7 @@ use thiserror::Error;
 use thread_local::ThreadLocal;
 
 #[derive(Error, Debug, PartialEq)]
-/// Method was called while some thread that sent a value for accumulation was still active.
+/// Method was called while some thread that contributed a value for accumulation was still active.
 #[error("method called while thread-locals were arctive")]
 pub struct ActiveThreadLocalsError;
 

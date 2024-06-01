@@ -82,7 +82,7 @@ fn main() {
 
             let mut process_value = |gate: u8, k: i32, v: Foo| {
                 main_thread_gater.wait_for(gate);
-                control.send_data((k, v.clone()), op);
+                control.aggregate_data((k, v.clone()), op);
                 my_map.insert(k, v);
                 expected_acc_mutex
                     .try_lock()
@@ -98,8 +98,8 @@ fn main() {
         });
 
         {
-            control.send_data((1, Foo("a".to_owned())), op);
-            control.send_data((2, Foo("b".to_owned())), op);
+            control.aggregate_data((1, Foo("a".to_owned())), op);
+            control.aggregate_data((2, Foo("b".to_owned())), op);
             let my_map = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
 
             let mut map = expected_acc_mutex.try_lock().unwrap();

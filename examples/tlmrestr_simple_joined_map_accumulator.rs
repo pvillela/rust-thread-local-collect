@@ -75,8 +75,8 @@ fn main() {
                         lock[i] = thread::current().id();
                         drop(lock);
 
-                        control.send_data((1, Foo("a".to_owned() + &si)), op);
-                        control.send_data((2, Foo("b".to_owned() + &si)), op);
+                        control.aggregate_data((1, Foo("a".to_owned() + &si)), op);
+                        control.aggregate_data((2, Foo("b".to_owned() + &si)), op);
                     }
                 })
             })

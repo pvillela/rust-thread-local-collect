@@ -4,11 +4,11 @@
 //! the accumulated value before participating threads have terminated. The following features and constraints apply ...
 //! - Values may be collected from the thread responsible for collection/aggregation, provided that the `control`
 //! object of type [`Control`] is created on that thread and is not cloned by that thread.
-//! - The participating threads *send* data to a clonable `control` object which contains a
-//! [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance that aggregates the values.
-//! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
-//! threads have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
+//! - The participating threads update thread-local data via the clonable `control` object which contains a
+//! [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance and aggregates the values.
 //! - The [`Control::probe_tls`] function can be called at any time to return a clone of the current aggregated value.
+//! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
+//! threads (other than the thread responsible for collection) have terminated.
 //!
 //! ## Usage pattern
 
@@ -34,7 +34,7 @@ use thread_local::ThreadLocal;
 const POISONED_CONTROL_MUTEX: &str = "poisoned control mutex";
 
 #[derive(Error, Debug, PartialEq)]
-/// Method was called while some thread that sent a value for accumulation was still active.
+/// Method was called while some thread that contributed a value for accumulation was still active.
 #[error("method called while thread-locals were arctive")]
 pub struct ActiveThreadLocalsError;
 

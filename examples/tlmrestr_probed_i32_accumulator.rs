@@ -36,15 +36,15 @@ fn main() {
     let mut control = Control::new(&MY_TL, acc_zero, op_r);
 
     // Send data to control from main thread if desired.
-    control.send_data(1, op);
+    control.aggregate_data(1, op);
 
     let h = thread::spawn({
         // Clone control for use in the new thread.
         let control = control.clone();
         move || {
-            control.send_data(10, op);
+            control.aggregate_data(10, op);
             thread::sleep(Duration::from_millis(10));
-            control.send_data(20, op);
+            control.aggregate_data(20, op);
         }
     });
 

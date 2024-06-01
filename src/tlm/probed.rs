@@ -5,10 +5,9 @@
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
 //! accumulated value when the thread-local variables are dropped following thread termination.
-//! - [`Control::probe_tls`] may be executed at any time to get a clone of the current accumulated value.
+//! - The [`Control::probe_tls`] function can be called at any time to return a clone of the current aggregated value.
 //! - After all participating threads other than the thread responsible for collection/aggregation have
-//! terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection,
-//! a call to [`Control::take_tls`] followed by a call to one of the accumulator retrieval functions
+//! terminated, a call to [`Control::take_tls`] followed by a call to one of the accumulator retrieval functions
 //! will return the final aggregated value.
 //!
 //! ## Usage pattern

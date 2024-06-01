@@ -1,4 +1,4 @@
-//! Provides a wrapper for [`crate::tlm::common::ControlG`] to support a `send_data` and `drain_tls` API
+//! Provides a wrapper for [`crate::tlm::common::ControlG`] to support an API
 //! similar to that of [`crate::tlcr`] submodules.
 
 use super::super::common::{
@@ -36,7 +36,7 @@ where
     ///
     /// - `tl` - reference to thread-local static.
     /// - `acc_zero` - produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
-    /// - `op` - operation that combines the accumulated value with data sent from threads.
+    /// - `op` - operation that combines the accumulated value with data contributed from threads.
     /// - `op_r` - binary operation that reduces two accumulated values into one.
     pub fn new(
         tl: &'static LocalKey<P::Hldr>,
@@ -106,7 +106,7 @@ where
     }
 
     /// Called from a thread to aggregate data with aggregation operation `op`.
-    pub fn send_data<T>(&self, data: T, op: impl FnOnce(T, &mut U, ThreadId)) {
+    pub fn aggregate_data<T>(&self, data: T, op: impl FnOnce(T, &mut U, ThreadId)) {
         self.with_tl_acc_mut(|acc| op(data, acc, thread::current().id()))
     }
 }
