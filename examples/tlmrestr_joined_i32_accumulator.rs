@@ -1,7 +1,7 @@
-//! Simple example usage of [`thread_local_collect::tlm::send::simple_joined`].
+//! Simple example usage of [`thread_local_collect::tlm::restr::joined`].
 
 use std::thread::{self, ThreadId};
-use thread_local_collect::tlm::send::simple_joined::{Control, Holder};
+use thread_local_collect::tlm::restr::joined::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;
@@ -34,7 +34,8 @@ fn main() {
     // Instantiate the control object.
     let mut control = Control::new(&MY_TL, acc_zero, op_r);
 
-    // So NOT send data to control from main thread as it will not be accumulated.
+    // Send data to control from main thread if desired.
+    control.send_data(100, op);
 
     let hs = (0..NTHREADS)
         .map(|i| {

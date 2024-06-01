@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::tlm::send::simple_joined`].
+//! Example usage of [`thread_local_collect::tlm::restr::simple_joined`].
 
 use std::{
     collections::HashMap,
@@ -8,7 +8,7 @@ use std::{
 };
 use thread_local_collect::{
     test_support::assert_eq_and_println,
-    tlm::send::simple_joined::{Control, Holder},
+    tlm::restr::simple_joined::{Control, Holder},
 };
 
 #[derive(Debug, Clone, PartialEq)]

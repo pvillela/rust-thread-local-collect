@@ -11,10 +11,10 @@ use std::{
     thread::{self, LocalKey, ThreadId},
 };
 
-/// Wrapper of [`crate::tlm::common::ControlG`] that provides  a`send_data` and `drain_tls` API
+/// Wrapper of [`crate::tlm::common::ControlG`] that provides  an API
 /// similar to that of [`crate::tlcr`] submodules. Used to implement [`super::joined::Control`],
 /// [`super::probed::Control`], and [`super::simple_joined::Control`].
-pub struct ControlSendG<P, U>
+pub struct ControlRestrG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
@@ -26,13 +26,13 @@ where
     acc_zero: fn() -> U,
 }
 
-impl<P, U> ControlSendG<P, U>
+impl<P, U> ControlRestrG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
     P::CtrlState: CtrlStateCore<P> + New<P::CtrlState, Arg = P::Acc>,
 {
-    /// Instantiates a [`ControlSendG`] object.
+    /// Instantiates a [`ControlRestrG`] object.
     ///
     /// - `tl` - reference to thread-local static.
     /// - `acc_zero` - produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
@@ -62,7 +62,7 @@ where
 }
 
 #[doc(hidden)]
-/// Defines `take_tls` interface provided by different [`ControlSendG`] specializations.
+/// Defines `take_tls` interface provided by different [`ControlRestrG`] specializations.
 pub trait WithTakeTls<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
@@ -71,7 +71,7 @@ where
     fn take_tls(control: &ControlG<P>);
 }
 
-impl<P, U> ControlSendG<P, U>
+impl<P, U> ControlRestrG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
@@ -87,7 +87,7 @@ where
     }
 }
 
-impl<P, U> ControlSendG<P, U>
+impl<P, U> ControlRestrG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
@@ -96,22 +96,22 @@ where
     P::Hldr: HldrLink<P> + HldrData<P>,
 {
     /// Called from a thread to access the thread's local accumulated value.
-    pub fn with_local_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
+    pub fn with_tl_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
         self.control.with_data(f)
     }
 
     /// Called from a thread to mutably access the thread's local accumulated value.
-    pub fn with_local_acc_mut<V>(&self, f: impl FnOnce(&mut U) -> V) -> V {
+    pub fn with_tl_acc_mut<V>(&self, f: impl FnOnce(&mut U) -> V) -> V {
         self.control.with_data_mut(f)
     }
 
     /// Called from a thread to aggregate data with aggregation operation `op`.
     pub fn send_data<T>(&self, data: T, op: impl FnOnce(T, &mut U, ThreadId)) {
-        self.with_local_acc_mut(|acc| op(data, acc, thread::current().id()))
+        self.with_tl_acc_mut(|acc| op(data, acc, thread::current().id()))
     }
 }
 
-impl<P, U> Clone for ControlSendG<P, U>
+impl<P, U> Clone for ControlRestrG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 {
@@ -123,7 +123,7 @@ where
     }
 }
 
-impl<P, U> Debug for ControlSendG<P, U>
+impl<P, U> Debug for ControlRestrG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
@@ -136,10 +136,10 @@ where
 
 /// Comment out the manual Clone implementation above, deribe Clone, and see what happens below.
 #[allow(unused)]
-fn demonstrate_need_for_manual_clone<P, U>(x: ControlSendG<P, U>, y: &ControlSendG<P, U>)
+fn demonstrate_need_for_manual_clone<P, U>(x: ControlRestrG<P, U>, y: &ControlRestrG<P, U>)
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 {
-    let x1: ControlSendG<P, U> = x.clone();
-    let y1: ControlSendG<P, U> = y.clone();
+    let x1: ControlRestrG<P, U> = x.clone();
+    let y1: ControlRestrG<P, U> = y.clone();
 }

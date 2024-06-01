@@ -1,7 +1,7 @@
 //! Modules that use the [`std::thread_local`] macro.
 
 pub(crate) mod common;
-pub mod send;
+pub mod restr;
 
 #[doc(hidden)]
 pub(crate) mod tmap_d;

@@ -1,9 +1,9 @@
-//! Benchmark for [`thread_local_collect::tlm::send::simple_joined`].
+//! Benchmark for [`thread_local_collect::tlm::restr::probed`].
 
 use super::{bench, BenchTarget, Wrap, NENTRIES, NTHREADS};
 use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
-use thread_local_collect::tlm::send::simple_joined::{Control, Holder};
+use thread_local_collect::tlm::restr::probed::{Control, Holder};
 
 mod map_bench {
     pub use super::super::map_data::send::{op, op_r, AccValue, Data, Foo};
@@ -59,12 +59,12 @@ mod i32_bench {
     }
 }
 
-pub fn tlmsend_simple_joined_map_bench() {
+pub fn tlmrestr_probed_map_bench() {
     use map_bench::*;
     bench(control());
 }
 
-pub fn tlmsend_simple_joined_i32_bench() {
+pub fn tlmrestr_probed_i32_bench() {
     use i32_bench::*;
     bench(control());
 }

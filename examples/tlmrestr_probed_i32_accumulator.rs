@@ -1,10 +1,10 @@
-//! Simple example usage of [`thread_local_collect::tlm::send::probed`].
+//! Simple example usage of [`thread_local_collect::tlm::restr::probed`].
 
 use std::{
     thread::{self, ThreadId},
     time::Duration,
 };
-use thread_local_collect::tlm::send::probed::{Control, Holder};
+use thread_local_collect::tlm::restr::probed::{Control, Holder};
 
 // Define your data type, e.g.:
 type Data = i32;

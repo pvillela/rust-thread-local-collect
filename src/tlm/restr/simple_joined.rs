@@ -1,8 +1,10 @@
-//! Variant of module [`crate::tlm::joined`] with a `send` API similar to that of [`crate::tlcr::joined`].
+//! Variant of module [`crate::tlm::simple_joined`] with a `send` API similar to that of [`crate::tlcr::joined`].
 //!
 //! This module supports the collection and aggregation of values across threads (see package
 //! [overview and core concepts](crate)). The following features and constraints apply ...
-//! - Values may be collected from the thread responsible for collection/aggregation.
+//! - The designated thread-local variable should NOT be used in the thread responsible for
+//! collection/aggregation. If this condition is violated, the thread-local value on that thread will NOT
+//! be collected and aggregated.
 //! - The participating threads *send* data to a clonable `control` object instance that aggregates the values.
 //! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
 //! threads have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection.
@@ -10,39 +12,37 @@
 //! ## Usage pattern
 
 //! ```rust
-#![doc = include_str!("../../../examples/tlmsend_joined_i32_accumulator.rs")]
+#![doc = include_str!("../../../examples/tlmrestr_simple_joined_i32_accumulator.rs")]
 //! ````
 
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/tlmsend_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlmsend_joined_map_accumulator.rs).
+//! See another example at [`examples/tlmrestr_simple_joined_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlmrestr_simple_joined_map_accumulator.rs).
 
-pub use super::control_send::ControlSendG;
+pub use super::control_restr::ControlRestrG;
 
-use super::control_send::WithTakeTls;
-use crate::tlm::joined::{Control as ControlInner, Holder as HolderInner, P as POrig};
+use super::control_restr::WithTakeTls;
+use crate::tlm::simple_joined::{Control as ControlOrig, Holder as HolderOrig, P as POrig};
 
-/// Specialization of [`ControlSendG`] for this module.
+/// Specialization of [`ControlRestrG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
 ///
 /// `T` is the type of the data sent from threads for accumulation and `U` is the type of the accumulated value.
 /// Partially accumulated values are held in thread-locals of type [`Holder<U>`].
-pub type Control<U> = ControlSendG<POrig<U, Option<U>>, U>;
+pub type Control<U> = ControlRestrG<POrig<U, Option<U>>, U>;
 
 impl<U> WithTakeTls<POrig<U, Option<U>>, U> for Control<U>
 where
     U: 'static,
 {
-    fn take_tls(control: &ControlInner<U, Option<U>>) {
-        control.take_own_tl();
-    }
+    fn take_tls(_control: &ControlOrig<U, Option<U>>) {}
 }
 
-/// Specialization of [`crate::tlm::joined::Holder`] for this module.
+/// Specialization of [`crate::tlm::simple_joined::Holder`] for this module.
 /// Holds thread-local partially accumulated data of type `U` and a smart pointer to a [`Control<U>`],
 /// enabling the linkage of the held data with the control object.
-pub type Holder<U> = HolderInner<U, Option<U>>;
+pub type Holder<U> = HolderOrig<U, Option<U>>;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
@@ -95,16 +95,8 @@ mod tests {
     const NTHREADS: usize = 5;
 
     #[test]
-    fn own_thread_and_explicit_joins() {
+    fn explicit_joins() {
         let mut control = Control::new(&MY_TL, HashMap::new, op_r);
-
-        {
-            control.send_data((1, Foo("a".to_owned())), op);
-            control.send_data((2, Foo("b".to_owned())), op);
-        }
-
-        let tid_own = thread::current().id();
-        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
 
         // This is directly defined as a reference to prevent the move closure below from moving the
         // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
@@ -146,12 +138,11 @@ mod tests {
                     (tid_i, map_i)
                 })
                 .collect::<Vec<_>>();
-            let mut map = maps.into_iter().collect::<HashMap<_, _>>();
-            map.insert(tid_own, map_own);
+            let map = maps.into_iter().collect::<HashMap<_, _>>();
 
             {
                 let acc = control.drain_tls();
-                assert_eq_and_println(&acc, &map, "Accumulator check");
+                assert_eq_and_println(&acc, &map, "after drain_tls");
             }
 
             // drain_tls again
@@ -163,25 +154,9 @@ mod tests {
     }
 
     #[test]
-    fn own_thread_only() {
-        let mut control = Control::new(&MY_TL, HashMap::new, op_r);
-
-        control.send_data((1, Foo("a".to_owned())), op);
-        control.send_data((2, Foo("b".to_owned())), op);
-
-        let tid_own = thread::current().id();
-        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-
-        let map = HashMap::from([(tid_own, map_own)]);
-
-        let acc = control.drain_tls();
-        assert_eq_and_println(&acc, &map, "Accumulator check");
-    }
-
-    #[test]
     fn no_thread() {
         let mut control = Control::new(&MY_TL, HashMap::new, op_r);
         let acc = control.drain_tls();
-        assert_eq_and_println(&acc, &HashMap::new(), "empty accumulatore expected");
+        assert_eq_and_println(&acc, &HashMap::new(), "after drain_tls");
     }
 }

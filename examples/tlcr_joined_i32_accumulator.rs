@@ -31,7 +31,7 @@ fn main() {
     let mut control = Control::new(acc_zero, op_r);
 
     // Send data to control from main thread if desired.
-    control.send_data(100, op);
+    control.aggregate_data(100, op);
 
     let hs = (0..NTHREADS)
         .map(|i| {
@@ -40,7 +40,7 @@ fn main() {
             thread::spawn({
                 move || {
                     // Send data from thread to control object.
-                    control.send_data(i, op);
+                    control.aggregate_data(i, op);
                 }
             })
         })

@@ -8,7 +8,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use targets::{
     tlcr_joined_i32_bench, tlcr_probed_i32_bench, tlm_channeled_nobg_i32_bench,
     tlm_joined_i32_bench, tlm_probed_i32_bench, tlm_simple_joined_i32_bench,
-    tlmsend_joined_i32_bench, tlmsend_probed_i32_bench, tlmsend_simple_joined_i32_bench,
+    tlmrestr_joined_i32_bench, tlmrestr_probed_i32_bench, tlmrestr_simple_joined_i32_bench,
 };
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -23,11 +23,11 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(tlm_simple_joined_i32_bench)
     });
     group.bench_function("tlm_probed_i32", |b| b.iter(tlm_probed_i32_bench));
-    group.bench_function("tlmsend_joined_i32", |b| b.iter(tlmsend_joined_i32_bench));
-    group.bench_function("tlmsend_simple_joined_i32", |b| {
-        b.iter(tlmsend_simple_joined_i32_bench)
+    group.bench_function("tlmrestr_joined_i32", |b| b.iter(tlmrestr_joined_i32_bench));
+    group.bench_function("tlmrestr_simple_joined_i32", |b| {
+        b.iter(tlmrestr_simple_joined_i32_bench)
     });
-    group.bench_function("tlmsend_probed_i32", |b| b.iter(tlmsend_probed_i32_bench));
+    group.bench_function("tlmrestr_probed_i32", |b| b.iter(tlmrestr_probed_i32_bench));
 
     group.finish();
 }

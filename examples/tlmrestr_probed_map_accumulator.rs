@@ -1,4 +1,4 @@
-//! Example usage of [`thread_local_collect::tlm::send::probed`].
+//! Example usage of [`thread_local_collect::tlm::restr::probed`].
 
 use std::{
     collections::HashMap,
@@ -9,7 +9,7 @@ use std::{
 };
 use thread_local_collect::{
     test_support::{assert_eq_and_println, ThreadGater},
-    tlm::send::probed::{Control, Holder},
+    tlm::restr::probed::{Control, Holder},
 };
 
 #[derive(Debug, Clone, PartialEq)]

@@ -12,7 +12,7 @@ mod map_bench {
     impl BenchTarget<Data, AccValue> for Control<AccValue> {
         fn add_value(&self, t_idx: i32, i_idx: i32) {
             let si = black_box(t_idx.to_string());
-            self.send_data((i_idx, Foo("a".to_owned() + &si)), op);
+            self.aggregate_data((i_idx, Foo("a".to_owned() + &si)), op);
         }
 
         fn acc(&mut self) -> impl Deref<Target = AccValue> {
@@ -29,7 +29,7 @@ mod i32_bench {
 
     impl BenchTarget<Data, AccValue> for Control<AccValue> {
         fn add_value(&self, t_idx: i32, i_idx: i32) {
-            self.send_data(t_idx * i_idx, op);
+            self.aggregate_data(t_idx * i_idx, op);
         }
 
         fn acc(&mut self) -> impl Deref<Target = AccValue> {

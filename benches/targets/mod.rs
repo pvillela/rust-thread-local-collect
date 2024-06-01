@@ -21,11 +21,11 @@ pub use tlcr_joined_bench::*;
 mod tlcr_probed_bench;
 pub use tlcr_probed_bench::*;
 
-mod tlmsend_joined_bench;
-pub use tlmsend_joined_bench::*;
+mod tlmrestr_joined_bench;
+pub use tlmrestr_joined_bench::*;
 
-mod tlmsend_probed_bench;
-pub use tlmsend_probed_bench::*;
+mod tlmrestr_probed_bench;
+pub use tlmrestr_probed_bench::*;
 
-mod tlmsend_simple_joined_bench;
-pub use tlmsend_simple_joined_bench::*;
+mod tlmrestr_simple_joined_bench;
+pub use tlmrestr_simple_joined_bench::*;

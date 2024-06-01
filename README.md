@@ -40,13 +40,13 @@ These-modules use the [`ThreadLocal`](https://docs.rs/thread_local/latest/thread
 - [`tlcr::joined`] -- The participating threads use a `send_data` method on the control object to provide data for aggregation. After all participating threads other than the thread responsible for collection/aggregation have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection, the accumulated value may be retrieved.
 - [`tlcr::probed`] -- In addition to the capabilities of [`tlcr::joined`], this module also allows a partial accumulation of values to be inspected before the various threads have terminated. This is accomplished by using a [`std::sync::Mutex`] in the [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html) object.
 
-### [`tlm::send`] sub-modules
+### [`tlm::restr`] sub-modules
 
 These modules use a wrapper around the corresponding [`tlm`] sub-modules to provide an API similar to that of the [`tlcr`] sub-modules.
 
-- [`tlm::send::joined`] -- Wrapper of [`tlm::joined`] providing an API and capabilities similar to those of [`tlcr::joined`].
-- [`tlm::send::probed`] -- Wrapper of [`tlm::probed`] providing an API and capabilities similar to those of [`tlcr::probed`].
-- [`tlm::send::simple_joined`] -- Wrapper of [`tlm::simple_joined`] providing an API and capabilities similar to those of [`tlcr::joined`], but without the ability to aggregate values from the thread responsible for collection/aggregation.
+- [`tlm::restr::joined`] -- Wrapper of [`tlm::joined`] providing an API and capabilities similar to those of [`tlcr::joined`].
+- [`tlm::restr::probed`] -- Wrapper of [`tlm::probed`] providing an API and capabilities similar to those of [`tlcr::probed`].
+- [`tlm::restr::simple_joined`] -- Wrapper of [`tlm::simple_joined`] providing an API and capabilities similar to those of [`tlcr::joined`], but without the ability to aggregate values from the thread responsible for collection/aggregation.
 
 ## Benchmarks
 

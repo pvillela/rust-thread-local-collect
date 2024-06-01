@@ -7,6 +7,6 @@
     tlm_simple_joined_i32 \
     tlm_joined_i32 \
     tlm_probed_i32 \
-    tlmsend_simple_joined_i32 \
-    tlmsend_joined_i32 \
-    tlmsend_probed_i32 
+    tlmrestr_simple_joined_i32 \
+    tlmrestr_joined_i32 \
+    tlmrestr_probed_i32 

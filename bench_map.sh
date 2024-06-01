@@ -7,6 +7,6 @@
     tlm_simple_joined_map \
     tlm_joined_map \
     tlm_probed_map \
-    tlmsend_simple_joined_map \
-    tlmsend_joined_map \
-    tlmsend_probed_map 
+    tlmrestr_simple_joined_map \
+    tlmrestr_joined_map \
+    tlmrestr_probed_map 

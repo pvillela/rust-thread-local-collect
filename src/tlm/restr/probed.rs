@@ -12,25 +12,25 @@
 //! ## Usage pattern
 
 //! ```rust
-#![doc = include_str!("../../../examples/tlmsend_probed_i32_accumulator.rs")]
+#![doc = include_str!("../../../examples/tlmrestr_probed_i32_accumulator.rs")]
 //! ````
 
 //!
 //! ## Other examples
 //!
-//! See another example at [`examples/tlmsend_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlmsend_probed_map_accumulator.rs).
+//! See another example at [`examples/tlmrestr_probed_map_accumulator`](https://github.com/pvillela/rust-thread-local-collect/blob/main/examples/tlmrestr_probed_map_accumulator.rs).
 
-pub use super::control_send::ControlSendG;
+pub use super::control_restr::ControlRestrG;
 
-use super::control_send::WithTakeTls;
+use super::control_restr::WithTakeTls;
 use crate::tlm::probed::{Control as ControlInner, Holder as HolderInner, P};
 
-/// Specialization of [`ControlSendG`] for this module.
+/// Specialization of [`ControlRestrG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
 ///
 /// `T` is the type of the data sent from threads for accumulation and `U` is the type of the accumulated value.
 /// Partially accumulated values are held in thread-locals of type [`Holder<U>`].
-pub type Control<U> = ControlSendG<P<U, Option<U>>, U>;
+pub type Control<U> = ControlRestrG<P<U, Option<U>>, U>;
 
 impl<U> WithTakeTls<P<U, Option<U>>, U> for Control<U>
 where

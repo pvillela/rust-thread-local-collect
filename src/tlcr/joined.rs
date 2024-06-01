@@ -96,22 +96,22 @@ where
     }
 
     /// Called from a thread to access the thread's local accumulated value.
-    pub fn with_local_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
+    pub fn with_tl_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
         let cell = self.state.get_or(|| RefCell::new((self.acc_zero)()));
         let u = cell.borrow();
         f(&u)
     }
 
     /// Called from a thread to mutably access the thread's local accumulated value.
-    pub fn with_local_acc_mut<V>(&self, f: impl FnOnce(&mut U) -> V) -> V {
+    pub fn with_tl_acc_mut<V>(&self, f: impl FnOnce(&mut U) -> V) -> V {
         let cell = self.state.get_or(|| RefCell::new((self.acc_zero)()));
         let mut u = cell.borrow_mut();
         f(&mut u)
     }
 
     /// Called from a thread to aggregate data with aggregation operation `op`.
-    pub fn send_data<T>(&self, data: T, op: impl FnOnce(T, &mut U, ThreadId)) {
-        self.with_local_acc_mut(|acc| op(data, acc, thread::current().id()))
+    pub fn aggregate_data<T>(&self, data: T, op: impl FnOnce(T, &mut U, ThreadId)) {
+        self.with_tl_acc_mut(|acc| op(data, acc, thread::current().id()))
     }
 
     /// Returns the accumulation of the thread-local values, replacing the state of `self` with an empty
@@ -190,8 +190,8 @@ mod tests {
         let mut control = Control::new(HashMap::new, op_r);
 
         {
-            control.send_data((1, Foo("a".to_owned())), op);
-            control.send_data((2, Foo("b".to_owned())), op);
+            control.aggregate_data((1, Foo("a".to_owned())), op);
+            control.aggregate_data((2, Foo("b".to_owned())), op);
         }
 
         let tid_own = thread::current().id();
@@ -213,8 +213,8 @@ mod tests {
                             lock[i] = thread::current().id();
                             drop(lock);
 
-                            control.send_data((1, Foo("a".to_owned() + &si)), op);
-                            control.send_data((2, Foo("b".to_owned() + &si)), op);
+                            control.aggregate_data((1, Foo("a".to_owned() + &si)), op);
+                            control.aggregate_data((2, Foo("b".to_owned() + &si)), op);
                         }
                     })
                 })
@@ -257,8 +257,8 @@ mod tests {
     fn own_thread_only() {
         let mut control = Control::new(HashMap::new, op_r);
 
-        control.send_data((1, Foo("a".to_owned())), op);
-        control.send_data((2, Foo("b".to_owned())), op);
+        control.aggregate_data((1, Foo("a".to_owned())), op);
+        control.aggregate_data((2, Foo("b".to_owned())), op);
 
         let tid_own = thread::current().id();
         let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
@@ -283,8 +283,8 @@ mod tests {
         thread::spawn({
             let control = control.clone();
             move || {
-                control.send_data((1, Foo("a".to_owned())), op);
-                control.send_data((2, Foo("b".to_owned())), op);
+                control.aggregate_data((1, Foo("a".to_owned())), op);
+                control.aggregate_data((2, Foo("b".to_owned())), op);
             }
         });
 
