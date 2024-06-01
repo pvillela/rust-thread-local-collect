@@ -30,9 +30,9 @@ use crate::tlm::simple_joined::{Control as ControlOrig, Holder as HolderOrig, P 
 ///
 /// `T` is the type of the data sent from threads for accumulation and `U` is the type of the accumulated value.
 /// Partially accumulated values are held in thread-locals of type [`Holder<U>`].
-pub type Control<T, U> = ControlSendG<POrig<U, Option<U>>, T, U>;
+pub type Control<U> = ControlSendG<POrig<U, Option<U>>, U>;
 
-impl<T, U> WithTakeTls<POrig<U, Option<U>>, U> for Control<T, U>
+impl<U> WithTakeTls<POrig<U, Option<U>>, U> for Control<U>
 where
     U: 'static,
 {
@@ -40,7 +40,7 @@ where
 }
 
 /// Specialization of [`crate::tlm::simple_joined::Holder`] for this module.
-/// Holds thread-local partially accumulated data of type `U` and a smart pointer to a [`Control<T, U>`],
+/// Holds thread-local partially accumulated data of type `U` and a smart pointer to a [`Control<U>`],
 /// enabling the linkage of the held data with the control object.
 pub type Holder<U> = HolderOrig<U, Option<U>>;
 
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn explicit_joins() {
-        let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
+        let mut control = Control::new(&MY_TL, HashMap::new, op_r);
 
         // This is directly defined as a reference to prevent the move closure below from moving the
         // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
@@ -114,8 +114,8 @@ mod tests {
                             lock[i] = thread::current().id();
                             drop(lock);
 
-                            control.send_data((1, Foo("a".to_owned() + &si)));
-                            control.send_data((2, Foo("b".to_owned() + &si)));
+                            control.send_data((1, Foo("a".to_owned() + &si)), op);
+                            control.send_data((2, Foo("b".to_owned() + &si)), op);
                         }
                     })
                 })
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn no_thread() {
-        let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
+        let mut control = Control::new(&MY_TL, HashMap::new, op_r);
         let acc = control.drain_tls();
         assert_eq_and_println(&acc, &HashMap::new(), "after drain_tls");
     }

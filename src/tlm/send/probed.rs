@@ -30,9 +30,9 @@ use crate::tlm::probed::{Control as ControlInner, Holder as HolderInner, P};
 ///
 /// `T` is the type of the data sent from threads for accumulation and `U` is the type of the accumulated value.
 /// Partially accumulated values are held in thread-locals of type [`Holder<U>`].
-pub type Control<T, U> = ControlSendG<P<U, Option<U>>, T, U>;
+pub type Control<U> = ControlSendG<P<U, Option<U>>, U>;
 
-impl<T, U> WithTakeTls<P<U, Option<U>>, U> for Control<T, U>
+impl<U> WithTakeTls<P<U, Option<U>>, U> for Control<U>
 where
     U: 'static,
 {
@@ -41,7 +41,7 @@ where
     }
 }
 
-impl<T, U> Control<T, U>
+impl<U> Control<U>
 where
     U: Clone,
 {
@@ -53,7 +53,7 @@ where
 }
 
 /// Specialization of [`crate::tlm::probed::Holder`] for this module.
-/// Holds thread-local partially accumulated data of type `U` and a smart pointer to a [`Control<T, U>`],
+/// Holds thread-local partially accumulated data of type `U` and a smart pointer to a [`Control<U>`],
 /// enabling the linkage of the held data with the control object.
 pub type Holder<U> = HolderInner<U, Option<U>>;
 
@@ -109,11 +109,11 @@ mod tests {
 
     #[test]
     fn own_thread_and_explicit_joins_no_probe() {
-        let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
+        let mut control = Control::new(&MY_TL, HashMap::new, op_r);
 
         {
-            control.send_data((1, Foo("a".to_owned())));
-            control.send_data((2, Foo("b".to_owned())));
+            control.send_data((1, Foo("a".to_owned())), op);
+            control.send_data((2, Foo("b".to_owned())), op);
         }
 
         let tid_own = thread::current().id();
@@ -135,8 +135,8 @@ mod tests {
                             lock[i] = thread::current().id();
                             drop(lock);
 
-                            control.send_data((1, Foo("a".to_owned() + &si)));
-                            control.send_data((2, Foo("b".to_owned() + &si)));
+                            control.send_data((1, Foo("a".to_owned() + &si)), op);
+                            control.send_data((2, Foo("b".to_owned() + &si)), op);
                         }
                     })
                 })
@@ -171,10 +171,10 @@ mod tests {
 
     #[test]
     fn own_thread_only_no_probe() {
-        let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
+        let mut control = Control::new(&MY_TL, HashMap::new, op_r);
 
-        control.send_data((1, Foo("a".to_owned())));
-        control.send_data((2, Foo("b".to_owned())));
+        control.send_data((1, Foo("a".to_owned())), op);
+        control.send_data((2, Foo("b".to_owned())), op);
 
         let tid_own = thread::current().id();
         let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn own_thread_and_explicit_join_with_probe() {
-        let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
+        let mut control = Control::new(&MY_TL, HashMap::new, op_r);
 
         let main_tid = thread::current().id();
         println!("main_tid={:?}", main_tid);
@@ -211,7 +211,7 @@ mod tests {
 
                 let mut process_value = |gate: u8, k: i32, v: Foo| {
                     main_thread_gater.wait_for(gate);
-                    control.send_data((k, v.clone()));
+                    control.send_data((k, v.clone()), op);
                     my_map.insert(k, v);
                     expected_acc_mutex
                         .try_lock()
@@ -227,8 +227,8 @@ mod tests {
             });
 
             {
-                control.send_data((1, Foo("a".to_owned())));
-                control.send_data((2, Foo("b".to_owned())));
+                control.send_data((1, Foo("a".to_owned())), op);
+                control.send_data((2, Foo("b".to_owned())), op);
                 let my_map = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
 
                 let mut map = expected_acc_mutex.try_lock().unwrap();
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn no_thread() {
-        let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
+        let mut control = Control::new(&MY_TL, HashMap::new, op_r);
         let acc = control.drain_tls();
         assert_eq!(acc, HashMap::new(), "empty accumulator expected");
     }

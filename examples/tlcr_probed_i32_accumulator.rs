@@ -29,18 +29,18 @@ fn op_r(acc1: AccValue, acc2: AccValue) -> AccValue {
 
 fn main() {
     // Instantiate the control object.
-    let mut control = Control::new(acc_zero, op, op_r);
+    let mut control = Control::new(acc_zero, op_r);
 
     // Send data to control from main thread if desired.
-    control.send_data(1);
+    control.send_data(1, op);
 
     let h = thread::spawn({
         // Clone control for use in the new thread.
         let control = control.clone();
         move || {
-            control.send_data(10);
+            control.send_data(10, op);
             thread::sleep(Duration::from_millis(10));
-            control.send_data(20);
+            control.send_data(20, op);
         }
     });
 

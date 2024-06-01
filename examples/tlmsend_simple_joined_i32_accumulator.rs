@@ -32,7 +32,7 @@ const NTHREADS: i32 = 5;
 
 fn main() {
     // Instantiate the control object.
-    let mut control = Control::new(&MY_TL, acc_zero, op, op_r);
+    let mut control = Control::new(&MY_TL, acc_zero, op_r);
 
     // So NOT send data to control from main thread as it will not be accumulated.
 
@@ -43,7 +43,7 @@ fn main() {
             thread::spawn({
                 move || {
                     // Send data from thread to control object.
-                    control.send_data(i);
+                    control.send_data(i, op);
                 }
             })
         })

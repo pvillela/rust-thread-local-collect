@@ -40,14 +40,13 @@ pub struct ActiveThreadLocalsError;
 
 /// Controls the collection and accumulation of thread-local values.
 ///
-/// `T` is the type of the values *sent* to this object and `U` is the type of the accumulated value.
+/// `U` is the type of the accumulated value.
 ///
 /// This type holds the following:
 /// - A state object based on [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html).
 /// - A nullary closure that produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
-/// - An operation that combines the accumulated value with data sent from threads.
 /// - A binary operation that reduces two accumulated values into one.
-pub struct Control<T, U>
+pub struct Control<U>
 where
     U: Send,
 {
@@ -55,28 +54,24 @@ where
     state: Arc<ThreadLocal<Mutex<U>>>,
     /// Produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
     acc_zero: Arc<dyn Fn() -> U + Send + Sync>,
-    /// Operation that combines the accumulated value with data sent from threads.
-    #[allow(clippy::type_complexity)]
-    op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
     /// Binary operation that reduces two accumulated values into one.
     op_r: Arc<dyn Fn(U, U) -> U + Send + Sync>,
 }
 
-impl<T, U> Clone for Control<T, U>
+impl<U> Clone for Control<U>
 where
     U: Send,
 {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
-            op: self.op.clone(),
             op_r: self.op_r.clone(),
             acc_zero: self.acc_zero.clone(),
         }
     }
 }
 
-impl<T, U> Debug for Control<T, U>
+impl<U> Debug for Control<U>
 where
     U: Send + Debug,
 {
@@ -85,33 +80,42 @@ where
     }
 }
 
-impl<T, U> Control<T, U>
+impl<U> Control<U>
 where
     U: Send,
 {
     /// Instantiates a [`Control`] object.
     ///
     /// - `acc_zero` - produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
-    /// - `op` - operation that combines the accumulated value with data sent from threads.
     /// - `op_r` - binary operation that reduces two accumulated values into one.
     pub fn new(
         acc_zero: impl Fn() -> U + 'static + Send + Sync,
-        op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
         op_r: impl Fn(U, U) -> U + 'static + Send + Sync,
     ) -> Self {
         Control {
             state: Arc::new(ThreadLocal::new()),
             acc_zero: Arc::new(acc_zero),
-            op: Arc::new(op),
             op_r: Arc::new(op_r),
         }
     }
 
-    /// Called from a thread to send data to be aggregated.
-    pub fn send_data(&self, data: T) {
+    /// Called from a thread to access the thread's local accumulated value.
+    pub fn with_local_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
+        let cell = self.state.get_or(|| Mutex::new((self.acc_zero)()));
+        let u = cell.lock().expect(POISONED_CONTROL_MUTEX);
+        f(&u)
+    }
+
+    /// Called from a thread to mutably access the thread's local accumulated value.
+    pub fn with_local_acc_mut<V>(&self, f: impl FnOnce(&mut U) -> V) -> V {
         let cell = self.state.get_or(|| Mutex::new((self.acc_zero)()));
         let mut u = cell.lock().expect(POISONED_CONTROL_MUTEX);
-        (self.op)(data, &mut u, thread::current().id());
+        f(&mut u)
+    }
+
+    /// Called from a thread to aggregate data with aggregation operation `op`.
+    pub fn send_data<T>(&self, data: T, op: impl FnOnce(T, &mut U, ThreadId)) {
+        self.with_local_acc_mut(|acc| op(data, acc, thread::current().id()))
     }
 
     /// Returns the accumulation of the thread-local values, replacing the state of `self` with an empty
@@ -201,11 +205,11 @@ mod tests {
 
     #[test]
     fn own_thread_and_explicit_joins_no_probe() {
-        let mut control = Control::new(HashMap::new, op, op_r);
+        let mut control = Control::new(HashMap::new, op_r);
 
         {
-            control.send_data((1, Foo("a".to_owned())));
-            control.send_data((2, Foo("b".to_owned())));
+            control.send_data((1, Foo("a".to_owned())), op);
+            control.send_data((2, Foo("b".to_owned())), op);
         }
 
         let tid_own = thread::current().id();
@@ -227,8 +231,8 @@ mod tests {
                             lock[i] = thread::current().id();
                             drop(lock);
 
-                            control.send_data((1, Foo("a".to_owned() + &si)));
-                            control.send_data((2, Foo("b".to_owned() + &si)));
+                            control.send_data((1, Foo("a".to_owned() + &si)), op);
+                            control.send_data((2, Foo("b".to_owned() + &si)), op);
                         }
                     })
                 })
@@ -263,10 +267,10 @@ mod tests {
 
     #[test]
     fn own_thread_only_no_probe() {
-        let mut control = Control::new(HashMap::new, op, op_r);
+        let mut control = Control::new(HashMap::new, op_r);
 
-        control.send_data((1, Foo("a".to_owned())));
-        control.send_data((2, Foo("b".to_owned())));
+        control.send_data((1, Foo("a".to_owned())), op);
+        control.send_data((2, Foo("b".to_owned())), op);
 
         let tid_own = thread::current().id();
         let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
@@ -279,7 +283,7 @@ mod tests {
 
     #[test]
     fn own_thread_and_explicit_join_with_probe() {
-        let mut control = Control::new(HashMap::new, op, op_r);
+        let mut control = Control::new(HashMap::new, op_r);
 
         let main_tid = thread::current().id();
         println!("main_tid={:?}", main_tid);
@@ -303,7 +307,7 @@ mod tests {
 
                 let mut process_value = |gate: u8, k: i32, v: Foo| {
                     main_thread_gater.wait_for(gate);
-                    control.send_data((k, v.clone()));
+                    control.send_data((k, v.clone()), op);
                     my_map.insert(k, v);
                     expected_acc_mutex
                         .try_lock()
@@ -319,8 +323,8 @@ mod tests {
             });
 
             {
-                control.send_data((1, Foo("a".to_owned())));
-                control.send_data((2, Foo("b".to_owned())));
+                control.send_data((1, Foo("a".to_owned())), op);
+                control.send_data((2, Foo("b".to_owned())), op);
                 let my_map = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
 
                 let mut map = expected_acc_mutex.try_lock().unwrap();
@@ -388,20 +392,20 @@ mod tests {
 
     #[test]
     fn no_thread() {
-        let mut control = Control::new(HashMap::new, op, op_r);
+        let mut control = Control::new(HashMap::new, op_r);
         let acc = control.drain_tls();
         assert_eq!(acc, Ok(HashMap::new()), "empty accumulator expected");
     }
 
     #[test]
     fn active_thread_locals() {
-        let mut control = Control::new(HashMap::new, op, op_r);
+        let mut control = Control::new(HashMap::new, op_r);
 
         thread::spawn({
             let control = control.clone();
             move || {
-                control.send_data((1, Foo("a".to_owned())));
-                control.send_data((2, Foo("b".to_owned())));
+                control.send_data((1, Foo("a".to_owned())), op);
+                control.send_data((2, Foo("b".to_owned())), op);
             }
         });
 

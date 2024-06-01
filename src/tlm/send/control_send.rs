@@ -8,14 +8,13 @@ use super::super::common::{
 use std::{
     fmt::Debug,
     mem::take,
-    sync::Arc,
     thread::{self, LocalKey, ThreadId},
 };
 
 /// Wrapper of [`crate::tlm::common::ControlG`] that provides  a`send_data` and `drain_tls` API
 /// similar to that of [`crate::tlcr`] submodules. Used to implement [`super::joined::Control`],
 /// [`super::probed::Control`], and [`super::simple_joined::Control`].
-pub struct ControlSendG<P, T, U>
+pub struct ControlSendG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
@@ -25,12 +24,9 @@ where
     pub(super) control: ControlG<P>,
     /// Produces a zero value of type `P::Dat`, which is needed to obtain consistent aggregation results.
     acc_zero: fn() -> U,
-    /// Operation that combines the stored thead-local value with data sent from threads.
-    #[allow(clippy::type_complexity)]
-    op: Arc<dyn Fn(T, &mut U, ThreadId) + Send + Sync>,
 }
 
-impl<P, T, U> ControlSendG<P, T, U>
+impl<P, U> ControlSendG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
@@ -45,7 +41,6 @@ where
     pub fn new(
         tl: &'static LocalKey<P::Hldr>,
         acc_zero: fn() -> U,
-        op: impl Fn(T, &mut U, ThreadId) + 'static + Send + Sync,
         op_r: impl Fn(U, U) -> U + 'static + Send + Sync,
     ) -> Self {
         Self {
@@ -62,7 +57,6 @@ where
                 },
             ),
             acc_zero,
-            op: Arc::new(op),
         }
     }
 }
@@ -77,7 +71,7 @@ where
     fn take_tls(control: &ControlG<P>);
 }
 
-impl<P, T, U> ControlSendG<P, T, U>
+impl<P, U> ControlSendG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
@@ -93,7 +87,7 @@ where
     }
 }
 
-impl<P, T, U> ControlSendG<P, T, U>
+impl<P, U> ControlSendG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
@@ -101,27 +95,35 @@ where
     P: CtrlParam<Ctrl = ControlG<P>>,
     P::Hldr: HldrLink<P> + HldrData<P>,
 {
-    /// Called from a thread to send data to be aggregated.
-    pub fn send_data(&self, sent_data: T) {
-        self.control
-            .with_data_mut(|data| (self.op)(sent_data, data, thread::current().id()))
+    /// Called from a thread to access the thread's local accumulated value.
+    pub fn with_local_acc<V>(&self, f: impl FnOnce(&U) -> V) -> V {
+        self.control.with_data(f)
+    }
+
+    /// Called from a thread to mutably access the thread's local accumulated value.
+    pub fn with_local_acc_mut<V>(&self, f: impl FnOnce(&mut U) -> V) -> V {
+        self.control.with_data_mut(f)
+    }
+
+    /// Called from a thread to aggregate data with aggregation operation `op`.
+    pub fn send_data<T>(&self, data: T, op: impl FnOnce(T, &mut U, ThreadId)) {
+        self.with_local_acc_mut(|acc| op(data, acc, thread::current().id()))
     }
 }
 
-impl<P, T, U> Clone for ControlSendG<P, T, U>
+impl<P, U> Clone for ControlSendG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 {
     fn clone(&self) -> Self {
         Self {
             control: self.control.clone(),
-            op: self.op.clone(),
             acc_zero: self.acc_zero,
         }
     }
 }
 
-impl<P, T, U> Debug for ControlSendG<P, T, U>
+impl<P, U> Debug for ControlSendG<P, U>
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 
@@ -134,10 +136,10 @@ where
 
 /// Comment out the manual Clone implementation above, deribe Clone, and see what happens below.
 #[allow(unused)]
-fn demonstrate_need_for_manual_clone<P, T, U>(x: ControlSendG<P, T, U>, y: &ControlSendG<P, T, U>)
+fn demonstrate_need_for_manual_clone<P, U>(x: ControlSendG<P, U>, y: &ControlSendG<P, U>)
 where
     P: CoreParam<Acc = Option<U>, Dat = U> + CtrlStateParam + HldrParam,
 {
-    let x1: ControlSendG<P, T, U> = x.clone();
-    let y1: ControlSendG<P, T, U> = y.clone();
+    let x1: ControlSendG<P, U> = x.clone();
+    let y1: ControlSendG<P, U> = y.clone();
 }

@@ -57,7 +57,7 @@ fn test() {
 }
 
 fn main() {
-    let mut control = Control::new(&MY_TL, HashMap::new, op, op_r);
+    let mut control = Control::new(&MY_TL, HashMap::new, op_r);
 
     // This is directly defined as a reference to prevent the move closure below from moving the
     // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
@@ -75,8 +75,8 @@ fn main() {
                         lock[i] = thread::current().id();
                         drop(lock);
 
-                        control.send_data((1, Foo("a".to_owned() + &si)));
-                        control.send_data((2, Foo("b".to_owned() + &si)));
+                        control.send_data((1, Foo("a".to_owned() + &si)), op);
+                        control.send_data((2, Foo("b".to_owned() + &si)), op);
                     }
                 })
             })

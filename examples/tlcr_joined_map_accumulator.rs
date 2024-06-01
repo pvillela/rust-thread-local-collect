@@ -50,11 +50,11 @@ fn test() {
 }
 
 fn main() {
-    let mut control = Control::new(HashMap::new, op, op_r);
+    let mut control = Control::new(HashMap::new, op_r);
 
     {
-        control.send_data((1, Foo("a".to_owned())));
-        control.send_data((2, Foo("b".to_owned())));
+        control.send_data((1, Foo("a".to_owned())), op);
+        control.send_data((2, Foo("b".to_owned())), op);
     }
 
     let tid_own = thread::current().id();
@@ -76,8 +76,8 @@ fn main() {
                         lock[i] = thread::current().id();
                         drop(lock);
 
-                        control.send_data((1, Foo("a".to_owned() + &si)));
-                        control.send_data((2, Foo("b".to_owned() + &si)));
+                        control.send_data((1, Foo("a".to_owned() + &si)), op);
+                        control.send_data((2, Foo("b".to_owned() + &si)), op);
                     }
                 })
             })
