@@ -8,7 +8,7 @@
 //! used to aggregate the values.
 //! - The [`Control::probe_tls`] function can be called at any time to return a clone of the current aggregated value.
 //! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
-//! threads (other than the thread responsible for collection) have terminated.
+//! threads (other than the thread responsible for collection) have terminated (joins are not necessary).
 //!
 //! ## Usage pattern
 

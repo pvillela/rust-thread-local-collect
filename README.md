@@ -1,6 +1,6 @@
-# thread-local-collect
+# thread_local_collect
 
-This library supports the **_collection_** and **_aggregation_** of thread-local data across threads. It is a study of different ways to accomplish the aforementioned task.
+This library supports the **_collection_** and **_aggregation_** of thread-local data across threads. It provides several modules, each of which accomplishes the aforementioned task in a different way. See [below](#comparative-overview-of-modules) for a comparison of the various modules. For most use cases, the [`tlm::probed`] module would be a good choice.
 
 An aggregation operation is applied to the collected thread-local values and the resulting accumulated value is made available to the library's caller. This library contains multiple modules, with varying features and constraints, grouped as sub-modules of two top-level modules: [`tlm`] and [`tlcr`].
 
@@ -20,7 +20,9 @@ Depending on the specific module, thread-local values are collected when the `Ho
 
 ## Usage examples
 
-See the different modules for usage examples.
+See the different modules for simple usage examples.
+
+The [latency_trace](https://crates.io/crates/latency_trace) library is a substantial use case for this package (it uses the [`tlm::probed`] module).
 
 ## Comparative overview of modules
 

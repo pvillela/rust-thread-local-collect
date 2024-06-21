@@ -323,7 +323,7 @@ impl<T> Holder<T> {
                     .send(ChannelItem::Payload(inner.tid, data))
                     .expect(RECEIVER_DISCONNECTED);
             }
-            None => panic!("unreachable code"),
+            None => unreachable!("Holder should be initialized by now"),
         }
     }
 }

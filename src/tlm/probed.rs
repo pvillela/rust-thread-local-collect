@@ -7,7 +7,7 @@
 //! accumulated value when the thread-local variables are dropped following thread termination.
 //! - The [`Control::probe_tls`] function can be called at any time to return a clone of the current aggregated value.
 //! - After all participating threads other than the thread responsible for collection/aggregation have
-//! terminated, a call to [`Control::take_tls`] followed by a call to one of the accumulator retrieval functions
+//! terminated (joins are not necessary), a call to [`Control::take_tls`] followed by a call to one of the accumulator retrieval functions
 //! will return the final aggregated value.
 //!
 //! ## Usage pattern
