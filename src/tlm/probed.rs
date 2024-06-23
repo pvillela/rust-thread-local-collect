@@ -26,13 +26,14 @@ pub use crate::tlm::common::{ControlG, HolderG};
 use super::common::{CtrlParam, CtrlStateG, CtrlStateParam, HldrParam};
 use crate::tlm::{
     common::{
-        CoreParam, GDataParam, NodeParam, SubStateParam, WithNode, POISONED_GUARDED_DATA_MUTEX,
+        CoreParam, Ctrl, GDataParam, NodeParam, SubStateParam, WithNode,
+        POISONED_GUARDED_DATA_MUTEX,
     },
     tmap_d::TmapD,
 };
 use std::{
     marker::PhantomData,
-    mem::take,
+    mem::replace,
     ops::DerefMut,
     sync::{Arc, Mutex},
 };
@@ -137,7 +138,7 @@ where
         for (tid, node) in state.s.tmap.iter() {
             log::trace!("executing `take_tls` for key={:?}", tid);
             let mut data_guard = node.data.lock().expect(POISONED_GUARDED_DATA_MUTEX);
-            let data = take(data_guard.deref_mut());
+            let data = replace(data_guard.deref_mut(), Some(self.make_data()));
             if let Some(data) = data {
                 log::trace!("executed `take` -- `take_tls` for key={:?}", tid);
                 log::trace!("executing `op` -- `take_tls` for key={:?}", tid);
