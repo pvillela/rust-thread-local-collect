@@ -1,7 +1,7 @@
 //! Example usage of [`thread_local_collect::tlm::simple_joined`].
 
 use thread_local_collect::{
-    test_support::assert_eq_and_println,
+    dev_support::assert_eq_and_println,
     tlm::simple_joined::{Control, Holder},
 };
 

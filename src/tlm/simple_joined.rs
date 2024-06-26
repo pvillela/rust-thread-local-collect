@@ -101,7 +101,7 @@ pub type Holder<T, U> = HolderG<P<T, U>, DefaultDiscr>;
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::{Control, Holder};
-    use crate::test_support::assert_eq_and_println;
+    use crate::dev_support::assert_eq_and_println;
     use std::{
         collections::HashMap,
         fmt::Debug,

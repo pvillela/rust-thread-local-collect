@@ -163,7 +163,7 @@ pub type Holder<T, U> = HolderG<P<T, U>, WithNode>;
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::test_support::assert_eq_and_println;
+    use crate::dev_support::assert_eq_and_println;
     use std::{
         collections::HashMap,
         fmt::Debug,

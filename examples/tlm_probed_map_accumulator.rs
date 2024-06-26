@@ -7,9 +7,9 @@ use std::{
     sync::Mutex,
     thread::{self, ThreadId},
 };
-use thread_local_collect::test_support::ThreadGater;
+use thread_local_collect::dev_support::ThreadGater;
 use thread_local_collect::{
-    test_support::assert_eq_and_println,
+    dev_support::assert_eq_and_println,
     tlm::probed::{Control, Holder},
 };
 

@@ -6,7 +6,7 @@ use std::{
     sync::RwLock,
     thread::{self, ThreadId},
 };
-use thread_local_collect::{test_support::assert_eq_and_println, tlcr::joined::Control};
+use thread_local_collect::{dev_support::assert_eq_and_println, tlcr::joined::Control};
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo(String);

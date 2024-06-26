@@ -141,7 +141,7 @@ where
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::{ActiveThreadLocalsError, Control};
-    use crate::test_support::assert_eq_and_println;
+    use crate::dev_support::assert_eq_and_println;
     use std::{
         collections::HashMap,
         fmt::Debug,

@@ -7,7 +7,7 @@ use std::{
     thread::{self, ThreadId},
 };
 use thread_local_collect::{
-    test_support::assert_eq_and_println,
+    dev_support::assert_eq_and_println,
     tlm::restr::simple_joined::{Control, Holder},
 };
 
