@@ -2,8 +2,10 @@
 #![allow(clippy::type_complexity, clippy::new_without_default)]
 #![doc = include_str!("lib.md")]
 
+pub mod tlm;
+
+#[cfg(feature = "tlcr")]
+pub mod tlcr;
+
 #[doc(hidden)]
 pub mod test_support;
-
-pub mod tlcr;
-pub mod tlm;
