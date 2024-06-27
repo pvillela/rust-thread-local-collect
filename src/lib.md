@@ -23,12 +23,36 @@ Depending on the specific module, thread-local values are collected when the `Ho
 Include this library as a dependency in your Cargo.toml:
 
 ```toml
-thread_local_collect = "0.5"
+[dependencies]
+thread_local_collect = "1.0"
 ```
 
-See the different modules for simple usage examples.
+The documentation of the modules [listed below](#comparative-overview-of-modules) includes simple usage examples.
 
-The [latency_trace](https://crates.io/crates/latency_trace) library is a substantial use case for this package (it uses the [`tlm::probed`] module).
+The [latency_trace](https://crates.io/crates/latency_trace) library is a substantial use case for this package (as of this writing, it uses the [`tlm::probed`] module).
+
+## Cargo features
+
+The optional feature `tlcr` enables module [`tlcr`] and its sub-modules.
+
+```toml
+[dependencies]
+thread_local_collect = { version = "1.0", features = "tlcr" }
+```
+
+To run the `tlcr_*` executables from the `examples` directory of the cloned/downloaded source [repo](https://github.com/pvillela/rust-thread-local-collect/tree/main), specify the `tlcr` feature or `--all-features` when invoking `cargo run`. For the example, to run `tlcr_joined_map_accumulator.rs`, do as follows:
+
+```bash
+cargo run --features tlcr --example tlcr_joined_map_accumulator
+```
+
+or
+
+```bash
+cargo run --all-features --example tlcr_joined_map_accumulator
+```
+
+Likewise, specify `--features tlcr` or `--all-features` when executing benchmarks involving the `tlcr` sub-modules.
 
 ## Comparative overview of modules
 

@@ -5,11 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-- Not applicable.
-
-## [0.5.3] - 2024-06-XX
+## [1.0.0] - 2024-06-XX
 
 ### Added
 
@@ -17,8 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Changed `tlm::probed` to allow reusing the `control` and thread-locals after calling `take_tls`.
+- Changed `tlm::probed` and `tlm::joined` to allow reusing the `control` and thread-locals after calling `take_tls` or `take_own_tl`.
+- Refactored several unit tests and added unit test cases in all modules for the reuse of `control` after the thread-local values are collected and aggregated.
 - Streamlined README.md, added text on Rust version requirements and license.
+- Improved lib doc comments, including the addition of text on how to specify this library as a dependency and this library's optional cargo feature.
 - Minor clarifications in doc comments for the three `probed` modules.
 - Renamed internal `test_support` directory to `dev_support`, impacting only tests and examples.
 
@@ -36,4 +34,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - 2024-06-20
 
-Initial release.
+Initial release. Starts at v0.5.0 to reflect 8 months of development and close to 200 commits.

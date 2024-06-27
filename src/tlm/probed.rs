@@ -128,6 +128,9 @@ where
     /// with this object's accumulator, replacing those values with the evaluation of the `make_data` function
     /// passed to [`Control::new`].
     ///
+    /// This object's accumulated value reflects the aggregation of all participating thread-local values when this
+    /// method is called from the thread responsible for collection/aggregation after the other threads have terminated.
+    ///
     /// # Panics
     /// - If `self`'s mutex is poisoned.
     /// - If [`Holder`] guarded data mutex is poisoned.

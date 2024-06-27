@@ -22,7 +22,7 @@
 
 pub use crate::tlm::common::{ControlG, HolderG};
 
-use super::common::{CtrlParam, DefaultDiscr, HldrParam};
+use super::common::{Ctrl, CtrlParam, DefaultDiscr, HldrParam};
 use crate::tlm::common::{
     CoreParam, CtrlStateG, CtrlStateParam, CtrlStateWithNode, GDataParam, New, NodeParam,
     SubStateParam, WithNode,
@@ -30,7 +30,7 @@ use crate::tlm::common::{
 use std::{
     cell::RefCell,
     marker::PhantomData,
-    mem::take,
+    mem::replace,
     ops::DerefMut,
     thread::{self, ThreadId},
 };
@@ -131,9 +131,13 @@ where
     U: 'static,
 {
     /// This method takes the value of the designated thread-local variable in the thread responsible for
-    /// collection/aggregation, if that variable is used, and aggregates that value
-    /// with this object's accumulator, replacing that value with the evaluation of the `make_data` function
-    /// passed to [`Holder::new`].
+    /// collection/aggregation (i.e., the thread where `self` is instantiated), if that variable is used, and
+    /// aggregates that value with this object's accumulator, replacing that value with the evaluation of the
+    /// `make_data` function passed to [`Control::new`].
+    ///
+    /// This object's accumulated value reflects the aggregation of all participating thread-local values when this
+    /// method is called from the thread responsible for collection/aggregation after the other threads have terminated
+    /// and explicitly joined, directly or indirectly, into the thread responsible for collection/aggregation.
     ///
     /// # Panics
     /// If `self`'s mutex is poisoned.
@@ -144,9 +148,9 @@ where
         if state.s.own_tl_used {
             self.tl.with(|h| {
                 let mut data_guard = h.data_guard();
-                let data = take(data_guard.deref_mut());
+                let data = replace(data_guard.deref_mut(), Some(self.make_data()));
                 if let Some(data) = data {
-                    log::trace!("`take_tls`: executing `op`");
+                    log::trace!("`take_own_tl`: executing `op`");
                     (self.op)(data, &mut state.acc, thread::current().id());
                 }
             });
@@ -167,8 +171,9 @@ mod tests {
     use std::{
         collections::HashMap,
         fmt::Debug,
+        iter::once,
         ops::Deref,
-        sync::{Mutex, RwLock},
+        sync::RwLock,
         thread::{self, ThreadId},
         time::Duration,
     };
@@ -211,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_joins_no_take_tls() {
+    fn explicit_joins_no_take_own_tl() {
         // These are directly defined as references to prevent the move closure below from moving
         // `control` and `spawned_tids`values. The closure has to be `move` because it needs to own `i`.
         let control = &Control::new(&MY_TL, HashMap::new(), make_data, op);
@@ -274,23 +279,24 @@ mod tests {
     fn own_thread_and_explicit_joins() {
         let control = Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
 
-        let own_tid = thread::current().id();
-        println!("main_tid={:?}", own_tid);
+        let tid_own = thread::current().id();
+        println!("main_tid={:?}", tid_own);
 
-        {
-            insert_tl_entry(1, Foo("a".to_owned()), &control);
-            insert_tl_entry(2, Foo("b".to_owned()), &control);
+        let map_own = {
+            let value1 = Foo("a".to_owned());
+            let value2 = Foo("b".to_owned());
+            let map_own = HashMap::from([(1, value1.clone()), (2, value2.clone())]);
 
-            let other = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-            assert_tl(&other, "After main thread inserts", &control);
-        }
+            insert_tl_entry(1, value1, &control);
+            insert_tl_entry(2, value2, &control);
+            assert_tl(&map_own, "After main thread inserts", &control);
+
+            map_own
+        };
 
         thread::sleep(Duration::from_millis(100));
 
-        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
-        let expected_acc_mutex = Mutex::new(HashMap::from([(own_tid, map_own)]));
-
-        thread::scope(|s| {
+        let tid_map_pairs = thread::scope(|s| {
             let hs = (0..2)
                 .map(|i| {
                     let value1 = Foo("a".to_owned() + &i.to_string());
@@ -305,14 +311,14 @@ mod tests {
                         insert_tl_entry(2, value2, &control);
                         assert_tl(&map_i, "After 2nd insert", &control);
 
-                        let spawned_tid = thread::current().id();
-                        let mut lock = expected_acc_mutex.lock().unwrap();
-                        lock.insert(spawned_tid, map_i);
-                        drop(lock);
+                        let tid_spawned = thread::current().id();
+                        (tid_spawned, map_i)
                     })
                 })
-                .collect::<Vec<_>>(); // needed to force threads to launch because iter is lazy
-            hs.into_iter().for_each(|h| h.join().unwrap());
+                .collect::<Vec<_>>(); // needed to force threads to launch because Iterator is lazy
+            hs.into_iter()
+                .map(|h| h.join().unwrap())
+                .collect::<Vec<_>>()
         });
 
         {
@@ -322,12 +328,14 @@ mod tests {
             control.take_own_tl();
             let acc2 = control.clone_acc();
 
-            assert_eq_and_println(&acc1, &acc2, "Idempotency of control.take_tls()");
+            assert_eq_and_println(&acc1, &acc2, "Idempotency of control.take_own_tl()");
         }
 
         // Different ways to get the accumulated value
 
-        let map = expected_acc_mutex.lock().unwrap();
+        let map = once((tid_own, map_own))
+            .chain(tid_map_pairs)
+            .collect::<HashMap<_, _>>();
 
         {
             let acc = control.with_acc(|acc| acc.clone());
@@ -353,6 +361,44 @@ mod tests {
 
             let acc = control.take_acc(HashMap::new());
             assert_eq_and_println(&acc, &HashMap::new(), "2nd take_acc");
+        }
+
+        // Control reused.
+        {
+            let map_own = {
+                let value1 = Foo("c".to_owned());
+                let value2 = Foo("d".to_owned());
+                let map_own = HashMap::from([(11, value1.clone()), (22, value2.clone())]);
+
+                insert_tl_entry(11, value1, &control);
+                insert_tl_entry(22, value2, &control);
+
+                map_own
+            };
+
+            let (tid_spawned, map_spawned) = thread::scope(|s| {
+                let control = &control;
+
+                let value1 = Foo("x".to_owned());
+                let value2 = Foo("y".to_owned());
+                let map_spawned = HashMap::from([(11, value1.clone()), (22, value2.clone())]);
+
+                let tid = s
+                    .spawn(move || {
+                        insert_tl_entry(11, value1, control);
+                        insert_tl_entry(22, value2, control);
+                        thread::current().id()
+                    })
+                    .join()
+                    .unwrap();
+
+                (tid, map_spawned)
+            });
+
+            control.take_own_tl();
+            let map = HashMap::from([(tid_own, map_own), (tid_spawned, map_spawned)]);
+            let acc = control.take_acc(HashMap::new());
+            assert_eq_and_println(&acc, &map, "take_acc - control reused");
         }
     }
 }
