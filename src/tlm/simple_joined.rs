@@ -34,10 +34,12 @@ use std::{cell::RefCell, marker::PhantomData};
 
 /// Parameter bundle that enables specialization of the common generic structs for this module.
 #[derive(Debug)]
-pub struct P<T, U> {
+pub struct SimpleJoined<T, U> {
     _t: PhantomData<T>,
     _u: PhantomData<U>,
 }
+
+type P<T, U> = SimpleJoined<T, U>;
 
 impl<T, U> CoreParam for P<T, U> {
     type Dat = T;

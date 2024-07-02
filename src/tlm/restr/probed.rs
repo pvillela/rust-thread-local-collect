@@ -24,16 +24,16 @@
 pub use super::control_restr::ControlRestrG;
 
 use super::control_restr::WithTakeTls;
-use crate::tlm::probed::{Control as ControlInner, Holder as HolderInner, P};
+use crate::tlm::probed::{Control as ControlInner, Holder as HolderInner, Probed};
 
 /// Specialization of [`ControlRestrG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
 ///
 /// `U` is the type of the accumulated value.
 /// Partially accumulated values are held in thread-locals of type [`Holder<U>`].
-pub type Control<U> = ControlRestrG<P<U, Option<U>>, U>;
+pub type Control<U> = ControlRestrG<Probed<U, Option<U>>, U>;
 
-impl<U> WithTakeTls<P<U, Option<U>>, U> for Control<U>
+impl<U> WithTakeTls<Probed<U, Option<U>>, U> for Control<U>
 where
     U: 'static,
 {

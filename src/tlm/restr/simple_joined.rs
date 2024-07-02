@@ -24,16 +24,16 @@
 pub use super::control_restr::ControlRestrG;
 
 use super::control_restr::WithTakeTls;
-use crate::tlm::simple_joined::{Control as ControlOrig, Holder as HolderOrig, P as POrig};
+use crate::tlm::simple_joined::{Control as ControlOrig, Holder as HolderOrig, SimpleJoined};
 
 /// Specialization of [`ControlRestrG`] for this module.
 /// Controls the collection and accumulation of thread-local values linked to this object.
 ///
 /// `U` is the type of the accumulated value.
 /// Partially accumulated values are held in thread-locals of type [`Holder<U>`].
-pub type Control<U> = ControlRestrG<POrig<U, Option<U>>, U>;
+pub type Control<U> = ControlRestrG<SimpleJoined<U, Option<U>>, U>;
 
-impl<U> WithTakeTls<POrig<U, Option<U>>, U> for Control<U>
+impl<U> WithTakeTls<SimpleJoined<U, Option<U>>, U> for Control<U>
 where
     U: 'static,
 {

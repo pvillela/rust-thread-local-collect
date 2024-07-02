@@ -43,10 +43,12 @@ use std::{
 
 /// Parameter bundle that enables specialization of the common generic structs for this module.
 #[derive(Debug)]
-pub struct P<T, U> {
+pub struct Probed<T, U> {
     _t: PhantomData<T>,
     _u: PhantomData<U>,
 }
+
+type P<T, U> = Probed<T, U>;
 
 impl<T, U> CoreParam for P<T, U> {
     type Dat = T;

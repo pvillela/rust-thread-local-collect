@@ -1,10 +1,10 @@
 [package]
 name = "thread_local_collect"
-version = "0.5.3"
+version = "1.0.0"
 edition = "2021"
 license = "MIT"
 description = "Supports the collection and aggregation of thread-local data across threads."
-repository = "https://github.com/pvillela/rust-thread-local-collect/tree/v1.0.0"
+repository = "https://github.com/pvillela/rust-thread-local-collect/tree/main"
 readme = "README.md"
 keywords = ["thread-local"]
 categories = ["concurrency"]
