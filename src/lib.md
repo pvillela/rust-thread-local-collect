@@ -18,6 +18,10 @@ A thread-local variable of type `Holder` wraps a thread-local value and ensures 
 
 Depending on the specific module, thread-local values are collected when the `Holder` value is dropped and/or when collection is initiated by a method on the `Control` object, or when the data value is _sent_ to `Control` on a channel.
 
+## Rust version requirements
+
+This version of this library can be compiled with rustc 1.79.0 or higher. It may work with earlier rustc versions but that is not guaranteed.
+
 ## Usage
 
 Include this library as a dependency in your Cargo.toml:

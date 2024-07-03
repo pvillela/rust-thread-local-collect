@@ -1,12 +1,14 @@
 # thread_local_collect
 
-This library supports the **_collection_** and **_aggregation_** of thread-local data across threads. An aggregation operation is applied to the collected thread-local values and the resulting accumulated value is made available to the library's caller. This library contains multiple modules, with varying features and constraints.
+This library supports the **_collection_** and **_aggregation_** of thread-local data across threads. An aggregation operation is applied to the collected thread-local values and the resulting accumulated value is made available to the library's caller. This library contains multiple modules, with varying features and constraints. See the documentation for details.
 
-See the crate [documentation](https://docs.rs/thread_local_collect/latest/thread_local_collect/) for a comprehensive overview and usage examples. The source [repo](https://github.com/pvillela/rust-thread-local-collect/tree/main) also contains benchmarks and additional examples.
+## Documentation
 
-## Rust version requirements
+See the [API documentation](https://docs.rs/thread_local_collect/latest/thread_local_collect/) on docs.rs, which includes  a comprehensive overview and usage examples. The source [repo](https://github.com/pvillela/rust-thread-local-collect/tree/main) also contains benchmarks and additional examples.
 
-This version of this library can be compiled with rustc 1.79.0 or higher. It may work with earlier rustc versions but that is not guaranteed.
+## Support
+
+Create a [new issue](https://github.com/pvillela/rust-thread-local-collect/issues/new) on GitHub.
 
 ## License
 
