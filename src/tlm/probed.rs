@@ -1,6 +1,6 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
 //! across threads (see package [overview and core concepts](crate)), including the ability to inspect
-//! the accumulated value before participating threads have terminated. The following features and constraints apply ...
+//! the accumulated value before participating threads have terminated. The following capabilities and constraints apply ...
 //! - The designated thread-local variable may be used in the thread responsible for
 //! collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's

@@ -2,7 +2,7 @@
 //!
 //! This module supports the collection and aggregation of values across threads (see package
 //! [overview and core concepts](crate)), including the ability to inspect
-//! the accumulated value before participating threads have terminated. The following features and constraints apply ...
+//! the accumulated value before participating threads have terminated. The following capabilities and constraints apply ...
 //! - Values may be collected from the thread responsible for collection/aggregation.
 //! - The participating threads update thread-local data via the clonable `control` object which is also
 //! used to aggregate the values.

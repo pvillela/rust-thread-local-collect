@@ -1,5 +1,5 @@
 //! This module supports the collection and aggregation of the values from a designated thread-local variable
-//! across threads (see package [overfiew and core concepts](super)). The following features and constraints apply ...
+//! across threads (see package [overfiew and core concepts](super)). The following capabilities and constraints apply ...
 //! - The designated thread-local variable may be used in the thread responsible for
 //! collection/aggregation.
 //! - The linked thread-local variables hold a [`Sender`] that sends values to be aggregated into the
@@ -228,6 +228,8 @@ impl<T, U> Control<T, U> {
     /// Spawns a background thread to receive thread-local values and aggregate them with this object's
     /// accumulated value. May be called repeatedly, provided that there are intervening calls to
     /// [`Self::stop_receiving_tls`] or [`Self::drain_tls`].
+    ///
+    /// # Errors
     /// Returns an error if there is already an active background receiver thread.
     ///
     /// # Panics

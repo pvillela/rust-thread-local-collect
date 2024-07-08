@@ -1,7 +1,7 @@
 //! Variant of module [`crate::tlm::simple_joined`] with a `send` API similar to that of [`crate::tlcr::joined`].
 //!
 //! This module supports the collection and aggregation of values across threads (see package
-//! [overview and core concepts](crate)). The following features and constraints apply ...
+//! [overview and core concepts](crate)). The following capabilities and constraints apply ...
 //! - The designated thread-local variable should NOT be used in the thread responsible for
 //! collection/aggregation. If this condition is violated, the thread-local value on that thread will NOT
 //! be collected and aggregated.

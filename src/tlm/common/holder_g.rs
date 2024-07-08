@@ -152,6 +152,8 @@ where
     P::Ctrl: Ctrl<P>,
 {
     /// Invokes `f` on the held data.
+    ///
+    /// # Errors
     /// Returns an error if [`HolderG`] not linked with [`super::ControlG`].
     fn with_data<V>(&self, f: impl FnOnce(&P::Dat) -> V) -> V {
         let guard = self.data_guard();
@@ -159,6 +161,8 @@ where
     }
 
     /// Invokes `f` mutably on the held data.
+    ///
+    /// # Errors
     /// Returns an error if [`HolderG`] not linked with [`super::ControlG`].
     fn with_data_mut<V>(&self, f: impl FnOnce(&mut P::Dat) -> V) -> V {
         let mut guard = self.data_guard();

@@ -1,7 +1,8 @@
-//! This module is supported on **`feature="tlcr"`** only.
 //! This module supports the collection and aggregation of values across threads (see package
-//! [overview and core concepts](crate)), including the ability to inspect
-//! the accumulated value before participating threads have terminated. The following features and constraints apply ...
+//! [overview and core concepts](crate)), including the ability to inspect the accumulated value before
+//! participating threads have terminated.
+//! It is present only when the **"tlcr"** feature flag is enabled.
+//! The following capabilities and constraints apply ...
 //! - Values may be collected from the thread responsible for collection/aggregation, provided that the `control`
 //! object of type [`Control`] is created on that thread and is not cloned by that thread.
 //! - The participating threads update thread-local data via the clonable `control` object which contains a
@@ -84,7 +85,8 @@ impl<U> Control<U>
 where
     U: Send,
 {
-    /// Instantiates a [`Control`] object.
+    /// Instantiates a [`Control`] object with an empty
+    /// [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html) state.
     ///
     /// - `acc_zero` - produces a zero value of type `U`, which is needed to obtain consistent aggregation results.
     /// - `op_r` - binary operation that reduces two accumulated values into one.
@@ -118,12 +120,12 @@ where
         self.with_tl_acc_mut(|acc| op(data, acc, thread::current().id()))
     }
 
-    /// Returns the accumulation of the thread-local values, replacing the state of `self` with an empty
-    /// [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html).
-    /// Returns an error if any thread
-    /// using `self`, other than the thread where this function is called from, has not yet terminated and explicitly
-    /// joined, directly or indirectly, the thread where this function is called from. In this case, the state of
-    /// `self` is left unchanged.
+    /// Returns the accumulation of the thread-local values, restoring `self`'s state to what it was when
+    /// it was instantiated with [`Control::new`].
+    ///
+    /// # Errors
+    /// - Returns an error if any thread, other than the thread where this function is called from,
+    /// holds a clone of `self`. In this case, the state of `self` is left unchanged.
     pub fn drain_tls(&mut self) -> Result<U, ActiveThreadLocalsError> {
         let state = replace(&mut self.state, Arc::new(ThreadLocal::new()));
         let unwr_state = match Arc::try_unwrap(state) {
@@ -166,6 +168,7 @@ mod tests {
         iter::once,
         sync::Mutex,
         thread::{self, ThreadId},
+        time::Duration,
     };
 
     #[derive(Debug, Clone, PartialEq)]
@@ -439,6 +442,8 @@ mod tests {
             move || {
                 control.aggregate_data((1, Foo("a".to_owned())), op);
                 control.aggregate_data((2, Foo("b".to_owned())), op);
+
+                thread::sleep(Duration::from_millis(10));
             }
         });
 

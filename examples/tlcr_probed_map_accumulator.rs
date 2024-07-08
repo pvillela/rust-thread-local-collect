@@ -1,4 +1,5 @@
 //! Example usage of [`thread_local_collect::tlcr::probed`].
+//! Requires feature flag "tlcr".
 
 use std::{
     collections::HashMap,

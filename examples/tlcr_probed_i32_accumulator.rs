@@ -1,4 +1,5 @@
 //! Simple example usage of [`thread_local_collect::tlcr::probed`].
+//! Requires feature flag "tlcr".
 
 use std::{
     thread::{self, ThreadId},
