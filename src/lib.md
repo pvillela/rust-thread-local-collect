@@ -28,7 +28,7 @@ The documentation of the modules [listed below](#comparative-overview-of-modules
 
 The [latency_trace](https://crates.io/crates/latency_trace) library is a substantial use case for this package (it uses the [`tlm::probed`] module).
 
-## Default dependency
+## Default cargo feature
 
 To include this library as a dependency without optional features in your Cargo.toml:
 
@@ -37,7 +37,9 @@ To include this library as a dependency without optional features in your Cargo.
 thread_local_collect = "1.0"
 ```
 
-## Optional features
+For the default feature, this library only depends on the `std` library and the [`log`](https://crates.io/crates/log) crate.
+
+## Optional cargo features
 
 The optional feature `tlcr` enables module [`tlcr`] and its sub-modules.
 

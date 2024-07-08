@@ -26,6 +26,8 @@
 use crate::tlm::common::POISONED_CONTROL_MUTEX;
 use std::{
     cell::RefCell,
+    error::Error,
+    fmt::Display,
     mem::replace,
     ops::Deref,
     sync::{
@@ -34,7 +36,6 @@ use std::{
     },
     thread::{self, LocalKey, ThreadId},
 };
-use thiserror::Error;
 
 // Error consts
 const RECEIVER_DISCONNECTED: &str = "receiver disconnected";
@@ -58,9 +59,18 @@ enum ReceiveMode {
 }
 
 /// Indicates the illegal attempt to spawn multiple concurrent background receiving threads.
-#[derive(Error, Debug)]
-#[error("Illegal call to start_receiving_tls as background receiver thread already exists.")]
+#[derive(Debug)]
 pub struct MultipleReceiverThreadsError;
+
+impl Display for MultipleReceiverThreadsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "Illegal call to start_receiving_tls as background receiver thread already exists.",
+        )
+    }
+}
+
+impl Error for MultipleReceiverThreadsError {}
 
 /// State of [`Control`].
 #[derive(Debug)]

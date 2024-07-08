@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved lib doc comments, including the addition of text on how to specify this library as a dependency and this library's optional cargo feature.
 - Minor clarifications in doc comments for the three `probed` modules.
 - Renamed internal `test_support` directory to `dev_support`, impacting only tests and examples.
+- Moved the `thiserror` dependency to optional feature `tlcr`.
 
 ## [0.5.2] - 2024-06-20
 
