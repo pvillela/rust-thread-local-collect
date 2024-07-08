@@ -1,6 +1,6 @@
 # thread_local_collect
 
-This library supports the **_collection_** and **_aggregation_** of thread-local data across threads. It provides several modules, each of which accomplishes the aforementioned task in a different way. See [below](#comparative-overview-of-modules) for a comparison of the various modules. For most use cases, the [`tlm::probed`] module would be a good choice.
+This library supports the **_collection_** and **_aggregation_** of thread-local data across threads. It provides several modules, each of which accomplishes the aforementioned task in a different way. See [below](#comparative-overview-of-modules) for a comparison of the various modules. For most use cases, either the [`tlm::probed`] module or the [`tlcr::probed`] would be a good choice -- the former is a little more flexible, the latter has a little better ergonomics .
 
 An aggregation operation is applied to the collected thread-local values and the resulting accumulated value is made available to the library's caller. This library contains multiple modules, with varying features and constraints, grouped as sub-modules of two top-level modules: [`tlm`] and [`tlcr`].
 
@@ -34,7 +34,7 @@ To include this library as a dependency without optional features in your Cargo.
 
 ```toml
 [dependencies]
-thread_local_collect = "0.6"
+thread_local_collect = "1.0"
 ```
 
 ## Optional features
@@ -43,7 +43,7 @@ The optional feature `tlcr` enables module [`tlcr`] and its sub-modules.
 
 ```toml
 [dependencies]
-thread_local_collect = { version = "0.6", features = "tlcr" }
+thread_local_collect = { version = "1.0", features = "tlcr" }
 ```
 
 To run the `tlcr_*` executables from the `examples` directory of the cloned/downloaded source [repo](https://github.com/pvillela/rust-thread-local-collect/tree/main), specify `--features tlcr` or `--all-features` when invoking `cargo run`. For the example, to run `tlcr_joined_map_accumulator.rs`, do as follows:
@@ -67,7 +67,7 @@ Likewise, specify `--features tlcr` or `--all-features` when executing benchmark
 These modules use thread-local static variables defined with the [`std::thread_local`] macro.
 
 - [`tlm::joined`] -- The values of linked thread-local variables are collected and aggregated into the control object’s accumulated value when the thread-local variables are dropped following thread termination. After all participating threads other than the thread responsible for collection/aggregation have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection, the accumulated value may be retrieved.
-- [`tlm::probed`] -- Similar to [`tlm::joined`] but the final accumulated value may be retrieved after all threads other than the one responsible for collection/aggregation have terminated (joins are not necessary), and this module also allows a partial accumulation of thread-local values to be inspected before the various threads have terminated. This module uses a [`std::sync::Mutex`] in the `Holder` object.
+- [`tlm::probed`] -- Similar to [`tlm::joined`] but the final accumulated value may be retrieved after all threads other than the one responsible for collection/aggregation have terminated (joins are not necessary), and this module also allows a partial accumulation of thread-local values to be inspected before the various threads have terminated. This module uses a [`std::sync::Mutex`] in the `Holder` object. Given its flexibility and benchmarking results, this module is a good choice for most use cases.
 - [`tlm::simple_joined`] -- This is a simplified implementation of [`tlm::joined`] that does not aggregate the value from the thread-local variable for the thread responsible for collection/aggregation.
 - [`tlm::channeled`] -- Unlike the above modules, values in thread-local variables are not collected when the threads terminate and join. Instead, threads use a thread-local channel [`Sender`](std::sync::mpsc::Sender) to send values for aggregation by the control object. Partial aggregations may be inspected before the various threads have terminated.
 
@@ -76,7 +76,7 @@ These modules use thread-local static variables defined with the [`std::thread_l
 These-modules use the [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html) object instead of thread-local static variables and require the `tlcr`feature.
 
 - [`tlcr::joined`] -- The participating threads update thread-local data via the control object which contains a [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance and aggregates the values. After all participating threads other than the thread responsible for collection/aggregation have terminated and EXPLICITLY joined, directly or indirectly, into the thread responsible for collection, the accumulated value may be retrieved.
-- [`tlcr::probed`] -- Similar to [`tlcr::joined`] but the final accumulated value may be retrieved after all threads other than the one responsible for collection/aggregation have terminated (joins are not necessary), and this module also allows a partial accumulation of thread-local values to be inspected before the various threads have terminated. This module uses a [`std::sync::Mutex`] in the [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html) object.
+- [`tlcr::probed`] -- Similar to [`tlcr::joined`] but the final accumulated value may be retrieved after all threads other than the one responsible for collection/aggregation have terminated (joins are not necessary), and this module also allows a partial accumulation of thread-local values to be inspected before the various threads have terminated. This module uses a [`std::sync::Mutex`] in the [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/struct.ThreadLocal.html) object. Given its relative flexibility and benchmarking results, this module is a good choice for many use cases.
 
 ### [`tlm::restr`] sub-modules
 
@@ -92,4 +92,4 @@ Running the benchmarks defined in the [benches](https://github.com/pvillela/rust
 
 When a background receiver thread is not used, the `channeled` module performs slightly worse than the others, but its performance is orders of magnitude worse when a background receiver thread is used. The only reason to use a background receiver thread would be to keep the channel buffer from expanding without bounds during execution of the participating threads. This is not necessary unless there is a risk of memory overflow arising from the amount of data sent from the participating threads.
 
-It is worth observing that the `probed` modules do not exhibit performance materially different from that of `joined` or `simple_joined`. Although the `probed` modules use a mutex, the mutex is uncontended except in rare situations.
+It is worth observing that the `probed` modules do not exhibit performance materially different from that of `joined` or `simple_joined`. Although the `probed` modules use mutexes, the mutexes are uncontended except in rare situations.

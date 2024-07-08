@@ -107,10 +107,7 @@ mod tests {
     use std::{
         collections::HashMap,
         fmt::Debug,
-        ops::Deref,
-        sync::RwLock,
         thread::{self, ThreadId},
-        time::Duration,
     };
 
     #[derive(Debug, Clone, PartialEq)]
@@ -150,63 +147,35 @@ mod tests {
     #[test]
     fn test_all() {
         let control = Control::new(&MY_TL, HashMap::new(), HashMap::new, op);
-        let spawned_tids = RwLock::new(vec![thread::current().id(), thread::current().id()]);
 
-        thread::scope(|s| {
+        let tid_map_pairs = thread::scope(|s| {
             let hs = (0..2)
                 .map(|i| {
-                    s.spawn({
-                        // These are to prevent the move closure from moving `control` and `spawned_tids`.
-                        // The closure has to be `move` because it needs to own `i`.
-                        let control = &control;
-                        let spawned_tids = &spawned_tids;
+                    let value1 = Foo("a".to_owned() + &i.to_string());
+                    let value2 = Foo("a".to_owned() + &i.to_string());
+                    let map_i = HashMap::from([(1, value1.clone()), (2, value2.clone())]);
 
-                        move || {
-                            let si = i.to_string();
+                    s.spawn(|| {
+                        insert_tl_entry(1, value1.clone(), &control);
+                        let other = HashMap::from([(1, value1)]);
+                        assert_tl(&other, "After 1st insert", &control);
 
-                            let mut lock = spawned_tids.write().unwrap();
-                            lock[i] = thread::current().id();
-                            drop(lock);
+                        insert_tl_entry(2, value2, &control);
+                        assert_tl(&map_i, "After 2nd insert", &control);
 
-                            insert_tl_entry(1, Foo("a".to_owned() + &si), control);
-
-                            let other = HashMap::from([(1, Foo("a".to_owned() + &si))]);
-                            assert_tl(&other, "After 1st insert", control);
-
-                            insert_tl_entry(2, Foo("b".to_owned() + &si), control);
-
-                            let other = HashMap::from([
-                                (1, Foo("a".to_owned() + &si)),
-                                (2, Foo("b".to_owned() + &si)),
-                            ]);
-                            assert_tl(&other, "After 2nd insert", control);
-                        }
+                        let tid_spawned = thread::current().id();
+                        (tid_spawned, map_i)
                     })
                 })
-                .collect::<Vec<_>>(); // needed to force threads to launch because iter is lazy
-
-            thread::sleep(Duration::from_millis(50));
-
-            let spawned_tids = spawned_tids.try_read().unwrap();
-            println!("spawned_tid={:?}", spawned_tids);
-
-            hs.into_iter().for_each(|h| h.join().unwrap());
-
-            println!("after hs join: {:?}", control);
+                .collect::<Vec<_>>(); // needed to force threads to launch because Iterator is lazy
+            hs.into_iter()
+                .map(|h| h.join().unwrap())
+                .collect::<Vec<_>>()
         });
 
-        let spawned_tids = spawned_tids.try_read().unwrap();
-        let map_0 = HashMap::from([(1, Foo("a0".to_owned())), (2, Foo("b0".to_owned()))]);
-        let map_1 = HashMap::from([(1, Foo("a1".to_owned())), (2, Foo("b1".to_owned()))]);
-        let map = HashMap::from([(spawned_tids[0], map_0), (spawned_tids[1], map_1)]);
-
-        {
-            let guard = control.acc();
-            let acc = guard.deref();
-            assert_eq_and_println(acc, &map, "Accumulator check: acc={acc:?}, map={map:?}");
-        }
-
         // Different ways to get the accumulated value
+
+        let map = tid_map_pairs.into_iter().collect::<HashMap<_, _>>();
 
         {
             let acc = control.with_acc(|acc| acc.clone());
@@ -223,6 +192,32 @@ mod tests {
 
             let acc = control.take_acc(HashMap::new());
             assert_eq_and_println(&acc, &HashMap::new(), "2nd take_acc");
+        }
+
+        // Control reused.
+        {
+            let (tid_spawned, map_spawned) = thread::scope(|s| {
+                let control = &control;
+
+                let value1 = Foo("x".to_owned());
+                let value2 = Foo("y".to_owned());
+                let map_spawned = HashMap::from([(11, value1.clone()), (22, value2.clone())]);
+
+                let tid = s
+                    .spawn(move || {
+                        insert_tl_entry(11, value1, control);
+                        insert_tl_entry(22, value2, control);
+                        thread::current().id()
+                    })
+                    .join()
+                    .unwrap();
+
+                (tid, map_spawned)
+            });
+
+            let map = HashMap::from([(tid_spawned, map_spawned)]);
+            let acc = control.take_acc(HashMap::new());
+            assert_eq_and_println(&acc, &map, "take_acc - control reused");
         }
     }
 }

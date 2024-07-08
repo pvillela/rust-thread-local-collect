@@ -53,7 +53,6 @@ mod tests {
     use std::{
         collections::HashMap,
         fmt::Debug,
-        sync::RwLock,
         thread::{self, ThreadId},
     };
 
@@ -99,51 +98,34 @@ mod tests {
     fn explicit_joins() {
         let mut control = Control::new(&MY_TL, HashMap::new, op_r);
 
-        // This is directly defined as a reference to prevent the move closure below from moving the
-        // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
-        let spawned_tids = &RwLock::new(vec![thread::current().id(); NTHREADS]);
-
-        thread::scope(|s| {
+        let tid_map_pairs = thread::scope(|s| {
             let hs = (0..NTHREADS)
                 .map(|i| {
-                    let control = &control;
-                    s.spawn({
-                        move || {
-                            let si = i.to_string();
+                    let value1 = Foo("a".to_owned() + &i.to_string());
+                    let value2 = Foo("a".to_owned() + &i.to_string());
+                    let map_i = HashMap::from([(1, value1.clone()), (2, value2.clone())]);
 
-                            let mut lock = spawned_tids.write().unwrap();
-                            lock[i] = thread::current().id();
-                            drop(lock);
+                    s.spawn(|| {
+                        control.aggregate_data((1, value1), op);
+                        control.aggregate_data((2, value2), op);
 
-                            control.aggregate_data((1, Foo("a".to_owned() + &si)), op);
-                            control.aggregate_data((2, Foo("b".to_owned() + &si)), op);
-                        }
+                        let tid_spawned = thread::current().id();
+                        (tid_spawned, map_i)
                     })
                 })
                 .collect::<Vec<_>>();
 
-            hs.into_iter().for_each(|h| h.join().unwrap());
-
-            println!("after hs join: {:?}", control);
+            hs.into_iter()
+                .map(|h| h.join().unwrap())
+                .collect::<Vec<_>>()
         });
 
         {
-            let spawned_tids = spawned_tids.try_read().unwrap();
-            let maps = (0..NTHREADS)
-                .map(|i| {
-                    let map_i = HashMap::from([
-                        (1, Foo("a".to_owned() + &i.to_string())),
-                        (2, Foo("b".to_owned() + &i.to_string())),
-                    ]);
-                    let tid_i = spawned_tids[i];
-                    (tid_i, map_i)
-                })
-                .collect::<Vec<_>>();
-            let map = maps.into_iter().collect::<HashMap<_, _>>();
+            let map = tid_map_pairs.into_iter().collect::<HashMap<_, _>>();
 
             {
                 let acc = control.drain_tls();
-                assert_eq_and_println(&acc, &map, "after drain_tls");
+                assert_eq_and_println(&acc, &map, "Accumulator check");
             }
 
             // drain_tls again
@@ -151,6 +133,32 @@ mod tests {
                 let acc = control.drain_tls();
                 assert_eq_and_println(&acc, &HashMap::new(), "empty accumulatore expected");
             }
+        }
+
+        // Control reused.
+        {
+            let (tid_spawned, map_spawned) = thread::scope(|s| {
+                let control = &control;
+
+                let value1 = Foo("x".to_owned());
+                let value2 = Foo("y".to_owned());
+                let map_spawned = HashMap::from([(11, value1.clone()), (22, value2.clone())]);
+
+                let tid = s
+                    .spawn(move || {
+                        control.aggregate_data((11, value1), op);
+                        control.aggregate_data((22, value2), op);
+                        thread::current().id()
+                    })
+                    .join()
+                    .unwrap();
+
+                (tid, map_spawned)
+            });
+
+            let map = HashMap::from([(tid_spawned, map_spawned)]);
+            let acc = control.drain_tls();
+            assert_eq_and_println(&acc, &map, "take_acc - control reused");
         }
     }
 

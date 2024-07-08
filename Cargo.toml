@@ -1,6 +1,6 @@
 [package]
 name = "thread_local_collect"
-version = "0.6.0"
+version = "1.0.0"
 edition = "2021"
 license = "MIT"
 description = "Supports the collection and aggregation of thread-local data across threads."

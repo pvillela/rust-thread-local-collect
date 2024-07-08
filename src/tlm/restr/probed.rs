@@ -66,7 +66,7 @@ mod tests {
     use std::{
         collections::HashMap,
         fmt::Debug,
-        sync::{Mutex, RwLock},
+        sync::Mutex,
         thread::{self, ThreadId},
     };
 
@@ -112,61 +112,93 @@ mod tests {
     fn own_thread_and_explicit_joins_no_probe() {
         let mut control = Control::new(&MY_TL, HashMap::new, op_r);
 
-        {
-            control.aggregate_data((1, Foo("a".to_owned())), op);
-            control.aggregate_data((2, Foo("b".to_owned())), op);
-        }
-
         let tid_own = thread::current().id();
-        let map_own = HashMap::from([(1, Foo("a".to_owned())), (2, Foo("b".to_owned()))]);
 
-        // This is directly defined as a reference to prevent the move closure below from moving the
-        // `spawned_tids` value. The closure has to be `move` because it needs to own `i`.
-        let spawned_tids = &RwLock::new(vec![thread::current().id(); NTHREADS]);
+        let map_own = {
+            let value1 = Foo("a".to_owned());
+            let value2 = Foo("b".to_owned());
+            let map_own = HashMap::from([(1, value1.clone()), (2, value2.clone())]);
 
-        thread::scope(|s| {
+            control.aggregate_data((1, value1), op);
+            control.aggregate_data((2, value2), op);
+
+            map_own
+        };
+
+        let tid_map_pairs = thread::scope(|s| {
             let hs = (0..NTHREADS)
                 .map(|i| {
-                    let control = &control;
-                    s.spawn({
-                        move || {
-                            let si = i.to_string();
+                    let value1 = Foo("a".to_owned() + &i.to_string());
+                    let value2 = Foo("a".to_owned() + &i.to_string());
+                    let map_i = HashMap::from([(1, value1.clone()), (2, value2.clone())]);
 
-                            let mut lock = spawned_tids.write().unwrap();
-                            lock[i] = thread::current().id();
-                            drop(lock);
+                    s.spawn(|| {
+                        control.aggregate_data((1, value1), op);
+                        control.aggregate_data((2, value2), op);
 
-                            control.aggregate_data((1, Foo("a".to_owned() + &si)), op);
-                            control.aggregate_data((2, Foo("b".to_owned() + &si)), op);
-                        }
+                        let tid_spawned = thread::current().id();
+                        (tid_spawned, map_i)
                     })
                 })
                 .collect::<Vec<_>>();
 
-            hs.into_iter().for_each(|h| h.join().unwrap());
-
-            println!("after hs join: {:?}", control);
+            hs.into_iter()
+                .map(|h| h.join().unwrap())
+                .collect::<Vec<_>>()
         });
 
         {
-            let spawned_tids = spawned_tids.try_read().unwrap();
-            let maps = (0..NTHREADS)
-                .map(|i| {
-                    let map_i = HashMap::from([
-                        (1, Foo("a".to_owned() + &i.to_string())),
-                        (2, Foo("b".to_owned() + &i.to_string())),
-                    ]);
-                    let tid_i = spawned_tids[i];
-                    (tid_i, map_i)
-                })
-                .collect::<Vec<_>>();
-            let mut map = maps.into_iter().collect::<HashMap<_, _>>();
-            map.insert(tid_own, map_own);
+            let map = std::iter::once((tid_own, map_own))
+                .chain(tid_map_pairs)
+                .collect::<HashMap<_, _>>();
 
             {
                 let acc = control.drain_tls();
                 assert_eq_and_println(&acc, &map, "Accumulator check");
             }
+
+            // drain_tls again
+            {
+                let acc = control.drain_tls();
+                assert_eq_and_println(&acc, &HashMap::new(), "empty accumulatore expected");
+            }
+        }
+
+        // Control reused.
+        {
+            let map_own = {
+                let value1 = Foo("c".to_owned());
+                let value2 = Foo("d".to_owned());
+                let map_own = HashMap::from([(11, value1.clone()), (22, value2.clone())]);
+
+                control.aggregate_data((11, value1), op);
+                control.aggregate_data((22, value2), op);
+
+                map_own
+            };
+
+            let (tid_spawned, map_spawned) = thread::scope(|s| {
+                let control = &control;
+
+                let value1 = Foo("x".to_owned());
+                let value2 = Foo("y".to_owned());
+                let map_spawned = HashMap::from([(11, value1.clone()), (22, value2.clone())]);
+
+                let tid = s
+                    .spawn(move || {
+                        control.aggregate_data((11, value1), op);
+                        control.aggregate_data((22, value2), op);
+                        thread::current().id()
+                    })
+                    .join()
+                    .unwrap();
+
+                (tid, map_spawned)
+            });
+
+            let map = HashMap::from([(tid_own, map_own), (tid_spawned, map_spawned)]);
+            let acc = control.drain_tls();
+            assert_eq_and_println(&acc, &map, "take_acc - control reused");
         }
     }
 
