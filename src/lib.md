@@ -34,7 +34,7 @@ To include this library as a dependency without optional features in your Cargo.
 
 ```toml
 [dependencies]
-thread_local_collect = "1.0"
+thread_local_collect = "1"
 ```
 
 For the default feature, this library only depends on the `std` library and the [`log`](https://crates.io/crates/log) crate.
@@ -45,7 +45,7 @@ The optional feature flag "tlcr" enables module [`tlcr`] and its sub-modules.
 
 ```toml
 [dependencies]
-thread_local_collect = { version = "1.0", features = ["tlcr"] }
+thread_local_collect = { version = "1", features = ["tlcr"] }
 ```
 
 To run the `tlcr_*` executables from the `examples` directory of the cloned/downloaded source [repo](https://github.com/pvillela/rust-thread-local-collect/tree/main), specify `--features tlcr` or `--all-features` when invoking `cargo run`. For example, to run `tlcr_joined_map_accumulator.rs`, do as follows:
