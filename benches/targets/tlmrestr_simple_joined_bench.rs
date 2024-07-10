@@ -1,7 +1,6 @@
 //! Benchmark for [`thread_local_collect::tlm::restr::simple_joined`].
 
 use super::{bench, BenchTarget, Wrap, NENTRIES, NTHREADS};
-use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
 use thread_local_collect::tlm::restr::simple_joined::{Control, Holder};
 
@@ -15,8 +14,8 @@ mod map_bench {
 
     impl BenchTarget<Data, AccValue> for Control<AccValue> {
         fn add_value(&self, t_idx: i32, i_idx: i32) {
-            let si = black_box(t_idx.to_string());
-            self.aggregate_data((i_idx, Foo("a".to_owned() + &si)), op);
+            let sti = t_idx.to_string();
+            self.aggregate_data((i_idx, Foo("a".to_owned() + &sti)), op);
         }
 
         fn acc(&mut self) -> impl Deref<Target = AccValue> {
