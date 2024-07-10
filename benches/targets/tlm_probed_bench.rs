@@ -1,7 +1,6 @@
 //! Benchmark for [`thread_local_collect::tlm::probed`].
 
 use super::{bench, BenchTarget, NENTRIES, NTHREADS};
-use criterion::black_box;
 use std::{collections::HashMap, fmt::Debug, ops::Deref, thread::ThreadId};
 use thread_local_collect::tlm::probed::{Control, Holder};
 
@@ -21,8 +20,8 @@ mod map_bench {
 
     impl BenchTarget<Data, AccValue> for Control<Data, AccValue> {
         fn add_value(&self, t_idx: i32, i_idx: i32) {
-            let si = black_box(t_idx.to_string());
-            insert_tl_entry(i_idx, Foo("a".to_owned() + &si), self);
+            let sti = t_idx.to_string();
+            insert_tl_entry(i_idx, Foo("a".to_owned() + &sti), self);
         }
 
         fn acc(&mut self) -> impl Deref<Target = AccValue> {
