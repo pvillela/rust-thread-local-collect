@@ -6,6 +6,8 @@ An aggregation operation is applied to the collected thread-local values and the
 
 The sub-modules of [`tlm`] use the [`std::thread_local`] macro and [`tlcr`] sub-modules use the excellent [`thread_local`](https://docs.rs/thread_local/latest/thread_local/) crate. The [`tlcr`] sub-modules have a simpler implementation but are also somewhat more restrictive as the thread-local values and aggregated value must be of the same type.
 
+Further to this crate's practical use as a library, the source code and comments also aim to serve as a case study for Rust programmers to demonstrate different ways to achieve the goal of collection and aggregation of thread-local data across threads.
+
 ## Core concepts
 
 The primary core concept in this library is the **`Control`** struct, which has a specific implementation for each sub-module. `Control` keeps track of the linked thread-local values, contains an accumulated value `acc`, and provides methods to access the accumulated value. The accumulated value is updated by applying an aggregation operation to each thread-local data value and `acc` when the thread-local value is collected.
