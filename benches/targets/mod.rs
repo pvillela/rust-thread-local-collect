@@ -29,3 +29,6 @@ pub use tlmrestr_probed_bench::*;
 
 mod tlmrestr_simple_joined_bench;
 pub use tlmrestr_simple_joined_bench::*;
+
+mod tm_probed_bench;
+pub use tm_probed_bench::*;

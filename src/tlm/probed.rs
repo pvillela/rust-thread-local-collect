@@ -1,14 +1,14 @@
 //! This module supports the collection and aggregation of the values of a designated thread-local variable
 //! across threads (see package [overview and core concepts](crate)), including the ability to inspect
 //! the accumulated value before participating threads have terminated. The following capabilities and constraints apply ...
-//! - The designated thread-local variable may be used in the thread responsible for
-//! collection/aggregation.
+//! - The designated thread-local variable may be used in the thread responsible for collection/aggregation.
 //! - The values of linked thread-local variables are collected and aggregated into the [Control] object's
 //! accumulated value when the thread-local variables are dropped following thread termination.
-//! - The [`Control::probe_tls`] function can be called at any time to return a clone of the current aggregated value.
+//! - The [`Control::probe_tls`] function can be called at any time, from any thread, to return a clone of the current
+//! aggregated value.
 //! - After all participating threads other than the thread responsible for collection/aggregation have
-//! terminated (joins are not necessary), a call to [`Control::take_tls`] followed by a call to one of the accumulator retrieval functions
-//! will return the final aggregated value.
+//! terminated (joins are not necessary), a call to [`Control::take_tls`] followed by a call to one of the accumulator
+//! retrieval functions will return the final aggregated value.
 //!
 //! ## Usage pattern
 
@@ -126,7 +126,7 @@ where
     T: 'static,
     U: 'static,
 {
-    /// Takes the values of any remaining linked thread-local-variables and aggregates those values
+    /// Takes the values of any remaining linked thread-local variables and aggregates those values
     /// with this object's accumulator, replacing those values with the evaluation of the `make_data` function
     /// passed to [`Control::new`].
     ///
@@ -152,7 +152,7 @@ where
         }
     }
 
-    /// Collects the values of any remaining linked thread-local-variables, without changing those values,
+    /// Collects the values of any remaining linked thread-local variables, without changing those values,
     /// aggregates those values with a clone of this object's accumulator, and returns the aggregate
     /// value. This object's accumulator remains unchanged.
     ///

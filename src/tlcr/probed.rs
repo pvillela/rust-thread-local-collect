@@ -3,13 +3,13 @@
 //! participating threads have terminated.
 //! It is present only when the **"tlcr"** feature flag is enabled.
 //! The following capabilities and constraints apply ...
-//! - Values may be collected from the thread responsible for collection/aggregation, provided that the `control`
-//! object of type [`Control`] is created on that thread and is not cloned by that thread.
 //! - The participating threads update thread-local data via the clonable `control` object which contains a
 //! [`ThreadLocal`](https://docs.rs/thread_local/latest/thread_local/) instance and aggregates the values.
-//! - The [`Control::probe_tls`] function can be called at any time to return a clone of the current aggregated value.
-//! - The [`Control::drain_tls`] function can be called to return the accumulated value after all participating
-//! threads (other than the thread responsible for collection) have terminated (joins are not necessary).
+//! - The [`Control::probe_tls`] function can be called at any time, from any thread, to return a clone of the current
+//! aggregated value.
+//! - The [`Control::drain_tls`] function can be called from the thread responsible for gathering results to return the accumulated
+//! value after all other participating threads have terminated (joins are not necessary), provided that there are no
+//! additional clones of the `control` object on the calling thread.
 //!
 //! ## Usage pattern
 
@@ -124,8 +124,7 @@ where
     /// it was instantiated with [`Control::new`].
     ///
     /// # Errors
-    /// - Returns an error if any thread, other than the thread where this function is called from,
-    /// holds a clone of `self`. In this case, the state of `self` is left unchanged.
+    /// - Returns an error if any clones of `self` currently exist. In this case, the state of `self` is left unchanged.
     pub fn drain_tls(&mut self) -> Result<U, ActiveThreadLocalsError> {
         let state = replace(&mut self.state, Arc::new(ThreadLocal::new()));
         let unwr_state = match Arc::try_unwrap(state) {

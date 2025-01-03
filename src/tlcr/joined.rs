@@ -121,7 +121,7 @@ where
     ///
     /// # Errors
     /// - Returns an error if any thread, other than the thread where this function is called from,
-    /// holds a clone of `self`. In this case, the state of `self` is left unchanged.
+    ///   holds a clone of `self`. In this case, the state of `self` is left unchanged.
     pub fn drain_tls(&mut self) -> Result<U, ActiveThreadLocalsError> {
         let state = replace(&mut self.state, Arc::new(ThreadLocal::new()));
         let unwr_state = match Arc::try_unwrap(state) {

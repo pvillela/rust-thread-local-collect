@@ -119,7 +119,7 @@ impl<T, U> ChanneledState<T, U> {
 #[derive(Debug)]
 struct AccGuard<'a, T, U>(MutexGuard<'a, ChanneledState<T, U>>);
 
-impl<'a, T, U> Deref for AccGuard<'a, T, U> {
+impl<T, U> Deref for AccGuard<'_, T, U> {
     type Target = U;
 
     fn deref(&self) -> &Self::Target {

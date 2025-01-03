@@ -5,6 +5,7 @@
     tlm_simple_joined_map \
     tlm_joined_map \
     tlm_probed_map \
+    tm_probed_map \
     tlcr_joined_map \
     tlcr_probed_map \
     tlmrestr_simple_joined_map \

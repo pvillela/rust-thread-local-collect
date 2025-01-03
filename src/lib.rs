@@ -3,6 +3,8 @@
 #![doc = include_str!("lib.md")]
 
 pub mod tlm;
+
+#[cfg(feature = "tm")]
 pub mod tm;
 
 #[cfg(feature = "tlcr")]

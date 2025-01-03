@@ -3,6 +3,7 @@ use std::{collections::HashMap, thread::ThreadId};
 #[derive(Debug, Clone)]
 pub struct Foo(pub String);
 
+/// Used for benches of modules other than `tlm_channeled`, `tlcr`, `tlmrestr`.
 pub(crate) mod nosend {
     pub use super::Foo;
     use super::*;
@@ -19,6 +20,7 @@ pub(crate) mod nosend {
     }
 }
 
+/// Used for benches of modules `tlm_channeled`, `tlcr`, `tlmrestr`.
 pub(crate) mod send {
     pub use super::Foo;
     use super::*;

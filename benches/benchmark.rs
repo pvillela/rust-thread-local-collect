@@ -12,6 +12,7 @@ use targets::{
     tlm_probed_map_bench, tlm_simple_joined_i32_bench, tlm_simple_joined_map_bench,
     tlmrestr_joined_i32_bench, tlmrestr_joined_map_bench, tlmrestr_probed_i32_bench,
     tlmrestr_probed_map_bench, tlmrestr_simple_joined_i32_bench, tlmrestr_simple_joined_map_bench,
+    tm_probed_i32_bench, tm_probed_map_bench,
 };
 
 fn target(name: &str) -> fn() {
@@ -25,6 +26,7 @@ fn target(name: &str) -> fn() {
         "tlmrestr_joined_i32" => tlmrestr_joined_i32_bench,
         "tlmrestr_probed_i32" => tlmrestr_probed_i32_bench,
         "tlmrestr_simple_joined_i32" => tlmrestr_simple_joined_i32_bench,
+        "tm_probed_i32" => tm_probed_i32_bench,
 
         "tlm_channeled_nobg_map" => tlm_channeled_nobg_map_bench,
         "tlm_joined_map" => tlm_joined_map_bench,
@@ -35,6 +37,7 @@ fn target(name: &str) -> fn() {
         "tlmrestr_joined_map" => tlmrestr_joined_map_bench,
         "tlmrestr_probed_map" => tlmrestr_probed_map_bench,
         "tlmrestr_simple_joined_map" => tlmrestr_simple_joined_map_bench,
+        "tm_probed_map" => tm_probed_map_bench,
 
         "tlm_channeled_bg_i32" => tlm_channeled_bg_i32_bench,
         "tlm_channeled_bg_map" => tlm_channeled_bg_map_bench,
